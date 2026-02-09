@@ -139,4 +139,32 @@ describe("generateDigestStage2", () => {
 
     expect(result.nextSteps[0]).toContain("Write benchmark script");
   });
+
+  it("returns no-change digest when only repeated changes are detected", async () => {
+    const llm = {
+      chat: async () => "{\"summary\":\"ok\",\"changes\":[\"same change\"],\"nextSteps\":[\"Test pipeline\"]}"
+    };
+
+    const result = await generateDigestStage2({
+      scope: { id: "s", userId: "u", name: "Demo", goal: "ship alpha", stage: "build", createdAt: new Date() },
+      lastDigest: {
+        id: "d1",
+        scopeId: "s",
+        summary: "goal: ship alpha",
+        changes: "- same change",
+        nextSteps: ["Test pipeline"],
+        createdAt: new Date()
+      },
+      protectedState: { stableFacts: { goal: "ship alpha", constraints: [], decisions: [] }, workingNotes: {}, todos: [] },
+      deltaCandidates: [],
+      documents: [],
+      llm,
+      systemPrompt: "system",
+      userPromptTemplate: "{{scopeName}} {{lastDigest}} {{protectedState}} {{deltaCandidates}} {{documents}}",
+      maxRetries: 0
+    });
+
+    expect(result.changes.length).toBe(0);
+    expect(result.summary).toContain("goal: ship alpha");
+  });
 });

@@ -564,6 +564,20 @@ export async function generateDigestStage2(input: {
 
     if (check.ok) return normalized;
 
+    if (
+      input.lastDigest &&
+      check.errors.length === 1 &&
+      check.errors[0] === "changes_repeated_from_previous_digest"
+    ) {
+      return {
+        summary: input.lastDigest.summary,
+        changes: [],
+        nextSteps: input.lastDigest.nextSteps?.length
+          ? input.lastDigest.nextSteps.slice(0, 3)
+          : ["Review recent events for changes."]
+      };
+    }
+
     lastErrors = check.errors;
     fixInstruction = `Fix output. Previous errors: ${check.errors.join(", ")}. Ensure summary<=120 words, changes<=3, nextSteps actionable.`;
   }
