@@ -124,6 +124,12 @@ function collectSummary(jsonPath) {
       promoteLongFormToDocumented: Boolean(runtimeOverrides.promoteLongFormToDocumented),
       digestOnCandidate: Boolean(runtimeOverrides.digestOnCandidate)
     },
+    answerSuccess: data.metrics?.answer?.success ?? 0,
+    answerRuns: data.metrics?.answer?.runs ?? 0,
+    answerEvidenceCoverageRate: data.metrics?.answer?.evidenceCoverageRate ?? 0,
+    answerEvidenceEventRankingReasonRate: data.metrics?.answer?.evidenceEventRankingReasonRate ?? 0,
+    answerEvidenceEventScoreRate: data.metrics?.answer?.evidenceEventScoreRate ?? 0,
+    answerEvidenceStateSummaryRate: data.metrics?.answer?.evidenceStateSummaryRate ?? 0,
     file: path.basename(jsonPath)
   };
 }
@@ -292,6 +298,7 @@ const lines = [
       `- Retention: latest-document digest ${s.latestDocumentRetentionRate}, latest-document state ${s.stateLatestDocumentRetentionRate}, state fact ${s.stateFactRetentionRate}, goal ${s.stateGoalRetentionRate}, constraints ${s.stateConstraintPreservationRate}, decisions ${s.stateDecisionContinuityRate}, todos ${s.stateTodoContinuityRate}`,
       `- Runtime: ${s.runtimeSuccess}/${s.runtimeRuns} success, evidence ${s.runtimeEvidenceCoverageRate}, digest-trigger ${s.runtimeDigestTriggerRate}`,
       `- Runtime evidence detail: digest-summary ${s.runtimeEvidenceDigestSummaryRate}, event-snippet ${s.runtimeEvidenceEventSnippetRate}, ranking-reason ${s.runtimeEvidenceEventRankingReasonRate}, score ${s.runtimeEvidenceEventScoreRate}, embedding-reason ${s.runtimeEvidenceEventEmbeddingReasonRate}, document-source ${s.runtimeEvidenceEventDocumentSourceRate}, state-summary ${s.runtimeEvidenceStateSummaryRate}, state-provenance ${s.runtimeEvidenceStateProvenanceRate}, recent-state-changes ${s.runtimeEvidenceRecentStateChangesRate}`,
+      `- Answer grounding: ${s.answerSuccess}/${s.answerRuns} success, evidence ${s.answerEvidenceCoverageRate}, ranking-reason ${s.answerEvidenceEventRankingReasonRate}, score ${s.answerEvidenceEventScoreRate}, state-summary ${s.answerEvidenceStateSummaryRate}`,
       `- Runtime policy profile: ${s.runtimePolicyProfile}`,
       `- Runtime overrides: recallLimit=${s.runtimeOverrides.recallLimit ?? "default"}, promoteLongForm=${s.runtimeOverrides.promoteLongFormToDocumented ? "yes" : "no"}, digestOnCandidate=${s.runtimeOverrides.digestOnCandidate ? "yes" : "no"}`,
       `- Report: ${s.file}`,

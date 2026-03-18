@@ -99,6 +99,10 @@ function summarizeBenchmark(data, fileName) {
     runtimeEventDocumentSourceRate: data.metrics?.runtime?.evidenceEventDocumentSourceRate ?? 0,
     runtimeStateProvenanceRate: data.metrics?.runtime?.evidenceStateProvenanceRate ?? 0,
     runtimeRecentStateChangesRate: data.metrics?.runtime?.evidenceRecentStateChangesRate ?? 0,
+    answerEvidenceCoverageRate: data.metrics?.answer?.evidenceCoverageRate ?? 0,
+    answerEventRankingReasonRate: data.metrics?.answer?.evidenceEventRankingReasonRate ?? 0,
+    answerEventScoreRate: data.metrics?.answer?.evidenceEventScoreRate ?? 0,
+    answerStateSummaryRate: data.metrics?.answer?.evidenceStateSummaryRate ?? 0,
     replayRebuildConsistencyRate: data.metrics?.replay?.rebuildConsistencyRate ?? 0,
     replayCrossRunStateDivergenceRate: data.metrics?.replay?.crossRunStateDivergenceRate ?? 0,
     replayStateMatch: Boolean(data.metrics?.replay?.stateMatch),
@@ -142,6 +146,10 @@ function buildDeltaSummary(items) {
     runtimeEventDocumentSourceRate: Math.round((last.runtimeEventDocumentSourceRate - first.runtimeEventDocumentSourceRate) * 1000) / 1000,
     runtimeStateProvenanceRate: Math.round((last.runtimeStateProvenanceRate - first.runtimeStateProvenanceRate) * 1000) / 1000,
     runtimeRecentStateChangesRate: Math.round((last.runtimeRecentStateChangesRate - first.runtimeRecentStateChangesRate) * 1000) / 1000,
+    answerEvidenceCoverageRate: Math.round((last.answerEvidenceCoverageRate - first.answerEvidenceCoverageRate) * 1000) / 1000,
+    answerEventRankingReasonRate: Math.round((last.answerEventRankingReasonRate - first.answerEventRankingReasonRate) * 1000) / 1000,
+    answerEventScoreRate: Math.round((last.answerEventScoreRate - first.answerEventScoreRate) * 1000) / 1000,
+    answerStateSummaryRate: Math.round((last.answerStateSummaryRate - first.answerStateSummaryRate) * 1000) / 1000,
     replayRebuildConsistencyRate: Math.round((last.replayRebuildConsistencyRate - first.replayRebuildConsistencyRate) * 1000) / 1000,
     replayCrossRunStateDivergenceRate: Math.round((last.replayCrossRunStateDivergenceRate - first.replayCrossRunStateDivergenceRate) * 1000) / 1000
   };
@@ -208,6 +216,7 @@ const md = [
   `- Runtime event document-source rate: ${latest.runtimeEventDocumentSourceRate}`,
   `- Runtime state-provenance rate: ${latest.runtimeStateProvenanceRate}`,
   `- Runtime recent-state-changes rate: ${latest.runtimeRecentStateChangesRate}`,
+  `- Answer grounding: evidence ${latest.answerEvidenceCoverageRate}, ranking-reason ${latest.answerEventRankingReasonRate}, score ${latest.answerEventScoreRate}, state-summary ${latest.answerStateSummaryRate}`,
   `- Replay: state match ${latest.replayStateMatch ? "yes" : "no"}, rebuild consistency ${latest.replayRebuildConsistencyRate}, cross-run divergence ${latest.replayCrossRunStateDivergenceRate}`,
   "",
   "## Window Delta",
@@ -232,6 +241,7 @@ const md = [
         `- Runtime retrieval-explainability delta: ranking-reason ${formatDelta(deltaSummary.runtimeEventRankingReasonRate)}, score ${formatDelta(deltaSummary.runtimeEventScoreRate)}, embedding-reason ${formatDelta(deltaSummary.runtimeEventEmbeddingReasonRate)}, document-source ${formatDelta(deltaSummary.runtimeEventDocumentSourceRate)}`,
         `- Runtime state-provenance delta: ${formatDelta(deltaSummary.runtimeStateProvenanceRate)}`,
         `- Runtime recent-state-changes delta: ${formatDelta(deltaSummary.runtimeRecentStateChangesRate)}`,
+        `- Answer grounding delta: evidence ${formatDelta(deltaSummary.answerEvidenceCoverageRate)}, ranking-reason ${formatDelta(deltaSummary.answerEventRankingReasonRate)}, score ${formatDelta(deltaSummary.answerEventScoreRate)}, state-summary ${formatDelta(deltaSummary.answerStateSummaryRate)}`,
         `- Replay rebuild consistency delta: ${formatDelta(deltaSummary.replayRebuildConsistencyRate)}`,
         `- Replay cross-run divergence delta: ${formatDelta(deltaSummary.replayCrossRunStateDivergenceRate)}`
       ]
@@ -266,6 +276,7 @@ const md = [
       `- Runtime event document-source rate: ${item.runtimeEventDocumentSourceRate}`,
       `- Runtime state-provenance rate: ${item.runtimeStateProvenanceRate}`,
       `- Runtime recent-state-changes rate: ${item.runtimeRecentStateChangesRate}`,
+      `- Answer grounding: evidence ${item.answerEvidenceCoverageRate}, ranking-reason ${item.answerEventRankingReasonRate}, score ${item.answerEventScoreRate}, state-summary ${item.answerStateSummaryRate}`,
       `- Replay: state match ${item.replayStateMatch ? "yes" : "no"}, rebuild consistency ${item.replayRebuildConsistencyRate}, cross-run divergence ${item.replayCrossRunStateDivergenceRate}`,
       `- Started: ${item.startedAt || "unknown"}`,
       ""

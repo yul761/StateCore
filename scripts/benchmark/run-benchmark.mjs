@@ -326,7 +326,7 @@ function omissionWarningRate(consistencyTaxonomy) {
   return Number((omissionTotal / warningTotal).toFixed(3));
 }
 
-function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, runtimeMetrics) {
+function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, runtimeMetrics, answerMetrics) {
   if (!digestMetrics?.enabled) {
     return {
       consistency: 0,
@@ -389,7 +389,20 @@ function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, r
         (runtimeMetrics.evidenceEventRankingReasonRate || 0) * 0.35 +
         (runtimeMetrics.evidenceEventScoreRate || 0) * 0.25
       );
-    runtimeScore = clamp((groundingQuality * 7.5) + ((1 - Math.max(0, 1 - (runtimeMetrics.success / Math.max(1, runtimeMetrics.runs)))) * 7.5));
+    const answerGroundingQuality = answerMetrics?.enabled
+      ? (
+          (answerMetrics.evidenceCoverageRate || 0) * 0.4 +
+          (answerMetrics.evidenceEventRankingReasonRate || 0) * 0.35 +
+          (answerMetrics.evidenceEventScoreRate || 0) * 0.25
+        )
+      : 1;
+    const combinedGroundingQuality = (groundingQuality * 0.6) + (answerGroundingQuality * 0.4);
+    const combinedSuccess =
+      (
+        (runtimeMetrics.success / Math.max(1, runtimeMetrics.runs)) * 0.6 +
+        ((answerMetrics?.success ?? 0) / Math.max(1, answerMetrics?.runs ?? 1)) * 0.4
+      );
+    runtimeScore = clamp((combinedGroundingQuality * 7.5) + ((1 - Math.max(0, 1 - combinedSuccess)) * 7.5));
   } else {
     runtimeScore = 15;
   }
@@ -404,8 +417,8 @@ function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, r
   };
 }
 
-function scoreLongTermMemoryReliability(digestMetrics, replayMetrics, runtimeMetrics) {
-  return buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, runtimeMetrics).total;
+function scoreLongTermMemoryReliability(digestMetrics, replayMetrics, runtimeMetrics, answerMetrics) {
+  return buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, runtimeMetrics, answerMetrics).total;
 }
 
 function computeOverallScore(parts, featureLlm) {
@@ -946,6 +959,17 @@ async function run() {
     noteTaxonomy: {},
     policyProfile: cfg.runtimePolicyProfile
   };
+  let answerMetrics = {
+    enabled: cfg.featureLlm,
+    runs: 0,
+    success: 0,
+    avgLatencyMs: 0,
+    evidenceCoverageRate: 0,
+    evidenceEventSnippetRate: 0,
+    evidenceEventRankingReasonRate: 0,
+    evidenceEventScoreRate: 0,
+    evidenceStateSummaryRate: 0
+  };
 
   if (cfg.featureLlm) {
     const durations = [];
@@ -1148,6 +1172,50 @@ async function run() {
   report.metrics.replay = replayMetrics;
 
   if (cfg.featureLlm) {
+    const answerCases = (fixture?.retrieveCases ?? retrieveCases).slice(0, Math.max(1, cfg.runtimeRuns));
+    const answerResults = [];
+    for (const item of answerCases) {
+      const res = await apiFetch("POST", "/memory/answer", {
+        scopeId,
+        question: item.query
+      });
+      const evidence = res.json?.evidence ?? {};
+      const eventSnippets = Array.isArray(evidence.eventSnippets) ? evidence.eventSnippets : [];
+      const snippetsWithRankingReason = eventSnippets.filter((snippet) => typeof snippet?.rankingReason === "string" && snippet.rankingReason.length > 0);
+      const snippetsWithScores = eventSnippets.filter((snippet) =>
+        typeof snippet?.heuristicScore === "number" &&
+        typeof snippet?.recencyScore === "number" &&
+        typeof snippet?.finalScore === "number"
+      );
+      const evidenceCoverage = Boolean(
+        (typeof evidence.digestSummary === "string" && evidence.digestSummary.length > 0) ||
+        eventSnippets.length > 0 ||
+        (typeof evidence.stateSummary === "string" && evidence.stateSummary.length > 0) ||
+        Boolean(evidence.stateDetails)
+      );
+      answerResults.push({
+        ok: res.ok && typeof res.json?.answer === "string",
+        latencyMs: res.latencyMs,
+        evidenceCoverage,
+        hasEventSnippets: eventSnippets.length > 0,
+        hasEventRankingReasons: eventSnippets.length > 0 && snippetsWithRankingReason.length === eventSnippets.length,
+        hasEventScores: eventSnippets.length > 0 && snippetsWithScores.length === eventSnippets.length,
+        hasStateSummary: typeof evidence.stateSummary === "string" && evidence.stateSummary.length > 0
+      });
+    }
+    const answerLatencies = answerResults.map((result) => result.latencyMs);
+    answerMetrics = {
+      enabled: true,
+      runs: answerResults.length,
+      success: answerResults.filter((result) => result.ok).length,
+      avgLatencyMs: Number((answerLatencies.reduce((sum, value) => sum + value, 0) / Math.max(1, answerLatencies.length)).toFixed(2)),
+      evidenceCoverageRate: Number((answerResults.filter((result) => result.evidenceCoverage).length / Math.max(1, answerResults.length)).toFixed(3)),
+      evidenceEventSnippetRate: Number((answerResults.filter((result) => result.hasEventSnippets).length / Math.max(1, answerResults.length)).toFixed(3)),
+      evidenceEventRankingReasonRate: Number((answerResults.filter((result) => result.hasEventRankingReasons).length / Math.max(1, answerResults.length)).toFixed(3)),
+      evidenceEventScoreRate: Number((answerResults.filter((result) => result.hasEventScores).length / Math.max(1, answerResults.length)).toFixed(3)),
+      evidenceStateSummaryRate: Number((answerResults.filter((result) => result.hasStateSummary).length / Math.max(1, answerResults.length)).toFixed(3))
+    };
+
     const runtimeCases = (fixture?.retrieveCases ?? retrieveCases)
       .slice(0, Math.max(1, cfg.runtimeRuns))
       .map((item, index) => ({
@@ -1245,6 +1313,7 @@ async function run() {
     };
   }
   report.metrics.runtime = runtimeMetrics;
+  report.metrics.answer = answerMetrics;
 
   const dueAt = new Date(Date.now() + 20000).toISOString();
   const reminderCreate = await apiFetch("POST", "/reminders", { scopeId, dueAt, text: "Benchmark reminder" });
@@ -1271,7 +1340,7 @@ async function run() {
       )
     : 0;
   const reminderScore = scoreReminder(report.metrics.reminder.success, report.metrics.reminder.delayMs);
-  const reliabilityBreakdown = buildLongTermMemoryReliabilityBreakdown(report.metrics.digest, report.metrics.replay, report.metrics.runtime);
+  const reliabilityBreakdown = buildLongTermMemoryReliabilityBreakdown(report.metrics.digest, report.metrics.replay, report.metrics.runtime, report.metrics.answer);
 
   report.scores = {
     ingest: Number(ingestScore.toFixed(2)),
@@ -1332,6 +1401,7 @@ async function run() {
     `- Retrieve semantic hit rate: ${report.metrics.retrieve.hitRate}, strict hit rate: ${report.metrics.retrieve.strictHitRate} (p95 ${report.metrics.retrieve.p95Ms} ms)`,
     `- Retrieve mode: ${report.metrics.retrieve.mode}, retrieve limit ${report.metrics.retrieve.limit}, embedding requested ${report.metrics.retrieve.embeddingRequested ? "yes" : "no"}, embedding configured ${report.metrics.retrieve.embeddingConfigured ? "yes" : "no"}, candidate limit ${report.metrics.retrieve.embeddingCandidateLimit}, embedding model ${report.metrics.retrieve.embeddingModel || "none"}`,
     `- Retrieve explainability: ranking reasons ${report.metrics.retrieve.explainabilityRate}, reranked queries ${report.metrics.retrieve.rerankedRate}, embedding top-match ${report.metrics.retrieve.embeddingTopMatchRate}, document top-match ${report.metrics.retrieve.documentTopMatchRate}, source diversity ${report.metrics.retrieve.sourceDiversityRate}`,
+    `- Answer grounding: success ${report.metrics.answer.enabled ? `${report.metrics.answer.success}/${report.metrics.answer.runs}` : "skipped"}, evidence coverage ${report.metrics.answer.enabled ? report.metrics.answer.evidenceCoverageRate : "n/a"}, ranking reasons ${report.metrics.answer.enabled ? report.metrics.answer.evidenceEventRankingReasonRate : "n/a"}, event scores ${report.metrics.answer.enabled ? report.metrics.answer.evidenceEventScoreRate : "n/a"}, state summary ${report.metrics.answer.enabled ? report.metrics.answer.evidenceStateSummaryRate : "n/a"}, avg latency ${report.metrics.answer.enabled ? `${report.metrics.answer.avgLatencyMs} ms` : "n/a"}`,
     `- Digest success: ${report.metrics.digest.success}/${report.metrics.digest.runs}, consistency pass ${report.metrics.digest.consistencyPassRate}, omission warning rate ${report.metrics.digest.omissionWarningRate ?? 0}, avg latency ${report.metrics.digest.avgLatencyMs} ms`,
     `- Replay state match: ${report.metrics.replay.enabled ? (report.metrics.replay.successfulRuns ? (report.metrics.replay.stateMatch ? "yes" : "no") : `error (${report.metrics.replay.error})`) : "skipped"}${report.metrics.replay.enabled && report.metrics.replay.successfulRuns ? `, successful rebuilds ${report.metrics.replay.successfulRuns}/${report.metrics.replay.rebuildRuns}, snapshots ${report.metrics.replay.rebuildSnapshots}` : ""}`,
     `- Runtime turn success: ${report.metrics.runtime.enabled ? `${report.metrics.runtime.success}/${report.metrics.runtime.runs}` : "skipped"}, evidence coverage ${report.metrics.runtime.enabled ? report.metrics.runtime.evidenceCoverageRate : "n/a"}, avg latency ${report.metrics.runtime.enabled ? `${report.metrics.runtime.avgLatencyMs} ms` : "n/a"}`,
@@ -1395,6 +1465,19 @@ async function run() {
           `- Digest trigger rate: ${report.metrics.runtime.digestTriggerRate}`,
           `- Write tiers: ${Object.keys(report.metrics.runtime.writeTierCounts || {}).length ? Object.entries(report.metrics.runtime.writeTierCounts).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`,
           `- Note taxonomy: ${Object.keys(report.metrics.runtime.noteTaxonomy || {}).length ? Object.entries(report.metrics.runtime.noteTaxonomy).sort((a, b) => b[1] - a[1]).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`
+        ]
+      : ["- skipped"]),
+    "",
+    "## Answer Grounding",
+    ...(report.metrics.answer.enabled
+      ? [
+          `- Success: ${report.metrics.answer.success}/${report.metrics.answer.runs}`,
+          `- Avg latency: ${report.metrics.answer.avgLatencyMs} ms`,
+          `- Evidence coverage rate: ${report.metrics.answer.evidenceCoverageRate}`,
+          `- Evidence event snippet rate: ${report.metrics.answer.evidenceEventSnippetRate}`,
+          `- Evidence event ranking-reason rate: ${report.metrics.answer.evidenceEventRankingReasonRate}`,
+          `- Evidence event score rate: ${report.metrics.answer.evidenceEventScoreRate}`,
+          `- Evidence state summary rate: ${report.metrics.answer.evidenceStateSummaryRate}`
         ]
       : ["- skipped"]),
     "",

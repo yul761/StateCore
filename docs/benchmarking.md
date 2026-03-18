@@ -211,6 +211,13 @@ The benchmark now also emits state-backed counterparts for the latest protected 
 - policy profile used by the run
 - runtime decision-note taxonomy
 
+7. Answer grounding
+- answer success rate
+- answer evidence coverage rate
+- answer event ranking-reason evidence rate
+- answer event score evidence rate
+- answer state-summary evidence rate
+
 ## Scoring Model (0-100)
 
 Weighted score:
