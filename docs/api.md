@@ -23,8 +23,10 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
 - **GET /memory/digests?scopeId=&limit=&cursor=&rebuildGroupId=**
 - **GET /memory/state?scopeId=**
   - returns latest `DigestStateSnapshot` for replay/audit use
+  - includes `consistency: { ok, errors, warnings } | null`
 - **GET /memory/state/history?scopeId=&limit=&rebuildGroupId=**
   - returns recent `DigestStateSnapshot` items for replay/audit use
+  - each item includes `consistency: { ok, errors, warnings } | null`
 
 ## Retrieve
 - **POST /memory/retrieve**

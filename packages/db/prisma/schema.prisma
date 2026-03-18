@@ -109,11 +109,12 @@ model Digest {
 }
 
 model DigestStateSnapshot {
-  id        String   @id @default(uuid())
-  scopeId   String
-  digestId  String   @unique
-  state     Json
-  createdAt DateTime @default(now())
+  id          String   @id @default(uuid())
+  scopeId     String
+  digestId    String   @unique
+  state       Json
+  consistency Json?
+  createdAt   DateTime @default(now())
 
   scope  ProjectScope @relation(fields: [scopeId], references: [id])
   digest Digest       @relation(fields: [digestId], references: [id])

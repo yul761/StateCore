@@ -90,6 +90,7 @@ Outputs are written to `benchmark-results/`:
 - average end-to-end latency
 - consistency pass rate (summary/changes/nextSteps constraints)
 - failure taxonomy histogram for digest benchmark runs
+- persisted consistency taxonomy histogram from accepted digest snapshots
 - gold-backed retention and contradiction summary when fixture labels are available
 
 4. Reminder

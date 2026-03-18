@@ -62,6 +62,12 @@ export interface DigestOutput {
   nextSteps: string[];
 }
 
+export interface DigestConsistencyResult {
+  ok: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
 export const DigestOutputSchema = z.object({
   summary: z.string(),
   changes: z.array(z.string()),
@@ -464,7 +470,7 @@ export function consistencyCheck(input: {
   output: DigestOutput;
   previousDigest?: Digest | null;
   protectedState: DigestState;
-}): { ok: boolean; errors: string[]; warnings: string[] } {
+}): DigestConsistencyResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -664,7 +670,14 @@ export async function runDigestControlPipeline(input: {
     digestClassifyUserPrompt?: string;
   };
   config: DigestControlConfig;
-}): Promise<{ digest: DigestOutput; state: DigestState; selection: SelectionResult; deltas: DeltaCandidate[]; metrics: Record<string, number> }> {
+}): Promise<{
+  digest: DigestOutput;
+  state: DigestState;
+  selection: SelectionResult;
+  deltas: DeltaCandidate[];
+  metrics: Record<string, number>;
+  consistency: DigestConsistencyResult;
+}> {
   const metrics: Record<string, number> = {};
 
   const tSelect = Date.now();
@@ -721,5 +734,11 @@ export async function runDigestControlPipeline(input: {
   });
   metrics.generationMs = Date.now() - tGenerate;
 
-  return { digest, state, selection, deltas, metrics };
+  const consistency = consistencyCheck({
+    output: digest,
+    previousDigest: input.lastDigest,
+    protectedState: state
+  });
+
+  return { digest, state, selection, deltas, metrics, consistency };
 }

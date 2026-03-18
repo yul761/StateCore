@@ -553,6 +553,7 @@ async function run() {
     consistencyPassRate: 0,
     avgLatencyMs: 0,
     failureTaxonomy: {},
+    consistencyTaxonomy: { errors: {}, warnings: {} },
     goldRetention: null
   };
   let replayMetrics = {
@@ -570,6 +571,7 @@ async function run() {
     const durations = [];
     const consistencyPass = [];
     const failureTaxonomy = {};
+    const consistencyTaxonomy = { errors: {}, warnings: {} };
     const goldRetentionRuns = [];
     for (let i = 0; i < cfg.digestRuns; i += 1) {
       const before = await apiFetch("GET", `/memory/digests?scopeId=${scopeId}&limit=5`);
@@ -591,6 +593,18 @@ async function run() {
       consistencyPass.push(classified.valid);
       if (!classified.valid) {
         for (const issue of classified.issues) incrementCounter(failureTaxonomy, issue);
+      }
+
+      const stateSnapshot = await apiFetch("GET", `/memory/state?scopeId=${scopeId}`);
+      if (stateSnapshot.ok && stateSnapshot.json?.consistency) {
+        const errors = Array.isArray(stateSnapshot.json.consistency.errors)
+          ? stateSnapshot.json.consistency.errors
+          : [];
+        const warnings = Array.isArray(stateSnapshot.json.consistency.warnings)
+          ? stateSnapshot.json.consistency.warnings
+          : [];
+        for (const error of errors) incrementCounter(consistencyTaxonomy.errors, error);
+        for (const warning of warnings) incrementCounter(consistencyTaxonomy.warnings, warning);
       }
 
       if (goldFacts) {
@@ -630,6 +644,7 @@ async function run() {
       consistencyPassRate: Number((consistencyPass.filter(Boolean).length / Math.max(1, consistencyPass.length)).toFixed(3)),
       avgLatencyMs: Number((durations.reduce((a, b) => a + b, 0) / Math.max(1, durations.length)).toFixed(2)),
       failureTaxonomy,
+      consistencyTaxonomy,
       goldRetention
     };
   } else {
@@ -760,6 +775,24 @@ async function run() {
           .sort((a, b) => b[1] - a[1])
           .map(([name, count]) => `- ${name}: ${count}`)
         : ["- none"]
+      : ["- skipped"]),
+    "",
+    "## Digest Consistency Taxonomy",
+    ...(cfg.featureLlm
+      ? [
+          "- Errors:",
+          ...(Object.keys(report.metrics.digest.consistencyTaxonomy?.errors || {}).length
+            ? Object.entries(report.metrics.digest.consistencyTaxonomy.errors)
+              .sort((a, b) => b[1] - a[1])
+              .map(([name, count]) => `  - ${name}: ${count}`)
+            : ["  - none"]),
+          "- Warnings:",
+          ...(Object.keys(report.metrics.digest.consistencyTaxonomy?.warnings || {}).length
+            ? Object.entries(report.metrics.digest.consistencyTaxonomy.warnings)
+              .sort((a, b) => b[1] - a[1])
+              .map(([name, count]) => `  - ${name}: ${count}`)
+            : ["  - none"])
+        ]
       : ["- skipped"]),
     "",
     "## Replay Consistency",

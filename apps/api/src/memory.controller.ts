@@ -169,11 +169,12 @@ export class MemoryController {
     }
     const snapshot = await this.domain.getLatestDigestState(scopeId);
     if (!snapshot) {
-      return { digestId: null, state: null, createdAt: null };
+      return { digestId: null, state: null, consistency: null, createdAt: null };
     }
     return {
       digestId: snapshot.digestId,
       state: snapshot.state,
+      consistency: snapshot.consistency,
       createdAt: snapshot.createdAt.toISOString()
     };
   }
@@ -197,6 +198,7 @@ export class MemoryController {
       items: items.map((snapshot) => ({
         digestId: snapshot.digestId,
         state: snapshot.state,
+        consistency: snapshot.consistency,
         createdAt: snapshot.createdAt.toISOString()
       }))
     };

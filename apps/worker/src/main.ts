@@ -112,7 +112,8 @@ async function runDigestScopeJob(data: { userId: string; scopeId: string }) {
     data: {
       scopeId: data.scopeId,
       digestId: createdDigest.id,
-      state: result.state as any
+      state: result.state as any,
+      consistency: result.consistency as any
     } as any
   });
 
@@ -244,7 +245,8 @@ async function runRebuildDigestChainJob(data: { userId: string; scopeId: string;
       data: {
         scopeId: data.scopeId,
         digestId: lastDigest.id,
-        state: result.state as any
+        state: result.state as any,
+        consistency: result.consistency as any
       } as any
     });
 

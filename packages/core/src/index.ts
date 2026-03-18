@@ -2,6 +2,7 @@ import pino from "pino";
 import { createHash } from "crypto";
 import { z } from "zod";
 export { LlmClient, type LlmClientOptions, createChatModelClient, type ModelProviderConfig } from "./model-provider";
+export type { DigestConsistencyResult } from "./digest-control";
 import { LlmClient } from "./model-provider";
 
 export const logger = pino({ level: process.env.LOG_LEVEL || "info" });

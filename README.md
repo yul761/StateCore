@@ -155,6 +155,8 @@ Use the built-in benchmark runner to generate reproducible metrics and a score r
 - Ingest throughput + p95 latency
 - Retrieve semantic/strict hit-rate + p95 latency
 - Digest success/consistency/latency (when `FEATURE_LLM=true`)
+- Persisted digest consistency taxonomy from state snapshots
+- Replay consistency and category-level state diffs
 - Reminder due-to-sent delay
 
 Run:

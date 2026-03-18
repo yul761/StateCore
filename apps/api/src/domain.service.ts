@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { prisma } from "@project-memory/db";
 import { DigestService, MemoryService, ProjectService, RetrieveService, ReminderService } from "@project-memory/core";
-import type { DigestState } from "@project-memory/core";
+import type { DigestConsistencyResult, DigestState } from "@project-memory/core";
 
 @Injectable()
 export class DomainService {
@@ -10,6 +10,20 @@ export class DomainService {
   public digestService: DigestService;
   public retrieveService: RetrieveService;
   public reminderService: ReminderService;
+
+  private mapDigestStateSnapshot(snapshot: {
+    digestId: string;
+    state: unknown;
+    consistency: unknown;
+    createdAt: Date;
+  }): { digestId: string; state: DigestState; consistency: DigestConsistencyResult | null; createdAt: Date } {
+    return {
+      digestId: snapshot.digestId,
+      state: snapshot.state as DigestState,
+      consistency: snapshot.consistency as DigestConsistencyResult | null,
+      createdAt: snapshot.createdAt
+    };
+  }
 
   constructor() {
     type DigestRow = {
@@ -140,17 +154,13 @@ export class DomainService {
     this.reminderService = new ReminderService(reminderRepo);
   }
 
-  async getLatestDigestState(scopeId: string): Promise<{ digestId: string; state: DigestState; createdAt: Date } | null> {
+  async getLatestDigestState(scopeId: string): Promise<{ digestId: string; state: DigestState; consistency: DigestConsistencyResult | null; createdAt: Date } | null> {
     const snapshot = await prisma.digestStateSnapshot.findFirst({
       where: { scopeId },
       orderBy: { createdAt: "desc" }
     });
     if (!snapshot) return null;
-    return {
-      digestId: snapshot.digestId,
-      state: snapshot.state as unknown as DigestState,
-      createdAt: snapshot.createdAt
-    };
+    return this.mapDigestStateSnapshot(snapshot);
   }
 
   async listDigests(scopeId: string, limit: number, cursor?: string | null, rebuildGroupId?: string | null) {
@@ -189,16 +199,12 @@ export class DomainService {
     scopeId: string,
     limit: number,
     rebuildGroupId?: string | null
-  ): Promise<Array<{ digestId: string; state: DigestState; createdAt: Date }>> {
+  ): Promise<Array<{ digestId: string; state: DigestState; consistency: DigestConsistencyResult | null; createdAt: Date }>> {
     const snapshots = await prisma.digestStateSnapshot.findMany({
       where: { scopeId, ...(rebuildGroupId ? { digest: { rebuildGroupId } } : {}) },
       orderBy: { createdAt: "desc" },
       take: limit
     });
-    return snapshots.map((snapshot) => ({
-      digestId: snapshot.digestId,
-      state: snapshot.state as unknown as DigestState,
-      createdAt: snapshot.createdAt
-    }));
+    return snapshots.map((snapshot) => this.mapDigestStateSnapshot(snapshot));
   }
 }
