@@ -99,6 +99,8 @@ Replay reports include category-level state diffs for:
 - `risks`
 - `workingContext`
 
+`evidenceRefs` may now contain either legacy string ids or structured refs from newer snapshots; replay and benchmark diffing normalize both forms before comparison.
+
 Outputs are written to `benchmark-results/`:
 - `benchmark-*.json`
 - `benchmark-*.md`

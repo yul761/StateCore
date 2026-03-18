@@ -24,7 +24,14 @@ export interface DigestState {
   };
   todos: string[];
   volatileContext?: string[];
-  evidenceRefs?: string[];
+  evidenceRefs?: DigestEvidenceRef[];
+}
+
+export interface DigestEvidenceRef {
+  id: string;
+  sourceType: "document" | "event";
+  key?: string;
+  kind?: MemoryEventKind;
 }
 
 export interface SelectedEvent {
@@ -102,6 +109,46 @@ function deriveStateFromDigest(digest?: Digest | null): DigestState | null {
     todos: digest.nextSteps ?? [],
     volatileContext: [],
     evidenceRefs: []
+  };
+}
+
+function normalizeEvidenceRef(ref: string | DigestEvidenceRef): DigestEvidenceRef {
+  if (typeof ref === "string") {
+    return {
+      id: ref,
+      sourceType: ref.startsWith("doc:") ? "document" : "event",
+      ...(ref.startsWith("doc:") ? { key: ref } : {})
+    };
+  }
+  return {
+    id: ref.id,
+    sourceType: ref.sourceType,
+    key: ref.key,
+    kind: ref.kind
+  };
+}
+
+export function normalizeDigestState(state?: DigestState | null): DigestState {
+  const base = JSON.parse(JSON.stringify(state ?? DEFAULT_DIGEST_STATE)) as DigestState & {
+    evidenceRefs?: Array<string | DigestEvidenceRef>;
+  };
+  return {
+    stableFacts: {
+      goal: base.stableFacts?.goal,
+      constraints: [...new Set(base.stableFacts?.constraints ?? [])],
+      decisions: [...new Set(base.stableFacts?.decisions ?? [])]
+    },
+    workingNotes: {
+      openQuestions: [...new Set(base.workingNotes?.openQuestions ?? [])].slice(-10),
+      risks: [...new Set(base.workingNotes?.risks ?? [])].slice(-10),
+      context: base.workingNotes?.context
+    },
+    todos: [...new Set(base.todos ?? [])],
+    volatileContext: [...new Set(base.volatileContext ?? [])].slice(-10),
+    evidenceRefs: [...new Map((base.evidenceRefs ?? []).map((ref) => {
+      const normalized = normalizeEvidenceRef(ref);
+      return [`${normalized.sourceType}:${normalized.id}:${normalized.key ?? ""}:${normalized.kind ?? ""}`, normalized];
+    })).values()].slice(-50)
   };
 }
 
@@ -304,7 +351,7 @@ export function protectedStateMerge(input: {
   deltaCandidates: DeltaCandidate[];
   documents: MemoryEvent[];
 }): DigestState {
-  const next: DigestState = JSON.parse(JSON.stringify(input.prevState ?? DEFAULT_DIGEST_STATE));
+  const next = normalizeDigestState(input.prevState ?? DEFAULT_DIGEST_STATE);
   next.stableFacts.decisions = next.stableFacts.decisions ?? [];
   next.stableFacts.constraints = next.stableFacts.constraints ?? [];
   next.todos = next.todos ?? [];
@@ -332,11 +379,19 @@ export function protectedStateMerge(input: {
   }
 
   for (const doc of input.documents) {
-    next.evidenceRefs.push(doc.key ?? doc.id);
+    next.evidenceRefs.push({
+      id: doc.id,
+      sourceType: "document",
+      key: doc.key ?? undefined
+    });
   }
 
   for (const delta of input.deltaCandidates) {
-    next.evidenceRefs.push(delta.eventId);
+    next.evidenceRefs.push({
+      id: delta.eventId,
+      sourceType: "event",
+      kind: delta.features.kind
+    });
     const text = delta.event.content.trim();
     const lowered = text.toLowerCase();
 
@@ -385,9 +440,9 @@ export function protectedStateMerge(input: {
   next.stableFacts.constraints = [...new Set(next.stableFacts.constraints ?? [])];
   next.todos = [...new Set(next.todos)];
   next.volatileContext = [...new Set(next.volatileContext ?? [])].slice(-10);
-  next.evidenceRefs = [...new Set(next.evidenceRefs ?? [])].slice(-50);
+  next.evidenceRefs = normalizeDigestState(next).evidenceRefs;
 
-  return next;
+  return next as DigestState;
 }
 
 const classifierSchema = z.array(z.object({

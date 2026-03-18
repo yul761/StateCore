@@ -44,7 +44,12 @@ interface DigestState {
   };
   todos: string[];
   volatileContext?: string[];
-  evidenceRefs?: string[];
+  evidenceRefs?: Array<{
+    id: string;
+    sourceType: "document" | "event";
+    key?: string;
+    kind?: MemoryEventKind;
+  }>;
 }
 ```
 
@@ -107,7 +112,7 @@ Examples:
 - conversational noise worth keeping briefly
 - near-term execution focus
 
-The current implementation does not yet have a formal `volatileContext` field, but the roadmap should treat it as a missing layer to add.
+The current implementation already has a `volatileContext` field, but it is still a lightweight string list rather than a richer typed record layer.
 
 ### 4. Todos
 
@@ -142,9 +147,9 @@ This document does not require that exact schema yet, but it defines the intende
 
 The current shape has three practical limitations:
 
-1. It stores strings without explicit provenance.
+1. It still stores most state entries as plain strings.
 2. It does not clearly separate temporary context from longer-lived notes.
-3. It does not encode update policy such as confidence, superseded state, or overwrite rules.
+3. It only partially encodes provenance today: `evidenceRefs` are structured, but facts, todos, and notes do not yet carry their own evidence metadata.
 
 That makes it harder to answer:
 

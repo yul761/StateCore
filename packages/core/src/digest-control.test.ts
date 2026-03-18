@@ -3,6 +3,7 @@ import {
   consistencyCheck,
   detectDeltas,
   generateDigestStage2,
+  normalizeDigestState,
   protectedStateMerge,
   selectEventsForDigest,
   type DigestState,
@@ -110,9 +111,36 @@ describe("protectedStateMerge", () => {
 
     expect(merged.volatileContext).toContain("Status update: queue is stable");
     expect(merged.volatileContext).toContain("Note: keep digest reports small");
-    expect(merged.evidenceRefs).toContain("doc:goal");
-    expect(merged.evidenceRefs).toContain("e1");
-    expect(merged.evidenceRefs).toContain("e2");
+    expect(merged.evidenceRefs).toContainEqual(expect.objectContaining({
+      id: "doc1",
+      sourceType: "document",
+      key: "doc:goal"
+    }));
+    expect(merged.evidenceRefs).toContainEqual(expect.objectContaining({
+      id: "e1",
+      sourceType: "event",
+      kind: "status"
+    }));
+    expect(merged.evidenceRefs).toContainEqual(expect.objectContaining({
+      id: "e2",
+      sourceType: "event",
+      kind: "note"
+    }));
+  });
+
+  it("normalizes legacy string evidence refs from previous snapshots", () => {
+    const normalized = normalizeDigestState({
+      stableFacts: { decisions: [] },
+      workingNotes: {},
+      todos: [],
+      volatileContext: [],
+      evidenceRefs: ["doc:goal", "e1"] as any
+    });
+
+    expect(normalized.evidenceRefs).toEqual([
+      { id: "doc:goal", sourceType: "document", key: "doc:goal" },
+      { id: "e1", sourceType: "event" }
+    ]);
   });
 });
 

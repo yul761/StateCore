@@ -211,6 +211,11 @@ export const DigestState = z.object({
   }),
   todos: z.array(z.string()),
   volatileContext: z.array(z.string()).optional(),
-  evidenceRefs: z.array(z.string()).optional()
+  evidenceRefs: z.array(z.object({
+    id: z.string(),
+    sourceType: z.enum(["document", "event"]),
+    key: z.string().optional(),
+    kind: MemoryEventKind.optional()
+  })).optional()
 });
 export type DigestState = z.infer<typeof DigestState>;

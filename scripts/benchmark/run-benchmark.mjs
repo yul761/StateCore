@@ -416,7 +416,16 @@ function canonicalize(value) {
 
 function toStringList(value) {
   if (!Array.isArray(value)) return [];
-  return value.filter((item) => typeof item === "string");
+  return value
+    .map((item) => {
+      if (typeof item === "string") return item.trim();
+      if (item && typeof item === "object") {
+        const typed = item;
+        return [typed.sourceType, typed.id, typed.key, typed.kind].filter(Boolean).join(":").trim();
+      }
+      return "";
+    })
+    .filter(Boolean);
 }
 
 function diffStringLists(before, after) {
