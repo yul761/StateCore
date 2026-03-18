@@ -16,6 +16,7 @@ Short descriptive title of the experiment.
 - Scores (overall + long-term memory reliability + components)
 - Key metrics (p95 latencies, hit rates, consistency pass rate, replay match)
 - Runtime metrics (turn success, evidence coverage, digest trigger rate, write-tier distribution)
+- Trend window deltas when multiple benchmark artifacts are available
 - Taxonomy summaries (digest failures, digest consistency, runtime decision notes)
 - Observed failures or anomalies
 
@@ -30,4 +31,4 @@ Short descriptive title of the experiment.
 - JSON report file
 - Fixture file used
 
-The repository also includes `scripts/benchmark/generate-research-report.mjs`, which generates a draft report in this general structure from recent benchmark artifacts.
+The repository also includes `scripts/benchmark/generate-research-report.mjs`, which generates a draft report in this general structure from recent benchmark, ablation, and trend artifacts.

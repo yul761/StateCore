@@ -62,9 +62,12 @@ if (!existsSync(benchmarkPath)) {
 
 const ablationName = process.env.RESEARCH_ABLATION_JSON || latestFile("ablation-", ".json");
 const ablationPath = ablationName ? (path.isAbsolute(ablationName) ? ablationName : path.join(outDir, ablationName)) : null;
+const trendName = process.env.RESEARCH_TREND_JSON || latestFile("trend-", ".json");
+const trendPath = trendName ? (path.isAbsolute(trendName) ? trendName : path.join(outDir, trendName)) : null;
 
 const benchmark = readJsonFile(benchmarkPath);
 const ablation = ablationPath && existsSync(ablationPath) ? readJsonFile(ablationPath) : null;
+const trend = trendPath && existsSync(trendPath) ? readJsonFile(trendPath) : null;
 
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const reportPath = path.join(outDir, `research-report-${stamp}.md`);
@@ -89,6 +92,7 @@ const lines = [
   `- Runtime policy profile: \`${benchmark.metrics?.runtime?.policyProfile || benchmark.config?.runtimePolicyProfile || "default"}\``,
   `- Runtime overrides: ${formatOverrideSummary(benchmark.metrics?.runtime?.overrides || {})}`,
   ...(ablation ? [`- Ablation JSON: \`${path.basename(ablationPath)}\``] : []),
+  ...(trend ? [`- Trend JSON: \`${path.basename(trendPath)}\``] : []),
   "",
   "## Results",
   `- Scores: overall ${benchmark.scores?.overall ?? 0}, reliability ${benchmark.scores?.reliability ?? 0}, ingest ${benchmark.scores?.ingest ?? 0}, retrieve ${benchmark.scores?.retrieve ?? 0}, digest ${benchmark.scores?.digest ?? 0}, reminder ${benchmark.scores?.reminder ?? 0}`,
@@ -116,15 +120,30 @@ const lines = [
         ""
       ]
     : []),
+  ...(trend
+    ? [
+        "## Trend Window",
+        `- Latest benchmark in window: ${trend.latest?.file || "unknown"}`,
+        `- Window size: ${trend.series?.length || 0} run(s)`,
+        `- Overall delta: ${formatDelta(trend.deltaSummary?.overall ?? 0)}`,
+        `- Reliability delta: ${formatDelta(trend.deltaSummary?.reliability ?? 0)}`,
+        `- Reliability breakdown delta: consistency ${formatDelta(trend.deltaSummary?.consistency ?? 0)}, retention ${formatDelta(trend.deltaSummary?.retention ?? 0)}, contradiction control ${formatDelta(trend.deltaSummary?.contradictionControl ?? 0)}, replay ${formatDelta(trend.deltaSummary?.replay ?? 0)}, runtime grounding ${formatDelta(trend.deltaSummary?.runtimeGrounding ?? 0)}`,
+        `- Digest consistency delta: ${formatDelta(trend.deltaSummary?.digestConsistency ?? 0)}`,
+        `- Runtime evidence coverage delta: ${formatDelta(trend.deltaSummary?.runtimeEvidenceCoverage ?? 0)}`,
+        ""
+      ]
+    : []),
   "## Discussion",
   "- Interpret whether reliability moved in the same direction as overall score.",
   "- Note whether runtime evidence coverage improved or regressed.",
   "- Compare replay stability against digest contradiction and omission signals.",
   ...(ablation ? ["- Explain whether runtime profile differences were larger or smaller than digest-control differences."] : []),
+  ...(trend ? ["- Compare the latest single-run result against the surrounding benchmark window before drawing conclusions."] : []),
   "",
   "## Reproducibility Artifacts",
   `- Benchmark JSON: \`${path.basename(benchmarkPath)}\``,
   ...(ablation ? [`- Ablation JSON: \`${path.basename(ablationPath)}\``] : []),
+  ...(trend ? [`- Trend JSON: \`${path.basename(trendPath)}\``] : []),
   `- Fixture: \`${benchmark.config?.fixture || "(none)"}\``
 ];
 
