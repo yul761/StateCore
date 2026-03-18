@@ -68,6 +68,7 @@ Outputs are written to `benchmark-results/`:
 - success rate
 - average end-to-end latency
 - consistency pass rate (summary/changes/nextSteps constraints)
+- failure taxonomy histogram for digest benchmark runs
 
 4. Reminder
 - due-to-sent latency

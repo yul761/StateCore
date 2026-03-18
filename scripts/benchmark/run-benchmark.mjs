@@ -220,6 +220,38 @@ function normalizeText(text) {
   return text.toLowerCase().replace(/[^a-z0-9\s]/g, " ");
 }
 
+function incrementCounter(map, key) {
+  map[key] = (map[key] || 0) + 1;
+}
+
+function classifyDigestIssues(digest) {
+  const issues = [];
+  const changes = String(digest.changes || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const nextSteps = Array.isArray(digest.nextSteps) ? digest.nextSteps : [];
+  const summaryWords = String(digest.summary || "").split(/\s+/).filter(Boolean).length;
+
+  if (summaryWords > 120) issues.push("summary_too_long");
+  if (changes.length > 3) issues.push("too_many_changes");
+  if (nextSteps.length < 1 || nextSteps.length > 3) issues.push("invalid_next_steps_count");
+  if (changes.length > 0) {
+    const normalizedChanges = changes.map((line) => normalizeText(line.replace(/^-\s*/, ""))).filter(Boolean);
+    if (new Set(normalizedChanges).size !== normalizedChanges.length) {
+      issues.push("duplicate_changes");
+    }
+  }
+  if (nextSteps.some((step) => !isActionable(step))) {
+    issues.push("non_actionable_next_step");
+  }
+
+  return {
+    issues,
+    valid: issues.length === 0
+  };
+}
+
 function containsAny(text, terms) {
   const normalized = normalizeText(text);
   return terms.some((term) => normalized.includes(normalizeText(term).trim()));
@@ -347,37 +379,43 @@ async function run() {
     runs: 0,
     success: 0,
     consistencyPassRate: 0,
-    avgLatencyMs: 0
+    avgLatencyMs: 0,
+    failureTaxonomy: {}
   };
 
   if (cfg.featureLlm) {
     const durations = [];
     const consistencyPass = [];
+    const failureTaxonomy = {};
     for (let i = 0; i < cfg.digestRuns; i += 1) {
       const before = await apiFetch("GET", `/memory/digests?scopeId=${scopeId}&limit=5`);
       const beforeCount = (before.json.items || []).length;
       const enqueue = await apiFetch("POST", "/memory/digest", { scopeId });
-      if (!enqueue.ok) continue;
+      if (!enqueue.ok) {
+        incrementCounter(failureTaxonomy, `enqueue_failed_${enqueue.status}`);
+        continue;
+      }
       const t0 = performance.now();
       const waited = await waitForNewDigest(scopeId, beforeCount);
       durations.push(performance.now() - t0);
-      if (!waited.ok) continue;
+      if (!waited.ok) {
+        incrementCounter(failureTaxonomy, waited.error || "digest_wait_failed");
+        continue;
+      }
       const digest = waited.digest;
-      const changes = String(digest.changes || "")
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
-      const nextSteps = Array.isArray(digest.nextSteps) ? digest.nextSteps : [];
-      const summaryWords = String(digest.summary || "").split(/\s+/).filter(Boolean).length;
-      const valid = changes.length <= 3 && nextSteps.length >= 1 && nextSteps.length <= 3 && summaryWords <= 120 && nextSteps.every(isActionable);
-      consistencyPass.push(valid);
+      const classified = classifyDigestIssues(digest);
+      consistencyPass.push(classified.valid);
+      if (!classified.valid) {
+        for (const issue of classified.issues) incrementCounter(failureTaxonomy, issue);
+      }
     }
     digestMetrics = {
       enabled: true,
       runs: cfg.digestRuns,
       success: durations.length,
       consistencyPassRate: Number((consistencyPass.filter(Boolean).length / Math.max(1, consistencyPass.length)).toFixed(3)),
-      avgLatencyMs: Number((durations.reduce((a, b) => a + b, 0) / Math.max(1, durations.length)).toFixed(2))
+      avgLatencyMs: Number((durations.reduce((a, b) => a + b, 0) / Math.max(1, durations.length)).toFixed(2)),
+      failureTaxonomy
     };
   } else {
     report.notes.push("FEATURE_LLM=false; digest/answer benchmarking skipped.");
@@ -456,6 +494,15 @@ async function run() {
     `- Retrieve semantic hit rate: ${report.metrics.retrieve.hitRate}, strict hit rate: ${report.metrics.retrieve.strictHitRate} (p95 ${report.metrics.retrieve.p95Ms} ms)`,
     `- Digest success: ${report.metrics.digest.success}/${report.metrics.digest.runs}, consistency pass ${report.metrics.digest.consistencyPassRate}, avg latency ${report.metrics.digest.avgLatencyMs} ms`,
     `- Reminder sent: ${report.metrics.reminder.success === 1 ? "yes" : "no"}, delay ${report.metrics.reminder.delayMs} ms`,
+    "",
+    "## Digest Failure Taxonomy",
+    ...(cfg.featureLlm
+      ? Object.keys(report.metrics.digest.failureTaxonomy || {}).length
+        ? Object.entries(report.metrics.digest.failureTaxonomy)
+          .sort((a, b) => b[1] - a[1])
+          .map(([name, count]) => `- ${name}: ${count}`)
+        : ["- none"]
+      : ["- skipped"]),
     "",
     "## Notes",
     ...(report.notes.length ? report.notes.map((note) => `- ${note}`) : ["- none"]),
