@@ -145,6 +145,7 @@ flowchart LR
 ## How It Works (Technical)
 - API validates input with shared Zod contracts and scopes all requests by user identity.
 - Core engine (`packages/core`) performs selection/delta/state/consistency logic.
+- Core also includes an initial assistant runtime session abstraction in `packages/core/src/assistant-runtime.ts`.
 - Worker executes digest and rebuild jobs asynchronously via BullMQ.
 - Digests are stored as first-class records, with optional `rebuildGroupId` for backfills.
 - Adapters call API only (no direct database coupling).

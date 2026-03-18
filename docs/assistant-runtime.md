@@ -207,7 +207,16 @@ interface DigestPolicy {
 }
 ```
 
-These are not yet repository APIs. They are the intended product boundary.
+These are now beginning to exist in the repository as a minimal core runtime abstraction in `packages/core/src/assistant-runtime.ts`.
+
+The current implementation is intentionally small:
+
+- `AssistantSession`
+- `DefaultMemoryWritePolicy`
+- `DefaultRecallPolicy`
+- `ThresholdDigestPolicy`
+
+It is a starting boundary, not a finished runtime surface.
 
 ## Mapping to the Current Repository
 

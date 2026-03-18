@@ -393,3 +393,4 @@ export async function generateAnswer(input: {
 }
 
 export * from "./digest-control";
+export * from "./assistant-runtime";
