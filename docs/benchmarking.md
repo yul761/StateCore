@@ -53,6 +53,17 @@ Replay consistency check:
 REPLAY_FIXTURE=benchmark-fixtures/basic.json node scripts/benchmark/run-replay-check.mjs
 ```
 
+Replay reports include category-level state diffs for:
+- `goal`
+- `constraints`
+- `decisions`
+- `todos`
+- `volatileContext`
+- `evidenceRefs`
+- `openQuestions`
+- `risks`
+- `workingContext`
+
 Outputs are written to `benchmark-results/`:
 - `benchmark-*.json`
 - `benchmark-*.md`
@@ -79,6 +90,11 @@ Outputs are written to `benchmark-results/`:
 4. Reminder
 - due-to-sent latency
 - delivery success
+
+5. Replay
+- rebuild snapshot count
+- full-state equivalence check
+- category-level mismatch report for protected state and evidence context
 
 ## Scoring Model (0-100)
 
