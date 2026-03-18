@@ -162,6 +162,7 @@ Use the built-in benchmark runner to generate reproducible metrics and a score r
 - Persisted digest consistency taxonomy from state snapshots
 - Replay consistency and category-level state diffs
 - Assistant runtime turn success, evidence coverage, and write-tier distribution
+- Assistant runtime policy profile and decision-note taxonomy
 - Reminder due-to-sent delay
 
 Run:

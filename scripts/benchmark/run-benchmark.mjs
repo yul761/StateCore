@@ -615,7 +615,9 @@ async function run() {
     avgLatencyMs: 0,
     evidenceCoverageRate: 0,
     digestTriggerRate: 0,
-    writeTierCounts: {}
+    writeTierCounts: {},
+    noteTaxonomy: {},
+    policyProfile: cfg.runtimePolicyProfile
   };
 
   if (cfg.featureLlm) {
@@ -764,13 +766,18 @@ async function run() {
         latencyMs: res.latencyMs,
         evidenceCoverage,
         digestTriggered: Boolean(res.json?.digestTriggered),
-        writeTier: typeof res.json?.writeTier === "string" ? res.json.writeTier : "unknown"
+        writeTier: typeof res.json?.writeTier === "string" ? res.json.writeTier : "unknown",
+        notes: Array.isArray(res.json?.notes) ? res.json.notes : []
       });
     }
     const runtimeLatencies = runtimeResults.map((result) => result.latencyMs);
     const writeTierCounts = {};
+    const noteTaxonomy = {};
     for (const result of runtimeResults) {
       incrementCounter(writeTierCounts, result.writeTier);
+      for (const note of Array.isArray(result.notes) ? result.notes : []) {
+        incrementCounter(noteTaxonomy, note);
+      }
     }
     runtimeMetrics = {
       enabled: true,
@@ -779,7 +786,9 @@ async function run() {
       avgLatencyMs: Number((runtimeLatencies.reduce((sum, value) => sum + value, 0) / Math.max(1, runtimeLatencies.length)).toFixed(2)),
       evidenceCoverageRate: Number((runtimeResults.filter((result) => result.evidenceCoverage).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       digestTriggerRate: Number((runtimeResults.filter((result) => result.digestTriggered).length / Math.max(1, runtimeResults.length)).toFixed(3)),
-      writeTierCounts
+      writeTierCounts,
+      noteTaxonomy,
+      policyProfile: cfg.runtimePolicyProfile
     };
   }
   report.metrics.runtime = runtimeMetrics;
@@ -898,10 +907,12 @@ async function run() {
     ...(report.metrics.runtime.enabled
       ? [
           `- Success: ${report.metrics.runtime.success}/${report.metrics.runtime.runs}`,
+          `- Policy profile: ${report.metrics.runtime.policyProfile}`,
           `- Avg latency: ${report.metrics.runtime.avgLatencyMs} ms`,
           `- Evidence coverage rate: ${report.metrics.runtime.evidenceCoverageRate}`,
           `- Digest trigger rate: ${report.metrics.runtime.digestTriggerRate}`,
-          `- Write tiers: ${Object.keys(report.metrics.runtime.writeTierCounts || {}).length ? Object.entries(report.metrics.runtime.writeTierCounts).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`
+          `- Write tiers: ${Object.keys(report.metrics.runtime.writeTierCounts || {}).length ? Object.entries(report.metrics.runtime.writeTierCounts).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`,
+          `- Note taxonomy: ${Object.keys(report.metrics.runtime.noteTaxonomy || {}).length ? Object.entries(report.metrics.runtime.noteTaxonomy).sort((a, b) => b[1] - a[1]).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`
         ]
       : ["- skipped"]),
     "",

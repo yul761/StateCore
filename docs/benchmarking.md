@@ -108,6 +108,8 @@ Outputs are written to `benchmark-results/`:
 - evidence coverage rate
 - digest trigger rate
 - observed write-tier distribution
+- policy profile used by the run
+- runtime decision-note taxonomy
 
 ## Scoring Model (0-100)
 
