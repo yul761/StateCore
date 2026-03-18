@@ -259,7 +259,7 @@ function scoreReminder(successRate, avgDelayMs) {
   return clamp(successScore + delayScore);
 }
 
-function scoreLongTermMemoryReliability(digestMetrics, replayMetrics) {
+function scoreLongTermMemoryReliability(digestMetrics, replayMetrics, runtimeMetrics) {
   if (!digestMetrics?.enabled) return 0;
 
   const consistencyScore = clamp((digestMetrics.consistencyPassRate || 0) * 30);
@@ -295,7 +295,14 @@ function scoreLongTermMemoryReliability(digestMetrics, replayMetrics) {
     }
   }
 
-  return clamp(consistencyScore + retentionScore + contradictionScore + replayScore);
+  let runtimeScore = 0;
+  if (runtimeMetrics?.enabled) {
+    runtimeScore = clamp(((runtimeMetrics.evidenceCoverageRate || 0) * 7.5) + ((1 - Math.max(0, 1 - (runtimeMetrics.success / Math.max(1, runtimeMetrics.runs)))) * 7.5));
+  } else {
+    runtimeScore = 15;
+  }
+
+  return clamp(consistencyScore + retentionScore + contradictionScore + replayScore + runtimeScore - 15);
 }
 
 function computeOverallScore(parts, featureLlm) {
@@ -823,7 +830,7 @@ async function run() {
     ingest: Number(ingestScore.toFixed(2)),
     retrieve: Number(retrieveScore.toFixed(2)),
     digest: Number(digestScore.toFixed(2)),
-    reliability: Number(scoreLongTermMemoryReliability(report.metrics.digest, report.metrics.replay).toFixed(2)),
+    reliability: Number(scoreLongTermMemoryReliability(report.metrics.digest, report.metrics.replay, report.metrics.runtime).toFixed(2)),
     reminder: Number(reminderScore.toFixed(2)),
     overall: Number(computeOverallScore({ ingest: ingestScore, retrieve: retrieveScore, digest: digestScore, reminder: reminderScore }, cfg.featureLlm).toFixed(2))
   };

@@ -126,6 +126,7 @@ This memory-first score is distinct from the overall performance score and combi
 - gold-backed retention
 - contradiction penalties
 - replay consistency
+- runtime evidence coverage and runtime turn success
 
 ## Profiles And Tuning
 
