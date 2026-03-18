@@ -187,6 +187,18 @@ describe("AssistantSession", () => {
     expect(result.evidence.stateRefs).toEqual(["digest-1"]);
     expect(result.evidence.digestSummary).toBe("goal: keep api stable");
     expect(result.evidence.eventSnippets?.[0]?.snippet).toContain("prioritize digest consistency");
+    expect(result.evidence.stateDetails).toEqual({
+      digestId: "digest-1",
+      goal: "keep api stable",
+      constraints: ["self-hosted first"],
+      todos: ["Document replay checks"],
+      risks: [],
+      provenanceFields: ["goal", "todos"],
+      recentChanges: [
+        { field: "goal", action: "set", value: "keep api stable" },
+        { field: "todos", action: "add", value: "Document replay checks" }
+      ]
+    });
     expect(result.evidence.stateSummary).toBe(
       "digest:digest-1; goal:keep api stable; constraints:self-hosted first; todos:Document replay checks; provenance:goal|todos; recent:goal:set:keep api stable | todos:add:Document replay checks"
     );

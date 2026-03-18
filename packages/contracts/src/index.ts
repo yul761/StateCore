@@ -153,7 +153,20 @@ export const RuntimeTurnOutput = z.object({
       createdAt: z.string(),
       snippet: z.string()
     })).optional(),
-    stateSummary: z.string().nullable().optional()
+    stateSummary: z.string().nullable().optional(),
+    stateDetails: z.object({
+      digestId: z.string().nullable(),
+      goal: z.string().optional(),
+      constraints: z.array(z.string()).optional(),
+      todos: z.array(z.string()).optional(),
+      risks: z.array(z.string()).optional(),
+      provenanceFields: z.array(z.string()).optional(),
+      recentChanges: z.array(z.object({
+        field: z.enum(["goal", "constraints", "decisions", "todos", "volatileContext", "openQuestions", "risks"]).optional(),
+        action: z.enum(["set", "add", "remove", "reaffirm"]).optional(),
+        value: z.string().optional()
+      })).optional()
+    }).nullable().optional()
   })
 });
 

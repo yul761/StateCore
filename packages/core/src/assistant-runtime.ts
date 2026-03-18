@@ -97,10 +97,23 @@ export interface GroundingEvidence {
   digestSummary?: string | null;
   eventSnippets?: Array<{
     id: string;
-    createdAt: string;
-    snippet: string;
+      createdAt: string;
+      snippet: string;
   }>;
   stateSummary?: string | null;
+  stateDetails?: {
+    digestId: string | null;
+    goal?: string;
+    constraints?: string[];
+    todos?: string[];
+    risks?: string[];
+    provenanceFields?: string[];
+    recentChanges?: Array<{
+      field?: "goal" | "constraints" | "decisions" | "todos" | "volatileContext" | "openQuestions" | "risks";
+      action?: "set" | "add" | "remove" | "reaffirm";
+      value?: string;
+    }>;
+  } | null;
 }
 
 export interface GroundedAnswer {
@@ -429,6 +442,7 @@ export class AssistantSession {
   }
 
   private buildEvidence(recall: ResolvedRecall): GroundingEvidence {
+    const stateDetails = this.buildStateDetails(recall.stateSnapshot);
     const stateSummary = this.summarizeStateSnapshot(recall.stateSnapshot);
     return {
       digestIds: recall.digest ? [recall.digest.id] : [],
@@ -440,7 +454,29 @@ export class AssistantSession {
         createdAt: event.createdAt.toISOString(),
         snippet: event.content.length > 160 ? `${event.content.slice(0, 157)}...` : event.content
       })),
-      stateSummary
+      stateSummary,
+      stateDetails
+    };
+  }
+
+  private buildStateDetails(snapshot?: RuntimeStateSnapshot | null) {
+    if (!snapshot?.digestId) return null;
+    const provenance = snapshot.state?.provenance;
+    const provenanceFields = [
+      Array.isArray(provenance?.goal) && provenance.goal.length ? "goal" : null,
+      Array.isArray(provenance?.constraints) && provenance.constraints.length ? "constraints" : null,
+      Array.isArray(provenance?.decisions) && provenance.decisions.length ? "decisions" : null,
+      Array.isArray(provenance?.todos) && provenance.todos.length ? "todos" : null
+    ].filter((value): value is string => Boolean(value));
+
+    return {
+      digestId: snapshot.digestId,
+      goal: snapshot.state?.stableFacts?.goal,
+      constraints: snapshot.state?.stableFacts?.constraints ?? [],
+      todos: snapshot.state?.todos ?? [],
+      risks: snapshot.state?.workingNotes?.risks ?? [],
+      provenanceFields,
+      recentChanges: snapshot.state?.recentChanges ?? []
     };
   }
 

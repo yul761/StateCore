@@ -162,7 +162,7 @@ interface GroundedAnswer {
 ```
 
 The exact schema can evolve, but the runtime should preserve the idea that answers can be traced to memory sources.
-The current implementation already goes slightly beyond ids by returning lightweight `digestSummary`, `eventSnippets`, and a `stateSummary` derived from the latest digest snapshot when available.
+The current implementation already goes slightly beyond ids by returning lightweight `digestSummary`, `eventSnippets`, a `stateSummary`, and structured `stateDetails` derived from the latest digest snapshot when available.
 
 ## Recommended Runtime Flow
 

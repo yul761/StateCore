@@ -1086,10 +1086,12 @@ async function run() {
         digestMode: item.digestMode
       });
       const evidence = res.json?.evidence ?? {};
+      const stateDetails = evidence.stateDetails ?? null;
       const evidenceCoverage = Boolean(
         (typeof evidence.digestSummary === "string" && evidence.digestSummary.length > 0) ||
         (Array.isArray(evidence.eventSnippets) && evidence.eventSnippets.length > 0) ||
-        (typeof evidence.stateSummary === "string" && evidence.stateSummary.length > 0)
+        (typeof evidence.stateSummary === "string" && evidence.stateSummary.length > 0) ||
+        Boolean(stateDetails)
       );
       runtimeResults.push({
         ok: res.ok && typeof res.json?.answer === "string",
@@ -1098,8 +1100,8 @@ async function run() {
         hasDigestSummary: typeof evidence.digestSummary === "string" && evidence.digestSummary.length > 0,
         hasEventSnippets: Array.isArray(evidence.eventSnippets) && evidence.eventSnippets.length > 0,
         hasStateSummary: typeof evidence.stateSummary === "string" && evidence.stateSummary.length > 0,
-        hasStateProvenance: typeof evidence.stateSummary === "string" && evidence.stateSummary.includes("provenance:"),
-        hasRecentStateChanges: typeof evidence.stateSummary === "string" && evidence.stateSummary.includes("recent:"),
+        hasStateProvenance: Array.isArray(stateDetails?.provenanceFields) && stateDetails.provenanceFields.length > 0,
+        hasRecentStateChanges: Array.isArray(stateDetails?.recentChanges) && stateDetails.recentChanges.length > 0,
         digestTriggered: Boolean(res.json?.digestTriggered),
         writeTier: typeof res.json?.writeTier === "string" ? res.json.writeTier : "unknown",
         notes: Array.isArray(res.json?.notes) ? res.json.notes : []
