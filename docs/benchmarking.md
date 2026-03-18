@@ -31,6 +31,7 @@ Fixture files may include explicit `gold` labels for:
 - `todos`
 
 Drift benchmarks will prefer these labels when present and fall back to parsing event text otherwise.
+Drift reports include per-category omission and contradiction taxonomy summaries when gold labels are available.
 
 Run ablations (controlled variable sweeps):
 ```bash

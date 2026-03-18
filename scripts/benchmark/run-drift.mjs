@@ -145,6 +145,11 @@ function contradictionRate(text, contradictions) {
   return Number((hits / contradictions.length).toFixed(3));
 }
 
+function countMatches(text, facts) {
+  const normalized = normalizeText(text);
+  return facts.filter((item) => normalized.includes(normalizeText(item))).length;
+}
+
 function linearSlope(values) {
   const n = values.length;
   if (!n) return 0;
@@ -204,70 +209,83 @@ async function run() {
   const mdPath = path.join(outDir, `drift-${stamp}.md`);
 
   function writeReport(finalize = false) {
+    const successful = report.metrics.filter((m) => m.ok);
+    const taxonomy = {
+      goal: {
+        omissionRuns: successful.filter((m) => (m.goalDriftRate ?? 0) > 0).length,
+        contradictionRuns: successful.filter((m) => (m.goalContradictionRate ?? 0) > 0).length
+      },
+      constraint: {
+        omissionRuns: successful.filter((m) => (m.constraintDriftRate ?? 0) > 0).length,
+        contradictionRuns: successful.filter((m) => (m.constraintContradictionRate ?? 0) > 0).length
+      },
+      decision: {
+        omissionRuns: successful.filter((m) => (m.decisionDriftRate ?? 0) > 0).length,
+        contradictionRuns: successful.filter((m) => (m.decisionContradictionRate ?? 0) > 0).length
+      },
+      todo: {
+        omissionRuns: successful.filter((m) => (m.todoDriftRate ?? 0) > 0).length,
+        contradictionRuns: successful.filter((m) => (m.todoContradictionRate ?? 0) > 0).length
+      }
+    };
+
     report.summary = {
       runs: report.metrics.length,
-      success: report.metrics.filter((m) => m.ok).length,
+      success: successful.length,
       avgRecall: Number((recalls.reduce((a, b) => a + b, 0) / Math.max(1, recalls.length)).toFixed(3)),
       goalDriftRate: Number(
         (
-          report.metrics
-            .filter((m) => m.ok)
-            .reduce((sum, m) => sum + (m.goalDriftRate ?? 0), 0) / Math.max(1, report.metrics.filter((m) => m.ok).length)
+          successful
+            .reduce((sum, m) => sum + (m.goalDriftRate ?? 0), 0) / Math.max(1, successful.length)
         ).toFixed(3)
       ),
       constraintDriftRate: Number(
         (
-          report.metrics
-            .filter((m) => m.ok)
-            .reduce((sum, m) => sum + (m.constraintDriftRate ?? 0), 0) / Math.max(1, report.metrics.filter((m) => m.ok).length)
+          successful
+            .reduce((sum, m) => sum + (m.constraintDriftRate ?? 0), 0) / Math.max(1, successful.length)
         ).toFixed(3)
       ),
       decisionDriftRate: Number(
         (
-          report.metrics
-            .filter((m) => m.ok)
-            .reduce((sum, m) => sum + (m.decisionDriftRate ?? 0), 0) / Math.max(1, report.metrics.filter((m) => m.ok).length)
+          successful
+            .reduce((sum, m) => sum + (m.decisionDriftRate ?? 0), 0) / Math.max(1, successful.length)
         ).toFixed(3)
       ),
       todoDriftRate: Number(
         (
-          report.metrics
-            .filter((m) => m.ok)
-            .reduce((sum, m) => sum + (m.todoDriftRate ?? 0), 0) / Math.max(1, report.metrics.filter((m) => m.ok).length)
+          successful
+            .reduce((sum, m) => sum + (m.todoDriftRate ?? 0), 0) / Math.max(1, successful.length)
         ).toFixed(3)
       ),
       goalContradictionRate: Number(
         (
-          report.metrics
-            .filter((m) => m.ok)
-            .reduce((sum, m) => sum + (m.goalContradictionRate ?? 0), 0) / Math.max(1, report.metrics.filter((m) => m.ok).length)
+          successful
+            .reduce((sum, m) => sum + (m.goalContradictionRate ?? 0), 0) / Math.max(1, successful.length)
         ).toFixed(3)
       ),
       constraintContradictionRate: Number(
         (
-          report.metrics
-            .filter((m) => m.ok)
-            .reduce((sum, m) => sum + (m.constraintContradictionRate ?? 0), 0) / Math.max(1, report.metrics.filter((m) => m.ok).length)
+          successful
+            .reduce((sum, m) => sum + (m.constraintContradictionRate ?? 0), 0) / Math.max(1, successful.length)
         ).toFixed(3)
       ),
       decisionContradictionRate: Number(
         (
-          report.metrics
-            .filter((m) => m.ok)
-            .reduce((sum, m) => sum + (m.decisionContradictionRate ?? 0), 0) / Math.max(1, report.metrics.filter((m) => m.ok).length)
+          successful
+            .reduce((sum, m) => sum + (m.decisionContradictionRate ?? 0), 0) / Math.max(1, successful.length)
         ).toFixed(3)
       ),
       todoContradictionRate: Number(
         (
-          report.metrics
-            .filter((m) => m.ok)
-            .reduce((sum, m) => sum + (m.todoContradictionRate ?? 0), 0) / Math.max(1, report.metrics.filter((m) => m.ok).length)
+          successful
+            .reduce((sum, m) => sum + (m.todoContradictionRate ?? 0), 0) / Math.max(1, successful.length)
         ).toFixed(3)
       ),
       recallSlope: Number(linearSlope(recalls).toFixed(6)),
       repeatedChangeRate: Number(
         (report.metrics.filter((m) => m.ok && m.repeatedChanges).length / Math.max(1, report.metrics.length)).toFixed(3)
       ),
+      taxonomy,
       status: finalize ? "complete" : "in_progress"
     };
 
@@ -296,6 +314,17 @@ async function run() {
       `- Todo contradiction rate: ${report.summary.todoContradictionRate}`,
       `- Recall slope: ${report.summary.recallSlope}`,
       `- Repeated change rate: ${report.summary.repeatedChangeRate}`,
+      "",
+      "## Taxonomy",
+      "",
+      `- Goal omission runs: ${report.summary.taxonomy.goal.omissionRuns}`,
+      `- Goal contradiction runs: ${report.summary.taxonomy.goal.contradictionRuns}`,
+      `- Constraint omission runs: ${report.summary.taxonomy.constraint.omissionRuns}`,
+      `- Constraint contradiction runs: ${report.summary.taxonomy.constraint.contradictionRuns}`,
+      `- Decision omission runs: ${report.summary.taxonomy.decision.omissionRuns}`,
+      `- Decision contradiction runs: ${report.summary.taxonomy.decision.contradictionRuns}`,
+      `- Todo omission runs: ${report.summary.taxonomy.todo.omissionRuns}`,
+      `- Todo contradiction runs: ${report.summary.taxonomy.todo.contradictionRuns}`,
       "",
       "## Notes",
       `- Gold facts source: ${fixture.gold ? "fixture.gold labels" : "parsed from fixture events"}.`,
@@ -356,6 +385,10 @@ async function run() {
       constraintContradictionRate,
       decisionContradictionRate,
       todoContradictionRate,
+      goalMatches: countMatches(combined, gold.goal),
+      constraintMatches: countMatches(combined, gold.constraints),
+      decisionMatches: countMatches(combined, gold.decisions),
+      todoMatches: countMatches(combined, gold.todos),
       avgRecall,
       repeatedChanges
     });
