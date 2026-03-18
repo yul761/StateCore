@@ -534,6 +534,13 @@ function stripTodoRemovalPrefix(text: string) {
     .trim();
 }
 
+function stripWorkingNoteResolutionPrefix(text: string) {
+  return text
+    .replace(/^\s*(resolved|answer(?:ed)?|clarified|decided|decision|fixed|mitigated|unblocked|cleared)\s*[:\-]?\s*/i, "")
+    .replace(/\b(is now|now)\s+(resolved|fixed|mitigated|unblocked|cleared)\b/gi, "")
+    .trim();
+}
+
 function upsertValueProvenance(
   entries: DigestStateValueProvenance[] | undefined,
   value: string,
@@ -568,6 +575,29 @@ function removeValueProvenance(
 
 function pushRecentChange(next: DigestState, change: DigestStateChange) {
   next.recentChanges = [...(next.recentChanges ?? []), change].slice(-25);
+}
+
+function removeWorkingNoteValue(input: {
+  values: string[] | undefined;
+  provenance: DigestStateValueProvenance[] | undefined;
+  field: "openQuestions" | "risks";
+  next: DigestState;
+  evidence: DigestEvidenceRef;
+  candidate: string;
+  threshold?: number;
+}) {
+  const matched = findBestSemanticMatch(input.values ?? [], input.candidate, input.threshold ?? 0.45);
+  if (!matched) {
+    return {
+      values: input.values ?? [],
+      provenance: input.provenance
+    };
+  }
+  pushRecentChange(input.next, { field: input.field, action: "remove", value: matched, evidence: input.evidence });
+  return {
+    values: (input.values ?? []).filter((item) => item !== matched),
+    provenance: removeValueProvenance(input.provenance, matched)
+  };
 }
 
 function mergeGoalUpdate(next: DigestState, goal: string, evidence: DigestEvidenceRef) {
@@ -772,6 +802,18 @@ export function protectedStateMerge(input: {
       if (decisionGoal) {
         mergeGoalUpdate(next, decisionGoal, evidence);
       }
+
+      const resolvedQuestion = removeWorkingNoteValue({
+        values: next.workingNotes.openQuestions,
+        provenance: next.provenance.openQuestions,
+        field: "openQuestions",
+        next,
+        evidence,
+        candidate: stripWorkingNoteResolutionPrefix(text) || text,
+        threshold: 0.45
+      });
+      next.workingNotes.openQuestions = resolvedQuestion.values.slice(-10);
+      next.provenance.openQuestions = resolvedQuestion.provenance;
     }
 
     if (delta.features.kind === "constraint" && delta.features.importanceScore >= 0.75) {
@@ -830,6 +872,24 @@ export function protectedStateMerge(input: {
         next.provenance.volatileContext = upsertValueProvenance(next.provenance.volatileContext, existing, evidence);
         pushRecentChange(next, { field: "volatileContext", action: "reaffirm", value: existing, evidence });
       }
+    }
+
+    if (
+      (delta.features.kind === "decision" || delta.features.kind === "status" || delta.features.kind === "note") &&
+      /\b(resolved|fixed|mitigated|unblocked|cleared)\b/.test(lowered)
+    ) {
+      const resolutionCandidate = stripWorkingNoteResolutionPrefix(text) || text;
+      const resolvedRisk = removeWorkingNoteValue({
+        values: next.workingNotes.risks,
+        provenance: next.provenance.risks,
+        field: "risks",
+        next,
+        evidence,
+        candidate: resolutionCandidate,
+        threshold: 0.45
+      });
+      next.workingNotes.risks = resolvedRisk.values.slice(-10);
+      next.provenance.risks = resolvedRisk.provenance;
     }
 
     if (/\b(risk|blocked|blocker)\b/.test(lowered)) {

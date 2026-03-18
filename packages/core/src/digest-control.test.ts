@@ -530,6 +530,94 @@ describe("protectedStateMerge", () => {
     );
   });
 
+  it("resolves matching open questions from decisions", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: [],
+          decisions: []
+        },
+        workingNotes: {
+          openQuestions: ["should we support ollama first"]
+        },
+        todos: [],
+        volatileContext: [],
+        provenance: {
+          openQuestions: [{ value: "should we support ollama first", refs: [{ id: "evt-q-old", sourceType: "event", kind: "question" }] }]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "evt-decision",
+          reason: "stable_fact_signal",
+          features: { kind: "decision", importanceScore: 0.9, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-decision",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "We will support Ollama first"
+          })
+        }
+      ]
+    });
+
+    expect(merged.workingNotes.openQuestions).toEqual([]);
+    expect(merged.recentChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "openQuestions", action: "remove", value: "should we support ollama first" })
+      ])
+    );
+  });
+
+  it("resolves matching risks from status updates", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: [],
+          decisions: []
+        },
+        workingNotes: {
+          risks: ["blocked by provider setup"]
+        },
+        todos: [],
+        volatileContext: [],
+        provenance: {
+          risks: [{ value: "blocked by provider setup", refs: [{ id: "evt-r-old", sourceType: "event", kind: "status" }] }]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "evt-status",
+          reason: "working_note_signal",
+          features: { kind: "status", importanceScore: 0.8, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-status",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "unblocked provider setup"
+          })
+        }
+      ]
+    });
+
+    expect(merged.workingNotes.risks).toEqual([]);
+    expect(merged.recentChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "risks", action: "remove", value: "blocked by provider setup" })
+      ])
+    );
+  });
+
   it("removes matching todos when a stream event marks them done or cancelled", () => {
     const merged = protectedStateMerge({
       prevState: {
