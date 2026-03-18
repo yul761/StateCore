@@ -198,6 +198,23 @@ program
   });
 
 program
+  .command("state-history")
+  .argument("[scopeId]")
+  .description("Show recent digest state snapshots for a scope or the active scope")
+  .action(async (scopeId?: string) => {
+    const state = await apiFetch("/state");
+    const targetScopeId = scopeId || state.activeScopeId;
+    if (!targetScopeId) {
+      // eslint-disable-next-line no-console
+      console.log("No active scope.");
+      return;
+    }
+    const result = await apiFetch(`/memory/state/history?scopeId=${encodeURIComponent(targetScopeId)}&limit=10`);
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify(result, null, 2));
+  });
+
+program
   .command("ask")
   .argument("<question>")
   .description("Ask a question using memory")

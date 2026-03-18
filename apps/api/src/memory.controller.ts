@@ -171,6 +171,29 @@ export class MemoryController {
     };
   }
 
+  @Get("/memory/state/history")
+  async getDigestStateHistory(
+    @Req() req: RequestWithUser,
+    @Query("scopeId") scopeId?: string,
+    @Query("limit") limit?: string
+  ) {
+    if (!scopeId) return { error: "scopeId required" };
+    const scope = await this.domain.projectService.getScope(req.userId, scopeId);
+    if (!scope) {
+      return { error: "Scope not found" };
+    }
+    const parsed = Number(limit ?? 10);
+    const take = Math.min(Number.isFinite(parsed) ? parsed : 10, 50);
+    const items = await this.domain.listDigestStates(scopeId, take);
+    return {
+      items: items.map((snapshot) => ({
+        digestId: snapshot.digestId,
+        state: snapshot.state,
+        createdAt: snapshot.createdAt.toISOString()
+      }))
+    };
+  }
+
   @Post("/memory/retrieve")
   async retrieve(@Req() req: RequestWithUser, @Body() body: unknown) {
     const input = RetrieveInput.parse(body);

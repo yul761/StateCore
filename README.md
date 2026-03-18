@@ -48,6 +48,7 @@ Optional CLI:
 ```bash
 pnpm dev:cli -- scopes
 pnpm dev:cli -- state
+pnpm dev:cli -- state-history
 ```
 
 No-LLM smoke test:

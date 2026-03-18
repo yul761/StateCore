@@ -152,4 +152,17 @@ export class DomainService {
       createdAt: snapshot.createdAt
     };
   }
+
+  async listDigestStates(scopeId: string, limit: number): Promise<Array<{ digestId: string; state: DigestState; createdAt: Date }>> {
+    const snapshots = await prisma.digestStateSnapshot.findMany({
+      where: { scopeId },
+      orderBy: { createdAt: "desc" },
+      take: limit
+    });
+    return snapshots.map((snapshot) => ({
+      digestId: snapshot.digestId,
+      state: snapshot.state as unknown as DigestState,
+      createdAt: snapshot.createdAt
+    }));
+  }
 }

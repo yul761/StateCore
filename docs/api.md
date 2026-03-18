@@ -22,6 +22,8 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
 - **GET /memory/digests?scopeId=&limit=&cursor=**
 - **GET /memory/state?scopeId=**
   - returns latest `DigestStateSnapshot` for replay/audit use
+- **GET /memory/state/history?scopeId=&limit=**
+  - returns recent `DigestStateSnapshot` items for replay/audit use
 
 ## Retrieve
 - **POST /memory/retrieve**
