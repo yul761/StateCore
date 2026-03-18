@@ -77,6 +77,9 @@ function collectSummary(jsonPath) {
     runtimeSuccess: data.metrics?.runtime?.success ?? 0,
     runtimeRuns: data.metrics?.runtime?.runs ?? 0,
     runtimeEvidenceCoverageRate: data.metrics?.runtime?.evidenceCoverageRate ?? 0,
+    runtimeEvidenceDigestSummaryRate: data.metrics?.runtime?.evidenceDigestSummaryRate ?? 0,
+    runtimeEvidenceEventSnippetRate: data.metrics?.runtime?.evidenceEventSnippetRate ?? 0,
+    runtimeEvidenceStateSummaryRate: data.metrics?.runtime?.evidenceStateSummaryRate ?? 0,
     runtimeDigestTriggerRate: data.metrics?.runtime?.digestTriggerRate ?? 0,
     runtimePolicyProfile: data.metrics?.runtime?.policyProfile ?? data.config?.runtimePolicyProfile ?? "default",
     runtimeOverrides: {
@@ -135,6 +138,7 @@ const lines = [
       `- Reliability: ${s.reliability}`,
       `- Component scores: ingest ${s.ingest}, retrieve ${s.retrieve}, digest ${s.digest}, reminder ${s.reminder}`,
       `- Runtime: ${s.runtimeSuccess}/${s.runtimeRuns} success, evidence ${s.runtimeEvidenceCoverageRate}, digest-trigger ${s.runtimeDigestTriggerRate}`,
+      `- Runtime evidence detail: digest-summary ${s.runtimeEvidenceDigestSummaryRate}, event-snippet ${s.runtimeEvidenceEventSnippetRate}, state-summary ${s.runtimeEvidenceStateSummaryRate}`,
       `- Runtime policy profile: ${s.runtimePolicyProfile}`,
       `- Runtime overrides: recallLimit=${s.runtimeOverrides.recallLimit ?? "default"}, promoteLongForm=${s.runtimeOverrides.promoteLongFormToDocumented ? "yes" : "no"}, digestOnCandidate=${s.runtimeOverrides.digestOnCandidate ? "yes" : "no"}`,
       `- Report: ${s.file}`,

@@ -80,6 +80,7 @@ Prefer comparing:
 - `Long-term Memory Reliability`
 - runtime turn success
 - runtime evidence coverage rate
+- runtime digest-summary / event-snippet / state-summary evidence rates
 - runtime digest trigger rate
 - runtime write-tier distribution
 - runtime decision-note taxonomy

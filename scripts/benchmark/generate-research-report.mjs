@@ -36,7 +36,7 @@ function formatRuntimeComparisons(cases = []) {
   if (!runtimeCases.length) return "- none";
   return runtimeCases
     .map((item) =>
-      `- ${item.name}: success ${item.runtimeSuccess}/${item.runtimeRuns}, evidence ${item.runtimeEvidenceCoverageRate}, digest-trigger ${item.runtimeDigestTriggerRate}, reliability ${item.reliability}, profile ${item.runtimePolicyProfile}, overrides ${formatOverrideSummary(item.runtimeOverrides)}`
+      `- ${item.name}: success ${item.runtimeSuccess}/${item.runtimeRuns}, evidence ${item.runtimeEvidenceCoverageRate}, digest-summary ${item.runtimeEvidenceDigestSummaryRate ?? 0}, event-snippet ${item.runtimeEvidenceEventSnippetRate ?? 0}, state-summary ${item.runtimeEvidenceStateSummaryRate ?? 0}, digest-trigger ${item.runtimeDigestTriggerRate}, reliability ${item.reliability}, profile ${item.runtimePolicyProfile}, overrides ${formatOverrideSummary(item.runtimeOverrides)}`
     )
     .join("\n");
 }
