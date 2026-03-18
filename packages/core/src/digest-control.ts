@@ -429,6 +429,23 @@ function parseGoal(text: string) {
   return match?.[1]?.trim();
 }
 
+function findBestSemanticMatch(values: string[], candidate: string, threshold = 0.8) {
+  let best: { value: string; score: number } | null = null;
+  for (const value of values) {
+    const score = normalizeText(value) === normalizeText(candidate) ? 1 : jaccardSimilarity(value, candidate);
+    if (!best || score > best.score) {
+      best = { value, score };
+    }
+  }
+  return best && best.score >= threshold ? best.value : null;
+}
+
+function stripDecisionRevocationPrefix(text: string) {
+  return text
+    .replace(/^\s*(revoke|undo|cancel decision|cancel|drop|remove)\s+/i, "")
+    .trim();
+}
+
 function upsertValueProvenance(
   entries: DigestStateValueProvenance[] | undefined,
   value: string,
@@ -507,7 +524,7 @@ function mergeDocumentBackedList(input: {
   currentProvenance: DigestStateValueProvenance[] | undefined;
   incomingValues: string[];
   evidence: DigestEvidenceRef;
-  field: "constraints" | "todos";
+  field: "constraints" | "decisions" | "todos";
   documentKey?: string;
   next: DigestState;
 }) {
@@ -526,7 +543,7 @@ function mergeDocumentBackedList(input: {
   }
 
   for (const value of incoming) {
-    const existing = existingByNormalized.get(normalizeText(value));
+    const existing = existingByNormalized.get(normalizeText(value)) ?? findBestSemanticMatch(input.currentValues, value);
     if (!existing) {
       input.currentValues.push(value);
       pushRecentChange(input.next, { field: input.field, action: "add", value, evidence: input.evidence });
@@ -593,6 +610,22 @@ export function protectedStateMerge(input: {
   }
 
   for (const doc of input.documents) {
+    const docDecisions = parseLinesWithPrefix(doc.content, "decision:");
+    if (!docDecisions.length) continue;
+    const mergedDecisions = mergeDocumentBackedList({
+      currentValues: [...(next.stableFacts.decisions ?? [])],
+      currentProvenance: next.provenance.decisions,
+      incomingValues: docDecisions,
+      evidence: { id: doc.id, sourceType: "document", key: doc.key ?? undefined },
+      field: "decisions",
+      documentKey: doc.key ?? undefined,
+      next
+    });
+    next.stableFacts.decisions = mergedDecisions.values;
+    next.provenance.decisions = mergedDecisions.provenance;
+  }
+
+  for (const doc of input.documents) {
     const docTodos = parseLinesWithPrefix(doc.content, "todo:");
     if (!docTodos.length) continue;
     const mergedTodos = mergeDocumentBackedList({
@@ -628,18 +661,24 @@ export function protectedStateMerge(input: {
 
     if (delta.features.kind === "decision") {
       if (/\b(revoke|undo|cancel decision)\b/.test(lowered)) {
-        const last = next.stableFacts.decisions[next.stableFacts.decisions.length - 1];
-        if (last) {
-          next.stableFacts.decisions = next.stableFacts.decisions.filter((item) => item !== last);
-          pushRecentChange(next, { field: "decisions", action: "remove", value: last, evidence });
+        const revokeTarget = stripDecisionRevocationPrefix(text);
+        const matched = findBestSemanticMatch(next.stableFacts.decisions, revokeTarget, 0.45);
+        if (matched) {
+          next.stableFacts.decisions = next.stableFacts.decisions.filter((item) => item !== matched);
+          next.provenance.decisions = removeValueProvenance(next.provenance.decisions, matched);
+          pushRecentChange(next, { field: "decisions", action: "remove", value: matched, evidence });
         }
-      } else if (!next.stableFacts.decisions.includes(text)) {
-        next.stableFacts.decisions.push(text);
-        pushRecentChange(next, { field: "decisions", action: "add", value: text, evidence });
       } else {
-        pushRecentChange(next, { field: "decisions", action: "reaffirm", value: text, evidence });
+        const existing = findBestSemanticMatch(next.stableFacts.decisions, text);
+        if (!existing) {
+          next.stableFacts.decisions.push(text);
+          pushRecentChange(next, { field: "decisions", action: "add", value: text, evidence });
+          next.provenance.decisions = upsertValueProvenance(next.provenance.decisions, text, evidence);
+        } else {
+          pushRecentChange(next, { field: "decisions", action: "reaffirm", value: existing, evidence });
+          next.provenance.decisions = upsertValueProvenance(next.provenance.decisions, existing, evidence);
+        }
       }
-      next.provenance.decisions = upsertValueProvenance(next.provenance.decisions, text, evidence);
 
       const decisionGoal = parseGoal(text);
       if (decisionGoal) {

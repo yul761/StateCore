@@ -266,6 +266,47 @@ describe("protectedStateMerge", () => {
     );
   });
 
+  it("supersedes document-backed decisions when the same document key changes", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: [],
+          decisions: ["use postgres", "ship cli first"]
+        },
+        workingNotes: {},
+        todos: [],
+        provenance: {
+          decisions: [
+            { value: "use postgres", refs: [{ id: "doc-old", sourceType: "document", key: "doc:plan" }] },
+            { value: "ship cli first", refs: [{ id: "doc-old", sourceType: "document", key: "doc:plan" }] }
+          ]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [
+        event({
+          id: "doc-new",
+          scopeId: "sc",
+          userId: "u",
+          type: "document",
+          key: "doc:plan",
+          content: "decision: use postgres"
+        })
+      ],
+      deltaCandidates: []
+    });
+
+    expect(merged.stableFacts.decisions).toEqual(["use postgres"]);
+    expect(merged.recentChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "decisions", action: "remove", value: "ship cli first" }),
+        expect.objectContaining({ field: "decisions", action: "reaffirm", value: "use postgres" })
+      ])
+    );
+  });
+
   it("does not remove constraints or todos backed by non-document evidence when a document changes", () => {
     const merged = protectedStateMerge({
       prevState: {
@@ -309,6 +350,48 @@ describe("protectedStateMerge", () => {
         expect.objectContaining({ field: "constraints", action: "remove", value: "keep api stable" }),
         expect.objectContaining({ field: "todos", action: "remove", value: "publish benchmark report" })
       ])
+    );
+  });
+
+  it("removes the most similar decision instead of blindly removing the last one", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: [],
+          decisions: ["use postgres for storage", "ship cli first"]
+        },
+        workingNotes: {},
+        todos: [],
+        provenance: {
+          decisions: [
+            { value: "use postgres for storage", refs: [{ id: "evt-old", sourceType: "event", kind: "decision" }] },
+            { value: "ship cli first", refs: [{ id: "evt-old-2", sourceType: "event", kind: "decision" }] }
+          ]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "evt-revoke",
+          reason: "stable_fact_signal",
+          features: { kind: "decision", importanceScore: 0.9, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-revoke",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "Revoke use postgres for storage"
+          })
+        }
+      ]
+    });
+
+    expect(merged.stableFacts.decisions).toEqual(["ship cli first"]);
+    expect(merged.recentChanges).toContainEqual(
+      expect.objectContaining({ field: "decisions", action: "remove", value: "use postgres for storage" })
     );
   });
 
