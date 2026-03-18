@@ -65,6 +65,11 @@ function summarizeBenchmark(data, fileName) {
     digestConsistency: data.metrics?.digest?.consistencyPassRate ?? 0,
     digestOmissionWarningRate: data.metrics?.digest?.omissionWarningRate ?? 0,
     temporaryTodoIntrusionRate: data.metrics?.digest?.goldRetention?.temporaryTodoIntrusionRate ?? 0,
+    stateFactRetentionRate: data.metrics?.digest?.goldRetention?.stateFactRetentionRate ?? 0,
+    stateGoalRetentionRate: data.metrics?.digest?.goldRetention?.stateGoalRetentionRate ?? 0,
+    stateConstraintPreservationRate: data.metrics?.digest?.goldRetention?.stateConstraintPreservationRate ?? 0,
+    stateDecisionContinuityRate: data.metrics?.digest?.goldRetention?.stateDecisionContinuityRate ?? 0,
+    stateTodoContinuityRate: data.metrics?.digest?.goldRetention?.stateTodoContinuityRate ?? 0,
     runtimeEvidenceCoverage: data.metrics?.runtime?.evidenceCoverageRate ?? 0,
     runtimeDigestSummaryRate: data.metrics?.runtime?.evidenceDigestSummaryRate ?? 0,
     replayStateMatch: Boolean(data.metrics?.replay?.stateMatch),
@@ -89,6 +94,7 @@ function buildDeltaSummary(items) {
     digestConsistency: Math.round((last.digestConsistency - first.digestConsistency) * 1000) / 1000,
     digestOmissionWarningRate: Math.round((last.digestOmissionWarningRate - first.digestOmissionWarningRate) * 1000) / 1000,
     temporaryTodoIntrusionRate: Math.round((last.temporaryTodoIntrusionRate - first.temporaryTodoIntrusionRate) * 1000) / 1000,
+    stateFactRetentionRate: Math.round((last.stateFactRetentionRate - first.stateFactRetentionRate) * 1000) / 1000,
     runtimeEvidenceCoverage: Math.round((last.runtimeEvidenceCoverage - first.runtimeEvidenceCoverage) * 1000) / 1000
   };
 }
@@ -141,6 +147,7 @@ const md = [
   `- Digest consistency: ${latest.digestConsistency}`,
   `- Digest omission warning rate: ${latest.digestOmissionWarningRate}`,
   `- Temporary todo intrusion rate: ${latest.temporaryTodoIntrusionRate}`,
+  `- State retention: fact ${latest.stateFactRetentionRate}, goal ${latest.stateGoalRetentionRate}, constraints ${latest.stateConstraintPreservationRate}, decisions ${latest.stateDecisionContinuityRate}, todos ${latest.stateTodoContinuityRate}`,
   `- Runtime evidence coverage: ${latest.runtimeEvidenceCoverage}`,
   `- Runtime digest summary rate: ${latest.runtimeDigestSummaryRate}`,
   `- Replay state match: ${latest.replayStateMatch ? "yes" : "no"}`,
@@ -156,6 +163,7 @@ const md = [
         `- Digest consistency delta: ${formatDelta(deltaSummary.digestConsistency)}`,
         `- Digest omission warning delta: ${formatDelta(deltaSummary.digestOmissionWarningRate)}`,
         `- Temporary todo intrusion delta: ${formatDelta(deltaSummary.temporaryTodoIntrusionRate)}`,
+        `- State fact retention delta: ${formatDelta(deltaSummary.stateFactRetentionRate)}`,
         `- Runtime evidence coverage delta: ${formatDelta(deltaSummary.runtimeEvidenceCoverage)}`
       ]
     : ["- Not enough benchmark runs to compute a delta window."]),
@@ -176,6 +184,7 @@ const md = [
       `- Digest consistency: ${item.digestConsistency}`,
       `- Digest omission warning rate: ${item.digestOmissionWarningRate}`,
       `- Temporary todo intrusion rate: ${item.temporaryTodoIntrusionRate}`,
+      `- State retention: fact ${item.stateFactRetentionRate}, goal ${item.stateGoalRetentionRate}, constraints ${item.stateConstraintPreservationRate}, decisions ${item.stateDecisionContinuityRate}, todos ${item.stateTodoContinuityRate}`,
       `- Runtime evidence coverage: ${item.runtimeEvidenceCoverage}`,
       `- Runtime digest summary rate: ${item.runtimeDigestSummaryRate}`,
       `- Replay state match: ${item.replayStateMatch ? "yes" : "no"}`,

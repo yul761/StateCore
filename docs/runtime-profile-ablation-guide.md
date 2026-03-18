@@ -80,6 +80,7 @@ Prefer comparing:
 - `Long-term Memory Reliability`
 - digest omission warning rate
 - temporary todo intrusion rate when todo-heavy fixtures are used
+- state-backed retention metrics, not only digest-text retention
 - runtime turn success
 - runtime evidence coverage rate
 - runtime digest-summary / event-snippet / state-summary evidence rates

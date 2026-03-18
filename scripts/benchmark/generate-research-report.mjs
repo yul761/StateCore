@@ -114,6 +114,8 @@ const lines = [
         formatDeltaHighlight("Worst reliability delta", ablation.deltaSummary?.worstReliability, "reliability"),
         formatDeltaHighlight("Best omission warning delta", ablation.deltaSummary?.bestDigestOmission, "digestOmissionWarningRate"),
         formatDeltaHighlight("Worst omission warning delta", ablation.deltaSummary?.worstDigestOmission, "digestOmissionWarningRate"),
+        formatDeltaHighlight("Best state retention delta", ablation.deltaSummary?.bestStateRetention, "stateFactRetentionRate"),
+        formatDeltaHighlight("Worst state retention delta", ablation.deltaSummary?.worstStateRetention, "stateFactRetentionRate"),
         formatDeltaHighlight("Best runtime evidence delta", ablation.deltaSummary?.bestRuntimeEvidenceCoverage, "runtimeEvidenceCoverageRate"),
         formatDeltaHighlight("Worst runtime evidence delta", ablation.deltaSummary?.worstRuntimeEvidenceCoverage, "runtimeEvidenceCoverageRate"),
         "",
@@ -137,6 +139,7 @@ const lines = [
         `- Digest consistency delta: ${formatDelta(trend.deltaSummary?.digestConsistency ?? 0)}`,
         `- Digest omission warning delta: ${formatDelta(trend.deltaSummary?.digestOmissionWarningRate ?? 0)}`,
         `- Temporary todo intrusion delta: ${formatDelta(trend.deltaSummary?.temporaryTodoIntrusionRate ?? 0)}`,
+        `- State fact retention delta: ${formatDelta(trend.deltaSummary?.stateFactRetentionRate ?? 0)}`,
         `- Runtime evidence coverage delta: ${formatDelta(trend.deltaSummary?.runtimeEvidenceCoverage ?? 0)}`,
         ""
       ]
