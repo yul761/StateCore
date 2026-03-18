@@ -3,6 +3,8 @@ import {
   AssistantSession,
   DefaultMemoryWritePolicy,
   DefaultRecallPolicy,
+  ProfiledDigestPolicy,
+  ProfiledMemoryWritePolicy,
   ThresholdDigestPolicy,
   type RuntimeMemoryService,
   type RuntimeRetrieveService
@@ -29,6 +31,34 @@ describe("DefaultMemoryWritePolicy", () => {
     expect(policy.classifyTurn({ message: "Architecture spec update for retrieval ranking" })).toEqual({
       tier: "documented",
       reason: "document_like_update"
+    });
+  });
+});
+
+describe("Profiled policies", () => {
+  it("uses conservative profile to demote stable signals", () => {
+    const policy = new ProfiledMemoryWritePolicy("conservative");
+    expect(policy.classifyTurn({ message: "We decide to change the release plan" })).toEqual({
+      tier: "candidate",
+      reason: "profile_conservative_requires_explicit_promotion"
+    });
+  });
+
+  it("uses document-heavy profile to promote long-form updates", () => {
+    const policy = new ProfiledMemoryWritePolicy("document-heavy");
+    expect(
+      policy.classifyTurn({ message: "Architecture update\nThis is a long form spec-like note for runtime integration." })
+    ).toEqual({
+      tier: "documented",
+      reason: "profile_document_heavy_long_form_memory"
+    });
+  });
+
+  it("uses conservative digest policy to require documented turns", async () => {
+    const policy = new ProfiledDigestPolicy("conservative");
+    await expect(policy.shouldDigest({ writeTier: "stable" } as any)).resolves.toEqual({
+      shouldDigest: false,
+      reason: "profile_conservative_skip_non_documented"
     });
   });
 });

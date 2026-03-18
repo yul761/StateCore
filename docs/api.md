@@ -38,12 +38,12 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
   - body: `{ scopeId, question }`
   - requires `FEATURE_LLM=true` (otherwise 400)
 - **POST /memory/runtime/turn**
-  - body: `{ scopeId, message, source?, writeTier?, documentKey?, digestMode?, metadata? }`
+  - body: `{ scopeId, message, source?, policyProfile?, writeTier?, documentKey?, digestMode?, metadata? }`
   - runs the assistant runtime session flow
   - returns `{ answer, writeTier, digestTriggered, notes?, evidence }`
   - requires `FEATURE_LLM=true`
   - reference CLI usage:
-    - `pm turn "goal: ship a self-hosted runtime" --write-tier stable --digest-mode force`
+    - `pm turn "goal: ship a self-hosted runtime" --policy-profile conservative --write-tier stable --digest-mode force`
 
 ## Scopes
 - **POST /scopes**

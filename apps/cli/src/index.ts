@@ -242,10 +242,11 @@ program
   .command("turn")
   .argument("<message>")
   .description("Run the assistant runtime turn flow against the active scope")
+  .option("--policy-profile <profile>", "Runtime policy profile: default|conservative|document-heavy")
   .option("--write-tier <tier>", "Override runtime write tier: ephemeral|candidate|stable|documented")
   .option("--digest-mode <mode>", "Override digest mode: auto|force|skip")
   .option("--document-key <key>", "Explicit document key when write tier is documented")
-  .action(async (message: string, options: { writeTier?: string; digestMode?: string; documentKey?: string }) => {
+  .action(async (message: string, options: { policyProfile?: string; writeTier?: string; digestMode?: string; documentKey?: string }) => {
     const state = await apiFetch("/state");
     if (!state.activeScopeId) {
       // eslint-disable-next-line no-console
@@ -258,6 +259,7 @@ program
         scopeId: state.activeScopeId,
         message,
         source: "cli",
+        ...(options.policyProfile ? { policyProfile: options.policyProfile } : {}),
         ...(options.writeTier ? { writeTier: options.writeTier } : {}),
         ...(options.digestMode ? { digestMode: options.digestMode } : {}),
         ...(options.documentKey ? { documentKey: options.documentKey } : {})

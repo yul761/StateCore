@@ -32,10 +32,12 @@ export interface RuntimeRetrieveService {
 }
 
 export type MemoryWriteTier = "ephemeral" | "candidate" | "stable" | "documented";
+export type RuntimePolicyProfile = "default" | "conservative" | "document-heavy";
 
 export interface RuntimeTurnInput {
   message: string;
   source?: MemorySource;
+  policyProfile?: RuntimePolicyProfile;
   writeTier?: MemoryWriteTier;
   documentKey?: string;
   digestMode?: "auto" | "force" | "skip";
@@ -125,6 +127,45 @@ export class DefaultMemoryWritePolicy implements MemoryWritePolicy {
   }
 }
 
+export class ProfiledMemoryWritePolicy implements MemoryWritePolicy {
+  constructor(private profile: RuntimePolicyProfile = "default") {}
+
+  classifyTurn(input: RuntimeTurnInput): MemoryWriteDecision {
+    if (input.writeTier) return { tier: input.writeTier, reason: "explicit_write_tier" };
+
+    const text = input.message.trim().toLowerCase();
+    if (!text) return { tier: "ephemeral", reason: "empty_message" };
+    if (/^(thanks|thank you|ok|okay|cool|got it|sounds good)[.!]?$/i.test(text)) {
+      return { tier: "ephemeral", reason: "acknowledgement_only" };
+    }
+    if (/^(goal|constraint|decision|todo)\s*:/i.test(text)) {
+      return { tier: "stable", reason: `profile_${this.profile}_explicit_structured_memory` };
+    }
+
+    if (this.profile === "conservative") {
+      if (/\b(uploaded doc|document update|spec|architecture|roadmap)\b/i.test(text)) {
+        return { tier: "documented", reason: "profile_conservative_document_like_update" };
+      }
+      if (/\b(decide|decision|constraint|must|cannot|todo|next step|action item|blocked|risk)\b/i.test(text)) {
+        return { tier: "candidate", reason: "profile_conservative_requires_explicit_promotion" };
+      }
+      return { tier: "ephemeral", reason: "profile_conservative_default_ephemeral" };
+    }
+
+    if (this.profile === "document-heavy") {
+      if (/\b(uploaded doc|document update|spec|architecture|roadmap)\b/i.test(text) || text.includes("\n") || text.length > 280) {
+        return { tier: "documented", reason: "profile_document_heavy_long_form_memory" };
+      }
+      if (/\b(decide|decision|constraint|must|cannot|todo|next step|action item|blocked|risk)\b/i.test(text)) {
+        return { tier: "stable", reason: "profile_document_heavy_stable_fact_signal" };
+      }
+      return { tier: "candidate", reason: "profile_document_heavy_default_candidate" };
+    }
+
+    return new DefaultMemoryWritePolicy().classifyTurn(input);
+  }
+}
+
 export class DefaultRecallPolicy implements RecallPolicy {
   constructor(
     private retrieveService: RuntimeRetrieveService,
@@ -164,6 +205,37 @@ export class ThresholdDigestPolicy implements DigestPolicy {
         : "threshold_requires_documented_turn"
     };
   }
+}
+
+export class ProfiledDigestPolicy implements DigestPolicy {
+  constructor(private profile: RuntimePolicyProfile = "default") {}
+
+  async shouldDigest(input: { writeTier: MemoryWriteTier }): Promise<{ shouldDigest: boolean; reason?: string }> {
+    if (this.profile === "conservative") {
+      return {
+        shouldDigest: input.writeTier === "documented",
+        reason: input.writeTier === "documented"
+          ? "profile_conservative_documented_turn"
+          : "profile_conservative_skip_non_documented"
+      };
+    }
+    if (this.profile === "document-heavy") {
+      return {
+        shouldDigest: input.writeTier === "stable" || input.writeTier === "documented" || input.writeTier === "candidate",
+        reason: input.writeTier === "ephemeral"
+          ? "profile_document_heavy_skip_ephemeral"
+          : "profile_document_heavy_digest_memory_turn"
+      };
+    }
+    return new ThresholdDigestPolicy().shouldDigest(input);
+  }
+}
+
+export function createRuntimePolicyBundle(profile: RuntimePolicyProfile = "default") {
+  return {
+    memoryWritePolicy: new ProfiledMemoryWritePolicy(profile),
+    digestPolicy: new ProfiledDigestPolicy(profile)
+  };
 }
 
 export class AssistantSession {

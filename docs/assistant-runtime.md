@@ -218,9 +218,16 @@ The current implementation is intentionally small:
 
 The current runtime turn input also supports explicit policy hints:
 
+- `policyProfile`
 - `writeTier`
 - `documentKey`
 - `digestMode`
+
+Current built-in profiles:
+
+- `default`
+- `conservative`
+- `document-heavy`
 
 The current runtime output also carries lightweight audit notes so policy decisions are inspectable, for example:
 

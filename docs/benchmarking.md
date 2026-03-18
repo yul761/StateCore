@@ -141,6 +141,7 @@ Env values still override profile defaults.
 - `BENCH_INGEST_CONCURRENCY` (profile default)
 - `BENCH_RETRIEVE_QUERIES` (profile default)
 - `BENCH_RUNTIME_RUNS` (profile default)
+- `BENCH_RUNTIME_POLICY_PROFILE` (default `default`)
 - `BENCH_DIGEST_RUNS` (profile default)
 - `BENCH_TIMEOUT_MS` (default 180000)
 - `BENCH_USER_ID` (default benchmark-user)

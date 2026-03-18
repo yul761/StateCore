@@ -30,6 +30,7 @@ const cfg = {
   concurrency: Number(process.env.BENCH_INGEST_CONCURRENCY || 20),
   retrieveQueries: Number(process.env.BENCH_RETRIEVE_QUERIES || 12),
   runtimeRuns: Number(process.env.BENCH_RUNTIME_RUNS || 4),
+  runtimePolicyProfile: process.env.BENCH_RUNTIME_POLICY_PROFILE || "default",
   digestRuns: Number(process.env.BENCH_DIGEST_RUNS || 2),
   timeoutMs: Number(process.env.BENCH_TIMEOUT_MS || 180000),
   outputDir: process.env.BENCH_OUTPUT_DIR || "benchmark-results",
@@ -752,6 +753,7 @@ async function run() {
         scopeId,
         message: item.message,
         source: "sdk",
+        policyProfile: cfg.runtimePolicyProfile,
         writeTier: item.writeTier,
         digestMode: item.digestMode
       });

@@ -10,11 +10,11 @@ import {
 } from "@project-memory/contracts";
 import {
   AssistantSession,
+  createRuntimePolicyBundle,
   createChatModelClient,
   DefaultRecallPolicy,
   generateAnswer,
-  LlmClient,
-  ThresholdDigestPolicy
+  LlmClient
 } from "@project-memory/core";
 import { digestQueue } from "./queue";
 import { DomainService } from "./domain.service";
@@ -268,6 +268,7 @@ export class MemoryController {
       return { error: "Scope not found" };
     }
 
+    const policies = createRuntimePolicyBundle(input.policyProfile ?? "default");
     const session = new AssistantSession({
       userId: req.userId,
       scopeId: input.scopeId,
@@ -280,7 +281,8 @@ export class MemoryController {
         system: answerSystemPrompt,
         user: answerUserPrompt
       },
-      digestPolicy: new ThresholdDigestPolicy(),
+      memoryWritePolicy: policies.memoryWritePolicy,
+      digestPolicy: policies.digestPolicy,
       digestTrigger: {
         requestDigest: async (scopeId) => {
           await digestQueue.add("digest_scope", { userId: req.userId, scopeId });
@@ -292,6 +294,7 @@ export class MemoryController {
     return session.handleTurn({
       message: input.message,
       source: input.source ?? "api",
+      policyProfile: input.policyProfile ?? "default",
       writeTier: input.writeTier,
       documentKey: input.documentKey,
       digestMode: input.digestMode ?? "auto",
