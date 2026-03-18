@@ -15,6 +15,14 @@ export {
   type ModelProviderFactory
 } from "./model-provider";
 export type { DigestConsistencyResult } from "./digest-control";
+export {
+  buildGroundingEvidence,
+  buildGroundingStateDetails,
+  summarizeGroundingStateSnapshot,
+  type GroundingEvidence,
+  type ResolvedRecall,
+  type RuntimeStateSnapshot
+} from "./assistant-runtime";
 import type { ChatModel, EmbeddingModel } from "./model-provider";
 
 export const logger = pino({ level: process.env.LOG_LEVEL || "info" });

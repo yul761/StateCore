@@ -48,6 +48,7 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
     - digest ids and summary
     - event snippets with retrieval ranking metadata
     - latest state summary/details when a digest snapshot exists
+  - answer and runtime grounding now share the same evidence-building semantics, so fields stay aligned across both endpoints
 - **POST /memory/runtime/turn**
   - body: `{ scopeId, message, source?, policyProfile?, policyOverrides?, writeTier?, documentKey?, digestMode?, metadata? }`
   - runs the assistant runtime session flow

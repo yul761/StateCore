@@ -199,6 +199,97 @@ export interface AssistantSessionOptions {
   assistantReplySource?: MemorySource;
 }
 
+export function buildGroundingStateDetails(snapshot?: RuntimeStateSnapshot | null) {
+  if (!snapshot?.digestId) return null;
+  const provenance = snapshot.state?.provenance;
+  const provenanceFields = [
+    Array.isArray(provenance?.goal) && provenance.goal.length ? "goal" : null,
+    Array.isArray(provenance?.constraints) && provenance.constraints.length ? "constraints" : null,
+    Array.isArray(provenance?.decisions) && provenance.decisions.length ? "decisions" : null,
+    Array.isArray(provenance?.todos) && provenance.todos.length ? "todos" : null
+  ].filter((value): value is string => Boolean(value));
+
+  return {
+    digestId: snapshot.digestId,
+    goal: snapshot.state?.stableFacts?.goal,
+    constraints: snapshot.state?.stableFacts?.constraints ?? [],
+    todos: snapshot.state?.todos ?? [],
+    risks: snapshot.state?.workingNotes?.risks ?? [],
+    provenanceFields,
+    recentChanges: snapshot.state?.recentChanges ?? []
+  };
+}
+
+export function summarizeGroundingStateSnapshot(snapshot?: RuntimeStateSnapshot | null) {
+  if (!snapshot?.digestId) return null;
+  const goal = snapshot.state?.stableFacts?.goal;
+  const constraints = snapshot.state?.stableFacts?.constraints ?? [];
+  const todos = snapshot.state?.todos ?? [];
+  const risks = snapshot.state?.workingNotes?.risks ?? [];
+  const provenance = snapshot.state?.provenance;
+  const recentChanges = snapshot.state?.recentChanges ?? [];
+  const parts = [`digest:${snapshot.digestId}`];
+  if (goal) parts.push(`goal:${goal}`);
+  if (constraints.length) parts.push(`constraints:${constraints.slice(0, 2).join(" | ")}`);
+  if (todos.length) parts.push(`todos:${todos.slice(0, 2).join(" | ")}`);
+  if (risks.length) parts.push(`risks:${risks.slice(0, 2).join(" | ")}`);
+  const provenanceParts = [
+    Array.isArray(provenance?.goal) && provenance.goal.length ? "goal" : null,
+    Array.isArray(provenance?.constraints) && provenance.constraints.length ? "constraints" : null,
+    Array.isArray(provenance?.decisions) && provenance.decisions.length ? "decisions" : null,
+    Array.isArray(provenance?.todos) && provenance.todos.length ? "todos" : null
+  ].filter(Boolean);
+  if (provenanceParts.length) {
+    parts.push(`provenance:${provenanceParts.join("|")}`);
+  }
+  if (recentChanges.length) {
+    parts.push(
+      `recent:${recentChanges
+        .slice(-2)
+        .map((change) => `${change.field}:${change.action}:${change.value}`)
+        .join(" | ")}`
+    );
+  }
+  return parts.join("; ");
+}
+
+export function buildGroundingEvidence(input: {
+  digest?: Digest | null;
+  events: Array<{ id: string; content: string; createdAt: Date }>;
+  retrieval?: ResolvedRecall["retrieval"];
+  stateRef?: string | null;
+  stateSnapshot?: RuntimeStateSnapshot | null;
+}): GroundingEvidence {
+  const stateDetails = buildGroundingStateDetails(input.stateSnapshot);
+  const stateSummary = summarizeGroundingStateSnapshot(input.stateSnapshot);
+  const retrievalMatches = new Map(
+    input.retrieval?.matches?.map((match) => [match.id, match]) ?? []
+  );
+  return {
+    digestIds: input.digest ? [input.digest.id] : [],
+    eventIds: input.events.map((event) => event.id),
+    stateRefs: input.stateRef ? [input.stateRef] : [],
+    digestSummary: input.digest?.summary ?? null,
+    eventSnippets: input.events.slice(0, 5).map((event) => {
+      const match = retrievalMatches.get(event.id);
+      return {
+        id: event.id,
+        createdAt: event.createdAt.toISOString(),
+        snippet: event.content.length > 160 ? `${event.content.slice(0, 157)}...` : event.content,
+        sourceType: match?.sourceType,
+        key: match?.key ?? null,
+        rankingReason: match?.rankingReason,
+        heuristicScore: match?.heuristicScore,
+        recencyScore: match?.recencyScore,
+        embeddingScore: match?.embeddingScore,
+        finalScore: match?.finalScore
+      };
+    }),
+    stateSummary,
+    stateDetails
+  };
+}
+
 function shouldPromoteLongForm(text: string, overrides?: RuntimePolicyOverrides) {
   return overrides?.promoteLongFormToDocumented === true && (text.includes("\n") || text.length > 280);
 }
@@ -474,90 +565,7 @@ export class AssistantSession {
   }
 
   private buildEvidence(recall: ResolvedRecall): GroundingEvidence {
-    const stateDetails = this.buildStateDetails(recall.stateSnapshot);
-    const stateSummary = this.summarizeStateSnapshot(recall.stateSnapshot);
-    const retrievalMatches = new Map(
-      (recall as ResolvedRecall & {
-        retrieval?: { matches?: Array<{ id: string; sourceType?: "stream" | "document"; key?: string | null; rankingReason?: string; heuristicScore?: number; recencyScore?: number; embeddingScore?: number; finalScore?: number }> };
-      }).retrieval?.matches?.map((match) => [match.id, match]) ?? []
-    );
-    return {
-      digestIds: recall.digest ? [recall.digest.id] : [],
-      eventIds: recall.events.map((event) => event.id),
-      stateRefs: recall.stateRef ? [recall.stateRef] : [],
-      digestSummary: recall.digest?.summary ?? null,
-      eventSnippets: recall.events.slice(0, 5).map((event) => {
-        const match = retrievalMatches.get(event.id);
-        return {
-          id: event.id,
-          createdAt: event.createdAt.toISOString(),
-          snippet: event.content.length > 160 ? `${event.content.slice(0, 157)}...` : event.content,
-          sourceType: match?.sourceType,
-          key: match?.key ?? null,
-          rankingReason: match?.rankingReason,
-          heuristicScore: match?.heuristicScore,
-          recencyScore: match?.recencyScore,
-          embeddingScore: match?.embeddingScore,
-          finalScore: match?.finalScore
-        };
-      }),
-      stateSummary,
-      stateDetails
-    };
-  }
-
-  private buildStateDetails(snapshot?: RuntimeStateSnapshot | null) {
-    if (!snapshot?.digestId) return null;
-    const provenance = snapshot.state?.provenance;
-    const provenanceFields = [
-      Array.isArray(provenance?.goal) && provenance.goal.length ? "goal" : null,
-      Array.isArray(provenance?.constraints) && provenance.constraints.length ? "constraints" : null,
-      Array.isArray(provenance?.decisions) && provenance.decisions.length ? "decisions" : null,
-      Array.isArray(provenance?.todos) && provenance.todos.length ? "todos" : null
-    ].filter((value): value is string => Boolean(value));
-
-    return {
-      digestId: snapshot.digestId,
-      goal: snapshot.state?.stableFacts?.goal,
-      constraints: snapshot.state?.stableFacts?.constraints ?? [],
-      todos: snapshot.state?.todos ?? [],
-      risks: snapshot.state?.workingNotes?.risks ?? [],
-      provenanceFields,
-      recentChanges: snapshot.state?.recentChanges ?? []
-    };
-  }
-
-  private summarizeStateSnapshot(snapshot?: RuntimeStateSnapshot | null) {
-    if (!snapshot?.digestId) return null;
-    const goal = snapshot.state?.stableFacts?.goal;
-    const constraints = snapshot.state?.stableFacts?.constraints ?? [];
-    const todos = snapshot.state?.todos ?? [];
-    const risks = snapshot.state?.workingNotes?.risks ?? [];
-    const provenance = snapshot.state?.provenance;
-    const recentChanges = snapshot.state?.recentChanges ?? [];
-    const parts = [`digest:${snapshot.digestId}`];
-    if (goal) parts.push(`goal:${goal}`);
-    if (constraints.length) parts.push(`constraints:${constraints.slice(0, 2).join(" | ")}`);
-    if (todos.length) parts.push(`todos:${todos.slice(0, 2).join(" | ")}`);
-    if (risks.length) parts.push(`risks:${risks.slice(0, 2).join(" | ")}`);
-    const provenanceParts = [
-      Array.isArray(provenance?.goal) && provenance.goal.length ? "goal" : null,
-      Array.isArray(provenance?.constraints) && provenance.constraints.length ? "constraints" : null,
-      Array.isArray(provenance?.decisions) && provenance.decisions.length ? "decisions" : null,
-      Array.isArray(provenance?.todos) && provenance.todos.length ? "todos" : null
-    ].filter(Boolean);
-    if (provenanceParts.length) {
-      parts.push(`provenance:${provenanceParts.join("|")}`);
-    }
-    if (recentChanges.length) {
-      parts.push(
-        `recent:${recentChanges
-          .slice(-2)
-          .map((change) => `${change.field}:${change.action}:${change.value}`)
-          .join(" | ")}`
-      );
-    }
-    return parts.join("; ");
+    return buildGroundingEvidence(recall);
   }
 
   private async generateGroundedAnswer(question: string, recall: ResolvedRecall) {
