@@ -252,6 +252,7 @@ export class MemoryController {
       return { error: "Scope not found" };
     }
     const result = await this.domain.retrieveService.retrieve(input.scopeId, 25, input.question);
+    const snapshot = await this.domain.getLatestDigestState(input.scopeId);
     const digestText = result.digest ? result.digest.summary : null;
     const eventsText = result.events.map((event) => `- ${event.createdAt.toISOString()}: ${event.content}`).join("\n");
 
@@ -264,7 +265,65 @@ export class MemoryController {
       llm: this.llm
     });
 
-    return { answer };
+    const retrievalMatches = new Map((result.retrieval?.matches ?? []).map((match) => [match.id, match]));
+    const provenance = snapshot?.state?.provenance;
+    const provenanceFields = [
+      Array.isArray(provenance?.goal) && provenance.goal.length ? "goal" : null,
+      Array.isArray(provenance?.constraints) && provenance.constraints.length ? "constraints" : null,
+      Array.isArray(provenance?.decisions) && provenance.decisions.length ? "decisions" : null,
+      Array.isArray(provenance?.todos) && provenance.todos.length ? "todos" : null
+    ].filter((value): value is string => Boolean(value));
+    const stateDetails = snapshot?.digestId
+      ? {
+          digestId: snapshot.digestId,
+          goal: snapshot.state?.stableFacts?.goal,
+          constraints: snapshot.state?.stableFacts?.constraints ?? [],
+          todos: snapshot.state?.todos ?? [],
+          risks: snapshot.state?.workingNotes?.risks ?? [],
+          provenanceFields,
+          recentChanges: snapshot.state?.recentChanges ?? []
+        }
+      : null;
+    const stateSummary = snapshot?.digestId
+      ? [
+          `digest:${snapshot.digestId}`,
+          snapshot.state?.stableFacts?.goal ? `goal:${snapshot.state.stableFacts.goal}` : null,
+          Array.isArray(snapshot.state?.stableFacts?.constraints) && snapshot.state.stableFacts.constraints.length
+            ? `constraints:${snapshot.state.stableFacts.constraints.slice(0, 2).join(" | ")}`
+            : null,
+          Array.isArray(snapshot.state?.todos) && snapshot.state.todos.length
+            ? `todos:${snapshot.state.todos.slice(0, 2).join(" | ")}`
+            : null,
+          provenanceFields.length ? `provenance:${provenanceFields.join("|")}` : null
+        ].filter(Boolean).join("; ")
+      : null;
+
+    return {
+      answer,
+      evidence: {
+        digestIds: result.digest ? [result.digest.id] : [],
+        eventIds: result.events.map((event) => event.id),
+        stateRefs: snapshot?.digestId ? [snapshot.digestId] : [],
+        digestSummary: result.digest?.summary ?? null,
+        eventSnippets: result.events.slice(0, 5).map((event) => {
+          const match = retrievalMatches.get(event.id);
+          return {
+            id: event.id,
+            createdAt: event.createdAt.toISOString(),
+            snippet: event.content.length > 160 ? `${event.content.slice(0, 157)}...` : event.content,
+            sourceType: match?.sourceType,
+            key: match?.key ?? null,
+            rankingReason: match?.rankingReason,
+            heuristicScore: match?.heuristicScore,
+            recencyScore: match?.recencyScore,
+            embeddingScore: match?.embeddingScore,
+            finalScore: match?.finalScore
+          };
+        }),
+        stateSummary,
+        stateDetails
+      }
+    };
   }
 
   @Post("/memory/runtime/turn")

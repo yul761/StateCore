@@ -137,8 +137,42 @@ export const AnswerInput = z.object({
   question: z.string().min(1)
 });
 
+export const GroundingEvidenceOutput = z.object({
+  digestIds: z.array(z.string()),
+  eventIds: z.array(z.string()),
+  stateRefs: z.array(z.string()),
+  digestSummary: z.string().nullable().optional(),
+  eventSnippets: z.array(z.object({
+    id: z.string(),
+    createdAt: z.string(),
+    snippet: z.string(),
+    sourceType: MemoryType.optional(),
+    key: z.string().nullable().optional(),
+    rankingReason: z.string().optional(),
+    heuristicScore: z.number().optional(),
+    recencyScore: z.number().optional(),
+    embeddingScore: z.number().optional(),
+    finalScore: z.number().optional()
+  })).optional(),
+  stateSummary: z.string().nullable().optional(),
+  stateDetails: z.object({
+    digestId: z.string().nullable(),
+    goal: z.string().optional(),
+    constraints: z.array(z.string()).optional(),
+    todos: z.array(z.string()).optional(),
+    risks: z.array(z.string()).optional(),
+    provenanceFields: z.array(z.string()).optional(),
+    recentChanges: z.array(z.object({
+      field: z.enum(["goal", "constraints", "decisions", "todos", "volatileContext", "openQuestions", "risks"]).optional(),
+      action: z.enum(["set", "add", "remove", "reaffirm"]).optional(),
+      value: z.string().optional()
+    })).optional()
+  }).nullable().optional()
+});
+
 export const AnswerOutput = z.object({
-  answer: z.string()
+  answer: z.string(),
+  evidence: GroundingEvidenceOutput.optional()
 });
 
 export const RuntimeTurnInput = z.object({
@@ -162,38 +196,7 @@ export const RuntimeTurnOutput = z.object({
   writeTier: z.enum(["ephemeral", "candidate", "stable", "documented"]),
   digestTriggered: z.boolean(),
   notes: z.array(z.string()).optional(),
-  evidence: z.object({
-    digestIds: z.array(z.string()),
-    eventIds: z.array(z.string()),
-    stateRefs: z.array(z.string()),
-    digestSummary: z.string().nullable().optional(),
-    eventSnippets: z.array(z.object({
-      id: z.string(),
-      createdAt: z.string(),
-      snippet: z.string(),
-      sourceType: MemoryType.optional(),
-      key: z.string().nullable().optional(),
-      rankingReason: z.string().optional(),
-      heuristicScore: z.number().optional(),
-      recencyScore: z.number().optional(),
-      embeddingScore: z.number().optional(),
-      finalScore: z.number().optional()
-    })).optional(),
-    stateSummary: z.string().nullable().optional(),
-    stateDetails: z.object({
-      digestId: z.string().nullable(),
-      goal: z.string().optional(),
-      constraints: z.array(z.string()).optional(),
-      todos: z.array(z.string()).optional(),
-      risks: z.array(z.string()).optional(),
-      provenanceFields: z.array(z.string()).optional(),
-      recentChanges: z.array(z.object({
-        field: z.enum(["goal", "constraints", "decisions", "todos", "volatileContext", "openQuestions", "risks"]).optional(),
-        action: z.enum(["set", "add", "remove", "reaffirm"]).optional(),
-        value: z.string().optional()
-      })).optional()
-    }).nullable().optional()
-  })
+  evidence: GroundingEvidenceOutput
 });
 
 export const ReminderCreateInput = z.object({
