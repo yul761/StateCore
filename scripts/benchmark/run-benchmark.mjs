@@ -194,6 +194,8 @@ function parseGoldFacts(events) {
     decisions: uniq(decisions),
     todos: uniq(todos),
     transientTodos: uniq(allTodos.filter((item) => !todos.includes(item))),
+    latestDocumentFacts: [],
+    supersededDocumentFacts: [],
     contradictions: { goal: [], constraints: [], decisions: [], todos: [] }
   };
 }
@@ -207,6 +209,8 @@ function loadGoldFacts(fixture) {
       decisions: Array.isArray(fixture.gold.decisions) ? fixture.gold.decisions : [],
       todos: Array.isArray(fixture.gold.todos) ? fixture.gold.todos : [],
       transientTodos: Array.isArray(fixture.gold.transientTodos) ? fixture.gold.transientTodos : [],
+      latestDocumentFacts: Array.isArray(fixture.gold.latestDocumentFacts) ? fixture.gold.latestDocumentFacts : [],
+      supersededDocumentFacts: Array.isArray(fixture.gold.supersededDocumentFacts) ? fixture.gold.supersededDocumentFacts : [],
       contradictions: fixture.gold.contradictions && typeof fixture.gold.contradictions === "object"
         ? {
             goal: Array.isArray(fixture.gold.contradictions.goal) ? fixture.gold.contradictions.goal : [],
@@ -320,8 +324,10 @@ function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, r
         (digestMetrics.goldRetention.constraintContradictionRate || 0) +
         (digestMetrics.goldRetention.decisionContradictionRate || 0) +
         (digestMetrics.goldRetention.todoContradictionRate || 0) +
-        (digestMetrics.goldRetention.temporaryTodoIntrusionRate || 0)
-      ) / 5
+        (digestMetrics.goldRetention.temporaryTodoIntrusionRate || 0) +
+        (digestMetrics.goldRetention.supersededDocumentIntrusionRate || 0) +
+        (digestMetrics.goldRetention.stateSupersededDocumentIntrusionRate || 0)
+      ) / 7
     : 0;
   const omissionRisk = digestMetrics.omissionWarningRate || 0;
   const integrityRisk = contradiction * 0.75 + omissionRisk * 0.25;
@@ -782,6 +788,14 @@ async function run() {
           stateConstraintPreservationRate: stateText ? factRecall(stateText, goldFacts.constraints) : null,
           stateDecisionContinuityRate: stateText ? factRecall(stateText, goldFacts.decisions) : null,
           stateTodoContinuityRate: stateText ? factRecall(stateText, goldFacts.todos) : null,
+          latestDocumentRetentionRate: factRecall(combined, goldFacts.latestDocumentFacts),
+          stateLatestDocumentRetentionRate: stateText ? factRecall(stateText, goldFacts.latestDocumentFacts) : null,
+          supersededDocumentIntrusionRate: goldFacts.supersededDocumentFacts.length
+            ? Number((countMatches(combined, goldFacts.supersededDocumentFacts) / goldFacts.supersededDocumentFacts.length).toFixed(3))
+            : 0,
+          stateSupersededDocumentIntrusionRate: stateText && goldFacts.supersededDocumentFacts.length
+            ? Number((countMatches(stateText, goldFacts.supersededDocumentFacts) / goldFacts.supersededDocumentFacts.length).toFixed(3))
+            : null,
           temporaryTodoIntrusionRate: goldFacts.transientTodos.length
             ? Number((countMatches(combined, goldFacts.transientTodos) / goldFacts.transientTodos.length).toFixed(3))
             : 0,
@@ -812,17 +826,27 @@ async function run() {
           stateFactRetentionRate: averageMetric(
             goldRetentionRuns.map((run) => ({
               stateFactRetentionRate:
-                [run.stateGoalRetentionRate, run.stateConstraintPreservationRate, run.stateDecisionContinuityRate, run.stateTodoContinuityRate]
+                [
+                  run.stateGoalRetentionRate,
+                  run.stateConstraintPreservationRate,
+                  run.stateDecisionContinuityRate,
+                  run.stateTodoContinuityRate,
+                  run.stateLatestDocumentRetentionRate
+                ]
                   .filter((value) => typeof value === "number")
                   .reduce((sum, value, _, items) => sum + value / items.length, 0)
             })),
             "stateFactRetentionRate"
           ),
+          latestDocumentRetentionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.latestDocumentRetentionRate, 0) / goldRetentionRuns.length).toFixed(3)),
+          stateLatestDocumentRetentionRate: averageMetric(goldRetentionRuns, "stateLatestDocumentRetentionRate"),
           factRetentionRate: Number((
-            goldRetentionRuns.reduce((sum, run) => sum + ((run.recallGoal + run.recallConstraints + run.recallDecisions + run.recallTodos) / 4), 0) / goldRetentionRuns.length
+            goldRetentionRuns.reduce((sum, run) => sum + ((run.recallGoal + run.recallConstraints + run.recallDecisions + run.recallTodos + run.latestDocumentRetentionRate) / 5), 0) / goldRetentionRuns.length
           ).toFixed(3)),
           temporaryTodoIntrusionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.temporaryTodoIntrusionRate, 0) / goldRetentionRuns.length).toFixed(3)),
           stateTemporaryTodoIntrusionRate: averageMetric(goldRetentionRuns, "stateTemporaryTodoIntrusionRate"),
+          supersededDocumentIntrusionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.supersededDocumentIntrusionRate, 0) / goldRetentionRuns.length).toFixed(3)),
+          stateSupersededDocumentIntrusionRate: averageMetric(goldRetentionRuns, "stateSupersededDocumentIntrusionRate"),
           goalContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.goalContradictionRate, 0) / goldRetentionRuns.length).toFixed(3)),
           constraintContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.constraintContradictionRate, 0) / goldRetentionRuns.length).toFixed(3)),
           decisionContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.decisionContradictionRate, 0) / goldRetentionRuns.length).toFixed(3)),
@@ -1047,12 +1071,13 @@ async function run() {
     `- Runtime turn success: ${report.metrics.runtime.enabled ? `${report.metrics.runtime.success}/${report.metrics.runtime.runs}` : "skipped"}, evidence coverage ${report.metrics.runtime.enabled ? report.metrics.runtime.evidenceCoverageRate : "n/a"}, avg latency ${report.metrics.runtime.enabled ? `${report.metrics.runtime.avgLatencyMs} ms` : "n/a"}`,
     `- Reminder sent: ${report.metrics.reminder.success === 1 ? "yes" : "no"}, delay ${report.metrics.reminder.delayMs} ms`,
     ...(report.metrics.digest.goldRetention
-      ? [
+        ? [
           `- Digest gold recall: goal ${report.metrics.digest.goldRetention.recallGoal}, constraints ${report.metrics.digest.goldRetention.recallConstraints}, decisions ${report.metrics.digest.goldRetention.recallDecisions}, todos ${report.metrics.digest.goldRetention.recallTodos}`,
           `- Retention metrics: fact ${report.metrics.digest.goldRetention.factRetentionRate}, goal ${report.metrics.digest.goldRetention.goalRetentionRate}, constraints ${report.metrics.digest.goldRetention.constraintPreservationRate}, decisions ${report.metrics.digest.goldRetention.decisionContinuityRate}, todos ${report.metrics.digest.goldRetention.todoContinuityRate}`,
+          `- Latest document retention rate: digest ${report.metrics.digest.goldRetention.latestDocumentRetentionRate ?? "n/a"}, state ${report.metrics.digest.goldRetention.stateLatestDocumentRetentionRate ?? "n/a"}`,
           `- State retention metrics: fact ${report.metrics.digest.goldRetention.stateFactRetentionRate ?? "n/a"}, goal ${report.metrics.digest.goldRetention.stateGoalRetentionRate ?? "n/a"}, constraints ${report.metrics.digest.goldRetention.stateConstraintPreservationRate ?? "n/a"}, decisions ${report.metrics.digest.goldRetention.stateDecisionContinuityRate ?? "n/a"}, todos ${report.metrics.digest.goldRetention.stateTodoContinuityRate ?? "n/a"}`,
           `- Digest contradiction rates: goal ${report.metrics.digest.goldRetention.goalContradictionRate}, constraints ${report.metrics.digest.goldRetention.constraintContradictionRate}, decisions ${report.metrics.digest.goldRetention.decisionContradictionRate}, todos ${report.metrics.digest.goldRetention.todoContradictionRate}`,
-          `- Temporary todo intrusion rate: digest ${report.metrics.digest.goldRetention.temporaryTodoIntrusionRate ?? 0}, state ${report.metrics.digest.goldRetention.stateTemporaryTodoIntrusionRate ?? "n/a"}`
+          `- Intrusion rates: temporary todos digest ${report.metrics.digest.goldRetention.temporaryTodoIntrusionRate ?? 0}, temporary todos state ${report.metrics.digest.goldRetention.stateTemporaryTodoIntrusionRate ?? "n/a"}, superseded docs digest ${report.metrics.digest.goldRetention.supersededDocumentIntrusionRate ?? 0}, superseded docs state ${report.metrics.digest.goldRetention.stateSupersededDocumentIntrusionRate ?? "n/a"}`
         ]
       : []),
     "",

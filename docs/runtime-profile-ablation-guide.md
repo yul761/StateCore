@@ -81,6 +81,7 @@ Prefer comparing:
 - digest omission warning rate
 - temporary todo intrusion rate when todo-heavy fixtures are used
 - state-backed retention metrics, not only digest-text retention
+- latest-document retention and superseded-document intrusion when comparing document-focused fixtures
 - runtime turn success
 - runtime evidence coverage rate
 - runtime digest-summary / event-snippet / state-summary evidence rates

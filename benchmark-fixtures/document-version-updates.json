@@ -1,0 +1,119 @@
+{
+  "gold": {
+    "goal": [
+      "preserve the latest document truth without reviving superseded versions"
+    ],
+    "constraints": [
+      "self-hosted first",
+      "keep api stable"
+    ],
+    "decisions": [
+      "We decide that the latest document version should replace earlier guidance for the same key",
+      "We decide to treat stale document content as drift risk rather than historical truth"
+    ],
+    "todos": [
+      "ship assistant runtime endpoint",
+      "measure replay stability"
+    ],
+    "latestDocumentFacts": [
+      "prefer MODEL_* configuration names as the primary interface",
+      "treat the assistant runtime endpoint as the main integration path",
+      "include replay trend reporting in benchmark outputs"
+    ],
+    "supersededDocumentFacts": [
+      "prefer OPENAI_* configuration names as the primary interface",
+      "treat the cli demo as the main product boundary",
+      "skip replay trend reporting to keep benchmarks shorter"
+    ]
+  },
+  "events": [
+    {
+      "type": "document",
+      "key": "doc:goal",
+      "content": "goal: preserve the latest document truth without reviving superseded versions"
+    },
+    {
+      "type": "document",
+      "key": "doc:constraints",
+      "content": "constraint: self-hosted first\nconstraint: keep api stable"
+    },
+    {
+      "type": "document",
+      "key": "doc:runtime",
+      "content": "Runtime guidance v1:\nPrefer OPENAI_* configuration names as the primary interface.\nTreat the CLI demo as the main product boundary."
+    },
+    {
+      "type": "document",
+      "key": "doc:benchmark",
+      "content": "Benchmark note v1:\nSkip replay trend reporting to keep benchmarks shorter."
+    },
+    {
+      "type": "stream",
+      "content": "We decide that the latest document version should replace earlier guidance for the same key"
+    },
+    {
+      "type": "stream",
+      "content": "Status update: documentation is being revised for provider-neutral configuration"
+    },
+    {
+      "type": "document",
+      "key": "doc:runtime",
+      "content": "Runtime guidance v2:\nPrefer MODEL_* configuration names as the primary interface.\nTreat the assistant runtime endpoint as the main integration path."
+    },
+    {
+      "type": "document",
+      "key": "doc:benchmark",
+      "content": "Benchmark note v2:\nInclude replay trend reporting in benchmark outputs."
+    },
+    {
+      "type": "stream",
+      "content": "We decide to treat stale document content as drift risk rather than historical truth"
+    },
+    {
+      "type": "document",
+      "key": "doc:plan",
+      "content": "todo: ship assistant runtime endpoint\ntodo: measure replay stability"
+    },
+    {
+      "type": "stream",
+      "content": "Status update: latest docs should supersede earlier versions with the same key"
+    },
+    {
+      "type": "stream",
+      "content": "noise ping 404"
+    },
+    {
+      "type": "stream",
+      "content": "noise ping 505"
+    }
+  ],
+  "retrieveCases": [
+    {
+      "query": "What configuration names should developers use now?",
+      "expected": "model",
+      "aliases": [
+        "MODEL_*",
+        "provider-neutral",
+        "configuration"
+      ]
+    },
+    {
+      "query": "What is the main integration path now?",
+      "expected": "runtime",
+      "aliases": [
+        "assistant runtime",
+        "endpoint",
+        "integration path"
+      ]
+    },
+    {
+      "query": "What benchmark reporting should be included?",
+      "expected": "replay",
+      "aliases": [
+        "trend reporting",
+        "benchmark outputs",
+        "replay"
+      ]
+    }
+  ]
+}

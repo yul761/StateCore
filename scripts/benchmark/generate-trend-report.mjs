@@ -65,6 +65,10 @@ function summarizeBenchmark(data, fileName) {
     digestConsistency: data.metrics?.digest?.consistencyPassRate ?? 0,
     digestOmissionWarningRate: data.metrics?.digest?.omissionWarningRate ?? 0,
     temporaryTodoIntrusionRate: data.metrics?.digest?.goldRetention?.temporaryTodoIntrusionRate ?? 0,
+    latestDocumentRetentionRate: data.metrics?.digest?.goldRetention?.latestDocumentRetentionRate ?? 0,
+    stateLatestDocumentRetentionRate: data.metrics?.digest?.goldRetention?.stateLatestDocumentRetentionRate ?? 0,
+    supersededDocumentIntrusionRate: data.metrics?.digest?.goldRetention?.supersededDocumentIntrusionRate ?? 0,
+    stateSupersededDocumentIntrusionRate: data.metrics?.digest?.goldRetention?.stateSupersededDocumentIntrusionRate ?? 0,
     stateFactRetentionRate: data.metrics?.digest?.goldRetention?.stateFactRetentionRate ?? 0,
     stateGoalRetentionRate: data.metrics?.digest?.goldRetention?.stateGoalRetentionRate ?? 0,
     stateConstraintPreservationRate: data.metrics?.digest?.goldRetention?.stateConstraintPreservationRate ?? 0,
@@ -94,6 +98,8 @@ function buildDeltaSummary(items) {
     digestConsistency: Math.round((last.digestConsistency - first.digestConsistency) * 1000) / 1000,
     digestOmissionWarningRate: Math.round((last.digestOmissionWarningRate - first.digestOmissionWarningRate) * 1000) / 1000,
     temporaryTodoIntrusionRate: Math.round((last.temporaryTodoIntrusionRate - first.temporaryTodoIntrusionRate) * 1000) / 1000,
+    latestDocumentRetentionRate: Math.round((last.latestDocumentRetentionRate - first.latestDocumentRetentionRate) * 1000) / 1000,
+    supersededDocumentIntrusionRate: Math.round((last.supersededDocumentIntrusionRate - first.supersededDocumentIntrusionRate) * 1000) / 1000,
     stateFactRetentionRate: Math.round((last.stateFactRetentionRate - first.stateFactRetentionRate) * 1000) / 1000,
     runtimeEvidenceCoverage: Math.round((last.runtimeEvidenceCoverage - first.runtimeEvidenceCoverage) * 1000) / 1000
   };
@@ -146,7 +152,8 @@ const md = [
   `- Reliability breakdown: consistency ${latest.reliabilityBreakdown.consistency}, retention ${latest.reliabilityBreakdown.retention}, contradiction control ${latest.reliabilityBreakdown.contradictionControl}, replay ${latest.reliabilityBreakdown.replay}, runtime grounding ${latest.reliabilityBreakdown.runtimeGrounding}`,
   `- Digest consistency: ${latest.digestConsistency}`,
   `- Digest omission warning rate: ${latest.digestOmissionWarningRate}`,
-  `- Temporary todo intrusion rate: ${latest.temporaryTodoIntrusionRate}`,
+  `- Latest document retention: digest ${latest.latestDocumentRetentionRate}, state ${latest.stateLatestDocumentRetentionRate}`,
+  `- Intrusion rates: temporary todos ${latest.temporaryTodoIntrusionRate}, superseded docs digest ${latest.supersededDocumentIntrusionRate}, superseded docs state ${latest.stateSupersededDocumentIntrusionRate}`,
   `- State retention: fact ${latest.stateFactRetentionRate}, goal ${latest.stateGoalRetentionRate}, constraints ${latest.stateConstraintPreservationRate}, decisions ${latest.stateDecisionContinuityRate}, todos ${latest.stateTodoContinuityRate}`,
   `- Runtime evidence coverage: ${latest.runtimeEvidenceCoverage}`,
   `- Runtime digest summary rate: ${latest.runtimeDigestSummaryRate}`,
@@ -163,6 +170,8 @@ const md = [
         `- Digest consistency delta: ${formatDelta(deltaSummary.digestConsistency)}`,
         `- Digest omission warning delta: ${formatDelta(deltaSummary.digestOmissionWarningRate)}`,
         `- Temporary todo intrusion delta: ${formatDelta(deltaSummary.temporaryTodoIntrusionRate)}`,
+        `- Latest document retention delta: ${formatDelta(deltaSummary.latestDocumentRetentionRate)}`,
+        `- Superseded document intrusion delta: ${formatDelta(deltaSummary.supersededDocumentIntrusionRate)}`,
         `- State fact retention delta: ${formatDelta(deltaSummary.stateFactRetentionRate)}`,
         `- Runtime evidence coverage delta: ${formatDelta(deltaSummary.runtimeEvidenceCoverage)}`
       ]
@@ -183,7 +192,8 @@ const md = [
       `- Reliability breakdown: consistency ${item.reliabilityBreakdown.consistency}, retention ${item.reliabilityBreakdown.retention}, contradiction control ${item.reliabilityBreakdown.contradictionControl}, replay ${item.reliabilityBreakdown.replay}, runtime grounding ${item.reliabilityBreakdown.runtimeGrounding}`,
       `- Digest consistency: ${item.digestConsistency}`,
       `- Digest omission warning rate: ${item.digestOmissionWarningRate}`,
-      `- Temporary todo intrusion rate: ${item.temporaryTodoIntrusionRate}`,
+      `- Latest document retention: digest ${item.latestDocumentRetentionRate}, state ${item.stateLatestDocumentRetentionRate}`,
+      `- Intrusion rates: temporary todos ${item.temporaryTodoIntrusionRate}, superseded docs digest ${item.supersededDocumentIntrusionRate}, superseded docs state ${item.stateSupersededDocumentIntrusionRate}`,
       `- State retention: fact ${item.stateFactRetentionRate}, goal ${item.stateGoalRetentionRate}, constraints ${item.stateConstraintPreservationRate}, decisions ${item.stateDecisionContinuityRate}, todos ${item.stateTodoContinuityRate}`,
       `- Runtime evidence coverage: ${item.runtimeEvidenceCoverage}`,
       `- Runtime digest summary rate: ${item.runtimeDigestSummaryRate}`,

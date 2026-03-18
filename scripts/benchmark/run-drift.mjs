@@ -109,7 +109,9 @@ function parseGoldFacts(events) {
     constraints: uniq(constraints),
     decisions: uniq(decisions),
     todos: uniq(todos),
-    transientTodos: uniq(allTodos.filter((item) => !todos.includes(item)))
+    transientTodos: uniq(allTodos.filter((item) => !todos.includes(item))),
+    latestDocumentFacts: [],
+    supersededDocumentFacts: []
   };
 }
 
@@ -121,6 +123,8 @@ function loadGoldFacts(fixture) {
       decisions: Array.isArray(fixture.gold.decisions) ? fixture.gold.decisions : [],
       todos: Array.isArray(fixture.gold.todos) ? fixture.gold.todos : [],
       transientTodos: Array.isArray(fixture.gold.transientTodos) ? fixture.gold.transientTodos : [],
+      latestDocumentFacts: Array.isArray(fixture.gold.latestDocumentFacts) ? fixture.gold.latestDocumentFacts : [],
+      supersededDocumentFacts: Array.isArray(fixture.gold.supersededDocumentFacts) ? fixture.gold.supersededDocumentFacts : [],
       contradictions: fixture.gold.contradictions && typeof fixture.gold.contradictions === "object"
         ? {
             goal: Array.isArray(fixture.gold.contradictions.goal) ? fixture.gold.contradictions.goal : [],
@@ -297,6 +301,18 @@ async function run() {
             .reduce((sum, m) => sum + (m.temporaryTodoIntrusionRate ?? 0), 0) / Math.max(1, successful.length)
         ).toFixed(3)
       ),
+      latestDocumentRetentionRate: Number(
+        (
+          successful
+            .reduce((sum, m) => sum + (m.latestDocumentRetentionRate ?? 0), 0) / Math.max(1, successful.length)
+        ).toFixed(3)
+      ),
+      supersededDocumentIntrusionRate: Number(
+        (
+          successful
+            .reduce((sum, m) => sum + (m.supersededDocumentIntrusionRate ?? 0), 0) / Math.max(1, successful.length)
+        ).toFixed(3)
+      ),
       recallSlope: Number(linearSlope(recalls).toFixed(6)),
       repeatedChangeRate: Number(
         (report.metrics.filter((m) => m.ok && m.repeatedChanges).length / Math.max(1, report.metrics.length)).toFixed(3)
@@ -329,6 +345,8 @@ async function run() {
       `- Decision contradiction rate: ${report.summary.decisionContradictionRate}`,
       `- Todo contradiction rate: ${report.summary.todoContradictionRate}`,
       `- Temporary todo intrusion rate: ${report.summary.temporaryTodoIntrusionRate}`,
+      `- Latest document retention rate: ${report.summary.latestDocumentRetentionRate}`,
+      `- Superseded document intrusion rate: ${report.summary.supersededDocumentIntrusionRate}`,
       `- Recall slope: ${report.summary.recallSlope}`,
       `- Repeated change rate: ${report.summary.repeatedChangeRate}`,
       "",
@@ -385,6 +403,10 @@ async function run() {
     const temporaryTodoIntrusionRate = gold.transientTodos.length
       ? Number((countMatches(combined, gold.transientTodos) / gold.transientTodos.length).toFixed(3))
       : 0;
+    const latestDocumentRetentionRate = factRecall(combined, gold.latestDocumentFacts);
+    const supersededDocumentIntrusionRate = gold.supersededDocumentFacts.length
+      ? Number((countMatches(combined, gold.supersededDocumentFacts) / gold.supersededDocumentFacts.length).toFixed(3))
+      : 0;
     recalls.push(avgRecall);
 
     const repeatedChanges = prevChanges && normalizeText(prevChanges) === normalizeText(changes);
@@ -406,6 +428,8 @@ async function run() {
       decisionContradictionRate,
       todoContradictionRate,
       temporaryTodoIntrusionRate,
+      latestDocumentRetentionRate,
+      supersededDocumentIntrusionRate,
       goalMatches: countMatches(combined, gold.goal),
       constraintMatches: countMatches(combined, gold.constraints),
       decisionMatches: countMatches(combined, gold.decisions),

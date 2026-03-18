@@ -84,6 +84,10 @@ function collectSummary(jsonPath) {
     digestConsistencyPassRate: data.metrics?.digest?.consistencyPassRate ?? 0,
     digestOmissionWarningRate: data.metrics?.digest?.omissionWarningRate ?? 0,
     temporaryTodoIntrusionRate: data.metrics?.digest?.goldRetention?.temporaryTodoIntrusionRate ?? 0,
+    latestDocumentRetentionRate: data.metrics?.digest?.goldRetention?.latestDocumentRetentionRate ?? 0,
+    stateLatestDocumentRetentionRate: data.metrics?.digest?.goldRetention?.stateLatestDocumentRetentionRate ?? 0,
+    supersededDocumentIntrusionRate: data.metrics?.digest?.goldRetention?.supersededDocumentIntrusionRate ?? 0,
+    stateSupersededDocumentIntrusionRate: data.metrics?.digest?.goldRetention?.stateSupersededDocumentIntrusionRate ?? 0,
     stateFactRetentionRate: data.metrics?.digest?.goldRetention?.stateFactRetentionRate ?? 0,
     stateGoalRetentionRate: data.metrics?.digest?.goldRetention?.stateGoalRetentionRate ?? 0,
     stateConstraintPreservationRate: data.metrics?.digest?.goldRetention?.stateConstraintPreservationRate ?? 0,
@@ -116,6 +120,8 @@ function compareAgainstBaseline(baseline, item) {
     reliability: roundDelta((item.reliability ?? 0) - (baseline.reliability ?? 0)),
     digestOmissionWarningRate: roundDelta((item.digestOmissionWarningRate ?? 0) - (baseline.digestOmissionWarningRate ?? 0)),
     temporaryTodoIntrusionRate: roundDelta((item.temporaryTodoIntrusionRate ?? 0) - (baseline.temporaryTodoIntrusionRate ?? 0)),
+    latestDocumentRetentionRate: roundDelta((item.latestDocumentRetentionRate ?? 0) - (baseline.latestDocumentRetentionRate ?? 0)),
+    supersededDocumentIntrusionRate: roundDelta((item.supersededDocumentIntrusionRate ?? 0) - (baseline.supersededDocumentIntrusionRate ?? 0)),
     stateFactRetentionRate: roundDelta((item.stateFactRetentionRate ?? 0) - (baseline.stateFactRetentionRate ?? 0)),
     runtimeEvidenceCoverageRate: roundDelta((item.runtimeEvidenceCoverageRate ?? 0) - (baseline.runtimeEvidenceCoverageRate ?? 0)),
     runtimeEvidenceDigestSummaryRate: roundDelta((item.runtimeEvidenceDigestSummaryRate ?? 0) - (baseline.runtimeEvidenceDigestSummaryRate ?? 0)),
@@ -146,6 +152,10 @@ function summarizeDeltas(cases) {
       worstDigestOmission: null,
       bestStateRetention: null,
       worstStateRetention: null,
+      bestLatestDocumentRetention: null,
+      worstLatestDocumentRetention: null,
+      bestSupersededDocumentIntrusion: null,
+      worstSupersededDocumentIntrusion: null,
       bestRuntimeEvidenceCoverage: null,
       worstRuntimeEvidenceCoverage: null
     };
@@ -164,6 +174,10 @@ function summarizeDeltas(cases) {
     worstDigestOmission: byMetric("digestOmissionWarningRate", "desc"),
     bestStateRetention: byMetric("stateFactRetentionRate", "desc"),
     worstStateRetention: byMetric("stateFactRetentionRate", "asc"),
+    bestLatestDocumentRetention: byMetric("latestDocumentRetentionRate", "desc"),
+    worstLatestDocumentRetention: byMetric("latestDocumentRetentionRate", "asc"),
+    bestSupersededDocumentIntrusion: byMetric("supersededDocumentIntrusionRate", "asc"),
+    worstSupersededDocumentIntrusion: byMetric("supersededDocumentIntrusionRate", "desc"),
     bestRuntimeEvidenceCoverage: byMetric("runtimeEvidenceCoverageRate", "desc"),
     worstRuntimeEvidenceCoverage: byMetric("runtimeEvidenceCoverageRate", "asc")
   };
@@ -227,6 +241,10 @@ const lines = [
   formatDeltaEntry("Worst omission warning delta", deltaSummary?.worstDigestOmission, "digestOmissionWarningRate"),
   formatDeltaEntry("Best state retention delta", deltaSummary?.bestStateRetention, "stateFactRetentionRate"),
   formatDeltaEntry("Worst state retention delta", deltaSummary?.worstStateRetention, "stateFactRetentionRate"),
+  formatDeltaEntry("Best latest-document retention delta", deltaSummary?.bestLatestDocumentRetention, "latestDocumentRetentionRate"),
+  formatDeltaEntry("Worst latest-document retention delta", deltaSummary?.worstLatestDocumentRetention, "latestDocumentRetentionRate"),
+  formatDeltaEntry("Best superseded-doc intrusion delta", deltaSummary?.bestSupersededDocumentIntrusion, "supersededDocumentIntrusionRate"),
+  formatDeltaEntry("Worst superseded-doc intrusion delta", deltaSummary?.worstSupersededDocumentIntrusion, "supersededDocumentIntrusionRate"),
   formatDeltaEntry("Best runtime evidence delta", deltaSummary?.bestRuntimeEvidenceCoverage, "runtimeEvidenceCoverageRate"),
   formatDeltaEntry("Worst runtime evidence delta", deltaSummary?.worstRuntimeEvidenceCoverage, "runtimeEvidenceCoverageRate"),
   "",
@@ -241,12 +259,12 @@ const lines = [
       `- Reliability breakdown: consistency ${s.reliabilityBreakdown.consistency}, retention ${s.reliabilityBreakdown.retention}, contradiction-control ${s.reliabilityBreakdown.contradictionControl}, replay ${s.reliabilityBreakdown.replay}, runtime-grounding ${s.reliabilityBreakdown.runtimeGrounding}`,
       ...(s.name !== "baseline" && deltaSummary?.baseline
         ? [
-            `- Baseline deltas: overall ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).overall)}, reliability ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).reliability)}, omission-warning ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).digestOmissionWarningRate)}, temporary-todo-intrusion ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).temporaryTodoIntrusionRate)}, evidence ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).runtimeEvidenceCoverageRate)}, digest-trigger ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).runtimeDigestTriggerRate)}`
+            `- Baseline deltas: overall ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).overall)}, reliability ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).reliability)}, omission-warning ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).digestOmissionWarningRate)}, temporary-todo-intrusion ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).temporaryTodoIntrusionRate)}, latest-document-retention ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).latestDocumentRetentionRate)}, superseded-doc-intrusion ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).supersededDocumentIntrusionRate)}, evidence ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).runtimeEvidenceCoverageRate)}, digest-trigger ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).runtimeDigestTriggerRate)}`
           ]
         : []),
       `- Component scores: ingest ${s.ingest}, retrieve ${s.retrieve}, digest ${s.digest}, reminder ${s.reminder}`,
-      `- Digest quality: consistency ${s.digestConsistencyPassRate}, omission-warning ${s.digestOmissionWarningRate}, temporary-todo-intrusion ${s.temporaryTodoIntrusionRate}`,
-      `- State retention: fact ${s.stateFactRetentionRate}, goal ${s.stateGoalRetentionRate}, constraints ${s.stateConstraintPreservationRate}, decisions ${s.stateDecisionContinuityRate}, todos ${s.stateTodoContinuityRate}`,
+      `- Digest quality: consistency ${s.digestConsistencyPassRate}, omission-warning ${s.digestOmissionWarningRate}, temporary-todo-intrusion ${s.temporaryTodoIntrusionRate}, superseded-doc-intrusion ${s.supersededDocumentIntrusionRate}`,
+      `- Retention: latest-document digest ${s.latestDocumentRetentionRate}, latest-document state ${s.stateLatestDocumentRetentionRate}, state fact ${s.stateFactRetentionRate}, goal ${s.stateGoalRetentionRate}, constraints ${s.stateConstraintPreservationRate}, decisions ${s.stateDecisionContinuityRate}, todos ${s.stateTodoContinuityRate}`,
       `- Runtime: ${s.runtimeSuccess}/${s.runtimeRuns} success, evidence ${s.runtimeEvidenceCoverageRate}, digest-trigger ${s.runtimeDigestTriggerRate}`,
       `- Runtime evidence detail: digest-summary ${s.runtimeEvidenceDigestSummaryRate}, event-snippet ${s.runtimeEvidenceEventSnippetRate}, state-summary ${s.runtimeEvidenceStateSummaryRate}`,
       `- Runtime policy profile: ${s.runtimePolicyProfile}`,

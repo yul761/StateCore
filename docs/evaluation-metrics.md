@@ -145,6 +145,26 @@ The rate at which short-lived execution todos appear in digest output or drift s
 
 This is especially useful for fixtures such as `benchmark-fixtures/todo-pileup.json`.
 
+### Latest Document Retention Rate
+
+Definition:
+
+The fraction of current document-version facts that remain represented after newer content replaces earlier content for the same document key.
+
+Recommended stress fixture:
+
+- `benchmark-fixtures/document-version-updates.json`
+
+### Superseded Document Intrusion Rate
+
+Definition:
+
+The rate at which facts from superseded document versions continue to appear in digest output or protected state as if they were still current.
+
+Recommended stress fixture:
+
+- `benchmark-fixtures/document-version-updates.json`
+
 ### Digest Contradiction Rate
 
 Definition:

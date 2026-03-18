@@ -29,11 +29,14 @@ Fixture files may include explicit `gold` labels for:
 - `constraints`
 - `decisions`
 - `todos`
+- `latestDocumentFacts`
+- `supersededDocumentFacts`
 
 Drift benchmarks will prefer these labels when present and fall back to parsing event text otherwise.
 Drift reports include per-category omission and contradiction taxonomy summaries when gold labels are available.
 `todo-pileup.json` is intended to stress todo continuity when durable roadmap tasks are mixed with many short-lived cleanup tasks.
 When a fixture provides `gold.transientTodos`, drift reports also emit a `temporaryTodoIntrusionRate`.
+`document-version-updates.json` is intended to stress whether the latest document version remains current while superseded guidance stays out of active memory.
 
 Run ablations (controlled variable sweeps):
 ```bash
@@ -63,6 +66,11 @@ DRIFT_RUNS=25 DRIFT_FIXTURE=benchmark-fixtures/goal-evolution.json node scripts/
 Todo-pileup drift test:
 ```bash
 DRIFT_RUNS=25 DRIFT_FIXTURE=benchmark-fixtures/todo-pileup.json node scripts/benchmark/run-drift.mjs
+```
+
+Document-version drift test:
+```bash
+DRIFT_RUNS=25 DRIFT_FIXTURE=benchmark-fixtures/document-version-updates.json node scripts/benchmark/run-drift.mjs
 ```
 
 Document-heavy runtime benchmark:
@@ -134,6 +142,7 @@ Outputs are written to `benchmark-results/`:
 - failure taxonomy histogram for digest benchmark runs
 - persisted consistency taxonomy histogram from accepted digest snapshots
 - gold-backed retention and contradiction summary when fixture labels are available
+- latest-document retention and superseded-document intrusion checks when fixture labels are available
 
 When gold labels are available, benchmark JSON also emits retention-oriented aliases:
 - `factRetentionRate`
@@ -148,6 +157,10 @@ The benchmark now also emits state-backed counterparts for the latest protected 
 - `stateConstraintPreservationRate`
 - `stateDecisionContinuityRate`
 - `stateTodoContinuityRate`
+- `latestDocumentRetentionRate`
+- `stateLatestDocumentRetentionRate`
+- `supersededDocumentIntrusionRate`
+- `stateSupersededDocumentIntrusionRate`
 
 4. Reminder
 - due-to-sent latency
