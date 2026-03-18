@@ -25,6 +25,16 @@ export interface DigestState {
   todos: string[];
   volatileContext?: string[];
   evidenceRefs?: DigestEvidenceRef[];
+  provenance?: {
+    goal?: DigestEvidenceRef[];
+    constraints?: DigestStateValueProvenance[];
+    decisions?: DigestStateValueProvenance[];
+    todos?: DigestStateValueProvenance[];
+    volatileContext?: DigestStateValueProvenance[];
+    openQuestions?: DigestStateValueProvenance[];
+    risks?: DigestStateValueProvenance[];
+  };
+  recentChanges?: DigestStateChange[];
 }
 
 export interface DigestEvidenceRef {
@@ -32,6 +42,18 @@ export interface DigestEvidenceRef {
   sourceType: "document" | "event";
   key?: string;
   kind?: MemoryEventKind;
+}
+
+export interface DigestStateValueProvenance {
+  value: string;
+  refs: DigestEvidenceRef[];
+}
+
+export interface DigestStateChange {
+  field: "goal" | "constraints" | "decisions" | "todos" | "volatileContext" | "openQuestions" | "risks";
+  action: "set" | "add" | "remove" | "reaffirm";
+  value: string;
+  evidence: DigestEvidenceRef;
 }
 
 export interface SelectedEvent {
@@ -86,7 +108,9 @@ const DEFAULT_DIGEST_STATE: DigestState = {
   workingNotes: {},
   todos: [],
   volatileContext: [],
-  evidenceRefs: []
+  evidenceRefs: [],
+  provenance: {},
+  recentChanges: []
 };
 
 function deriveStateFromDigest(digest?: Digest | null): DigestState | null {
@@ -108,7 +132,9 @@ function deriveStateFromDigest(digest?: Digest | null): DigestState | null {
     workingNotes: {},
     todos: digest.nextSteps ?? [],
     volatileContext: [],
-    evidenceRefs: []
+    evidenceRefs: [],
+    provenance: {},
+    recentChanges: []
   };
 }
 
@@ -131,6 +157,16 @@ function normalizeEvidenceRef(ref: string | DigestEvidenceRef): DigestEvidenceRe
 export function normalizeDigestState(state?: DigestState | null): DigestState {
   const base = JSON.parse(JSON.stringify(state ?? DEFAULT_DIGEST_STATE)) as DigestState & {
     evidenceRefs?: Array<string | DigestEvidenceRef>;
+    provenance?: {
+      goal?: Array<string | DigestEvidenceRef>;
+      constraints?: Array<{ value?: string; refs?: Array<string | DigestEvidenceRef> }>;
+      decisions?: Array<{ value?: string; refs?: Array<string | DigestEvidenceRef> }>;
+      todos?: Array<{ value?: string; refs?: Array<string | DigestEvidenceRef> }>;
+      volatileContext?: Array<{ value?: string; refs?: Array<string | DigestEvidenceRef> }>;
+      openQuestions?: Array<{ value?: string; refs?: Array<string | DigestEvidenceRef> }>;
+      risks?: Array<{ value?: string; refs?: Array<string | DigestEvidenceRef> }>;
+    };
+    recentChanges?: Array<{ field?: DigestStateChange["field"]; action?: DigestStateChange["action"]; value?: string; evidence?: string | DigestEvidenceRef }>;
   };
   return {
     stableFacts: {
@@ -148,8 +184,55 @@ export function normalizeDigestState(state?: DigestState | null): DigestState {
     evidenceRefs: [...new Map((base.evidenceRefs ?? []).map((ref) => {
       const normalized = normalizeEvidenceRef(ref);
       return [`${normalized.sourceType}:${normalized.id}:${normalized.key ?? ""}:${normalized.kind ?? ""}`, normalized];
-    })).values()].slice(-50)
+    })).values()].slice(-50),
+    provenance: {
+      goal: [...new Map(((base.provenance?.goal ?? []) as Array<string | DigestEvidenceRef>).map((ref) => {
+        const normalized = normalizeEvidenceRef(ref);
+        return [`${normalized.sourceType}:${normalized.id}:${normalized.key ?? ""}:${normalized.kind ?? ""}`, normalized];
+      })).values()],
+      constraints: normalizeValueProvenanceList(base.provenance?.constraints),
+      decisions: normalizeValueProvenanceList(base.provenance?.decisions),
+      todos: normalizeValueProvenanceList(base.provenance?.todos),
+      volatileContext: normalizeValueProvenanceList(base.provenance?.volatileContext),
+      openQuestions: normalizeValueProvenanceList(base.provenance?.openQuestions),
+      risks: normalizeValueProvenanceList(base.provenance?.risks)
+    },
+    recentChanges: normalizeRecentChanges(base.recentChanges)
   };
+}
+
+function normalizeValueProvenanceList(entries?: Array<{ value?: string; refs?: Array<string | DigestEvidenceRef> }> | null) {
+  const normalized = (entries ?? [])
+    .map((entry) => ({
+      value: entry?.value?.trim() ?? "",
+      refs: [...new Map((entry?.refs ?? []).map((ref) => {
+        const item = normalizeEvidenceRef(ref);
+        return [`${item.sourceType}:${item.id}:${item.key ?? ""}:${item.kind ?? ""}`, item];
+      })).values()]
+    }))
+    .filter((entry) => entry.value);
+
+  return [...new Map(normalized.map((entry) => [normalizeText(entry.value), entry])).values()].slice(-50);
+}
+
+function normalizeRecentChanges(entries?: Array<{
+  field?: DigestStateChange["field"];
+  action?: DigestStateChange["action"];
+  value?: string;
+  evidence?: string | DigestEvidenceRef;
+}> | null): DigestStateChange[] {
+  return (entries ?? [])
+    .map((entry) => {
+      if (!entry?.field || !entry?.action || !entry?.value || !entry?.evidence) return null;
+      return {
+        field: entry.field,
+        action: entry.action,
+        value: entry.value.trim(),
+        evidence: normalizeEvidenceRef(entry.evidence)
+      };
+    })
+    .filter((entry): entry is DigestStateChange => Boolean(entry))
+    .slice(-25);
 }
 
 function normalizeText(value: string) {
@@ -346,6 +429,30 @@ function parseGoal(text: string) {
   return match?.[1]?.trim();
 }
 
+function upsertValueProvenance(
+  entries: DigestStateValueProvenance[] | undefined,
+  value: string,
+  evidence: DigestEvidenceRef
+) {
+  const normalizedValue = normalizeText(value);
+  const list = [...(entries ?? [])];
+  const existing = list.find((entry) => normalizeText(entry.value) === normalizedValue);
+  if (existing) {
+    existing.refs = [...new Map([...existing.refs, evidence].map((ref) => [`${ref.sourceType}:${ref.id}:${ref.key ?? ""}:${ref.kind ?? ""}`, ref])).values()];
+  } else {
+    list.push({ value, refs: [evidence] });
+  }
+  return normalizeValueProvenanceList(list);
+}
+
+function setGoalProvenance(refs: DigestEvidenceRef[] | undefined, evidence: DigestEvidenceRef) {
+  return [...new Map([...(refs ?? []), evidence].map((ref) => [`${ref.sourceType}:${ref.id}:${ref.key ?? ""}:${ref.kind ?? ""}`, ref])).values()];
+}
+
+function pushRecentChange(next: DigestState, change: DigestStateChange) {
+  next.recentChanges = [...(next.recentChanges ?? []), change].slice(-25);
+}
+
 export function protectedStateMerge(input: {
   prevState?: DigestState | null;
   deltaCandidates: DeltaCandidate[];
@@ -357,24 +464,62 @@ export function protectedStateMerge(input: {
   next.todos = next.todos ?? [];
   next.volatileContext = next.volatileContext ?? [];
   next.evidenceRefs = next.evidenceRefs ?? [];
+  next.provenance = next.provenance ?? {};
+  next.recentChanges = next.recentChanges ?? [];
 
   const docText = input.documents.map((doc) => doc.content).join("\n");
   const docGoal = parseGoal(docText);
   if (docGoal) {
+    const evidence = input.documents[input.documents.length - 1]
+      ? {
+          id: input.documents[input.documents.length - 1].id,
+          sourceType: "document" as const,
+          key: input.documents[input.documents.length - 1].key ?? undefined
+        }
+      : null;
+    const action = next.stableFacts.goal === docGoal ? "reaffirm" : "set";
     next.stableFacts.goal = docGoal;
+    if (evidence) {
+      next.provenance.goal = setGoalProvenance(next.provenance.goal, evidence);
+      pushRecentChange(next, { field: "goal", action, value: docGoal, evidence });
+    }
   }
 
   const docConstraints = parseLinesWithPrefix(docText, "constraint:");
   for (const constraint of docConstraints) {
+    const evidence = input.documents.find((doc) => doc.content.includes(constraint));
+    const normalizedEvidence = evidence
+      ? { id: evidence.id, sourceType: "document" as const, key: evidence.key ?? undefined }
+      : null;
     if (!next.stableFacts.constraints.includes(constraint)) {
       next.stableFacts.constraints.push(constraint);
+      if (normalizedEvidence) {
+        pushRecentChange(next, { field: "constraints", action: "add", value: constraint, evidence: normalizedEvidence });
+      }
+    } else if (normalizedEvidence) {
+      pushRecentChange(next, { field: "constraints", action: "reaffirm", value: constraint, evidence: normalizedEvidence });
+    }
+    if (normalizedEvidence) {
+      next.provenance.constraints = upsertValueProvenance(next.provenance.constraints, constraint, normalizedEvidence);
     }
   }
 
   const docTodos = parseLinesWithPrefix(docText, "todo:");
   for (const todo of docTodos) {
+    const evidence = input.documents.find((doc) => doc.content.includes(todo));
+    const normalizedEvidence = evidence
+      ? { id: evidence.id, sourceType: "document" as const, key: evidence.key ?? undefined }
+      : null;
     if (!next.todos.includes(todo)) {
       next.todos.push(todo);
+      if (normalizedEvidence) {
+        pushRecentChange(next, { field: "todos", action: "add", value: todo, evidence: normalizedEvidence });
+      }
+    } else if (normalizedEvidence) {
+      pushRecentChange(next, { field: "todos", action: "reaffirm", value: todo, evidence: normalizedEvidence });
+    }
+    if (normalizedEvidence) {
+      next.provenance.todos = upsertValueProvenance(next.provenance.todos, todo, normalizedEvidence);
     }
   }
 
@@ -387,11 +532,12 @@ export function protectedStateMerge(input: {
   }
 
   for (const delta of input.deltaCandidates) {
-    next.evidenceRefs.push({
+    const evidence = {
       id: delta.eventId,
-      sourceType: "event",
+      sourceType: "event" as const,
       kind: delta.features.kind
-    });
+    };
+    next.evidenceRefs.push(evidence);
     const text = delta.event.content.trim();
     const lowered = text.toLowerCase();
 
@@ -400,39 +546,61 @@ export function protectedStateMerge(input: {
         const last = next.stableFacts.decisions[next.stableFacts.decisions.length - 1];
         if (last) {
           next.stableFacts.decisions = next.stableFacts.decisions.filter((item) => item !== last);
+          pushRecentChange(next, { field: "decisions", action: "remove", value: last, evidence });
         }
       } else if (!next.stableFacts.decisions.includes(text)) {
         next.stableFacts.decisions.push(text);
+        pushRecentChange(next, { field: "decisions", action: "add", value: text, evidence });
+      } else {
+        pushRecentChange(next, { field: "decisions", action: "reaffirm", value: text, evidence });
       }
+      next.provenance.decisions = upsertValueProvenance(next.provenance.decisions, text, evidence);
 
       const decisionGoal = parseGoal(text);
       if (decisionGoal) {
+        const action = next.stableFacts.goal === decisionGoal ? "reaffirm" : "set";
         next.stableFacts.goal = decisionGoal;
+        next.provenance.goal = setGoalProvenance(next.provenance.goal, evidence);
+        pushRecentChange(next, { field: "goal", action, value: decisionGoal, evidence });
       }
     }
 
     if (delta.features.kind === "constraint" && delta.features.importanceScore >= 0.75) {
       if (!next.stableFacts.constraints.includes(text)) {
         next.stableFacts.constraints.push(text);
+        pushRecentChange(next, { field: "constraints", action: "add", value: text, evidence });
+      } else {
+        pushRecentChange(next, { field: "constraints", action: "reaffirm", value: text, evidence });
       }
+      next.provenance.constraints = upsertValueProvenance(next.provenance.constraints, text, evidence);
     }
 
     if (delta.features.kind === "todo") {
       if (!next.todos.includes(text)) {
         next.todos.push(text);
+        pushRecentChange(next, { field: "todos", action: "add", value: text, evidence });
+      } else {
+        pushRecentChange(next, { field: "todos", action: "reaffirm", value: text, evidence });
       }
+      next.provenance.todos = upsertValueProvenance(next.provenance.todos, text, evidence);
     }
 
     if (delta.features.kind === "question") {
       next.workingNotes.openQuestions = [...(next.workingNotes.openQuestions ?? []), text].slice(-10);
+      next.provenance.openQuestions = upsertValueProvenance(next.provenance.openQuestions, text, evidence);
+      pushRecentChange(next, { field: "openQuestions", action: "add", value: text, evidence });
     }
 
     if (delta.features.kind === "status" || delta.features.kind === "note") {
       next.volatileContext = [...(next.volatileContext ?? []), text].slice(-10);
+      next.provenance.volatileContext = upsertValueProvenance(next.provenance.volatileContext, text, evidence);
+      pushRecentChange(next, { field: "volatileContext", action: "add", value: text, evidence });
     }
 
     if (/\b(risk|blocked|blocker)\b/.test(lowered)) {
       next.workingNotes.risks = [...(next.workingNotes.risks ?? []), text].slice(-10);
+      next.provenance.risks = upsertValueProvenance(next.provenance.risks, text, evidence);
+      pushRecentChange(next, { field: "risks", action: "add", value: text, evidence });
     }
   }
 
@@ -440,7 +608,10 @@ export function protectedStateMerge(input: {
   next.stableFacts.constraints = [...new Set(next.stableFacts.constraints ?? [])];
   next.todos = [...new Set(next.todos)];
   next.volatileContext = [...new Set(next.volatileContext ?? [])].slice(-10);
-  next.evidenceRefs = normalizeDigestState(next).evidenceRefs;
+  const normalized = normalizeDigestState(next);
+  next.evidenceRefs = normalized.evidenceRefs;
+  next.provenance = normalized.provenance;
+  next.recentChanges = normalized.recentChanges;
 
   return next as DigestState;
 }

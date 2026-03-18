@@ -216,6 +216,79 @@ export const DigestState = z.object({
     sourceType: z.enum(["document", "event"]),
     key: z.string().optional(),
     kind: MemoryEventKind.optional()
+  })).optional(),
+  provenance: z.object({
+    goal: z.array(z.object({
+      id: z.string(),
+      sourceType: z.enum(["document", "event"]),
+      key: z.string().optional(),
+      kind: MemoryEventKind.optional()
+    })).optional(),
+    constraints: z.array(z.object({
+      value: z.string(),
+      refs: z.array(z.object({
+        id: z.string(),
+        sourceType: z.enum(["document", "event"]),
+        key: z.string().optional(),
+        kind: MemoryEventKind.optional()
+      }))
+    })).optional(),
+    decisions: z.array(z.object({
+      value: z.string(),
+      refs: z.array(z.object({
+        id: z.string(),
+        sourceType: z.enum(["document", "event"]),
+        key: z.string().optional(),
+        kind: MemoryEventKind.optional()
+      }))
+    })).optional(),
+    todos: z.array(z.object({
+      value: z.string(),
+      refs: z.array(z.object({
+        id: z.string(),
+        sourceType: z.enum(["document", "event"]),
+        key: z.string().optional(),
+        kind: MemoryEventKind.optional()
+      }))
+    })).optional(),
+    volatileContext: z.array(z.object({
+      value: z.string(),
+      refs: z.array(z.object({
+        id: z.string(),
+        sourceType: z.enum(["document", "event"]),
+        key: z.string().optional(),
+        kind: MemoryEventKind.optional()
+      }))
+    })).optional(),
+    openQuestions: z.array(z.object({
+      value: z.string(),
+      refs: z.array(z.object({
+        id: z.string(),
+        sourceType: z.enum(["document", "event"]),
+        key: z.string().optional(),
+        kind: MemoryEventKind.optional()
+      }))
+    })).optional(),
+    risks: z.array(z.object({
+      value: z.string(),
+      refs: z.array(z.object({
+        id: z.string(),
+        sourceType: z.enum(["document", "event"]),
+        key: z.string().optional(),
+        kind: MemoryEventKind.optional()
+      }))
+    })).optional()
+  }).optional(),
+  recentChanges: z.array(z.object({
+    field: z.enum(["goal", "constraints", "decisions", "todos", "volatileContext", "openQuestions", "risks"]),
+    action: z.enum(["set", "add", "remove", "reaffirm"]),
+    value: z.string(),
+    evidence: z.object({
+      id: z.string(),
+      sourceType: z.enum(["document", "event"]),
+      key: z.string().optional(),
+      kind: MemoryEventKind.optional()
+    })
   })).optional()
 });
 export type DigestState = z.infer<typeof DigestState>;

@@ -126,6 +126,26 @@ describe("protectedStateMerge", () => {
       sourceType: "event",
       kind: "note"
     }));
+    expect(merged.provenance?.goal).toContainEqual(expect.objectContaining({
+      id: "doc1",
+      sourceType: "document",
+      key: "doc:goal"
+    }));
+    expect(merged.provenance?.volatileContext).toContainEqual(expect.objectContaining({
+      value: "Status update: queue is stable"
+    }));
+    expect(merged.recentChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "goal",
+          value: "ship alpha"
+        }),
+        expect.objectContaining({
+          field: "volatileContext",
+          value: "Note: keep digest reports small"
+        })
+      ])
+    );
   });
 
   it("normalizes legacy string evidence refs from previous snapshots", () => {
@@ -140,6 +160,46 @@ describe("protectedStateMerge", () => {
     expect(normalized.evidenceRefs).toEqual([
       { id: "doc:goal", sourceType: "document", key: "doc:goal" },
       { id: "e1", sourceType: "event" }
+    ]);
+  });
+
+  it("normalizes provenance and recent changes from previous snapshots", () => {
+    const normalized = normalizeDigestState({
+      stableFacts: { decisions: [] },
+      workingNotes: {},
+      todos: [],
+      volatileContext: [],
+      evidenceRefs: [],
+      provenance: {
+        goal: ["doc:goal"] as any,
+        todos: [{ value: "ship runtime", refs: ["e1"] }] as any
+      },
+      recentChanges: [
+        { field: "goal", action: "set", value: "ship alpha", evidence: "doc:goal" },
+        { field: "todos", action: "add", value: "ship runtime", evidence: "e1" }
+      ] as any
+    });
+
+    expect(normalized.provenance?.goal).toEqual([{ id: "doc:goal", sourceType: "document", key: "doc:goal" }]);
+    expect(normalized.provenance?.todos).toEqual([
+      {
+        value: "ship runtime",
+        refs: [{ id: "e1", sourceType: "event" }]
+      }
+    ]);
+    expect(normalized.recentChanges).toEqual([
+      {
+        field: "goal",
+        action: "set",
+        value: "ship alpha",
+        evidence: { id: "doc:goal", sourceType: "document", key: "doc:goal" }
+      },
+      {
+        field: "todos",
+        action: "add",
+        value: "ship runtime",
+        evidence: { id: "e1", sourceType: "event" }
+      }
     ]);
   });
 });

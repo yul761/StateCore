@@ -77,6 +77,8 @@ flowchart TD
   - `todos`
   - `volatileContext`
   - `evidenceRefs`
+  - lightweight `provenance`
+  - lightweight `recentChanges`
 - Conservative overwrite rules prevent accidental drift.
 
 ### 4) LLM Generation

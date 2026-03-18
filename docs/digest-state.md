@@ -158,6 +158,17 @@ That makes it harder to answer:
 - what evidence justified a state transition
 - whether replay produced the same state for the same reasons
 
+The current codebase has now moved one step beyond this limitation:
+
+- state snapshots carry top-level `provenance`
+- state snapshots carry `recentChanges`
+
+This is still lighter than a full record-per-fact model, but it means the system can now answer:
+
+- which evidence most recently justified a goal or todo
+- which fields changed during the latest protected-state merge
+- whether replay produced the same state with similar recent transitions
+
 ## State Record Semantics
 
 Future state elements should carry more than text.
