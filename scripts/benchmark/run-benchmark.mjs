@@ -781,7 +781,11 @@ async function run() {
         digestMode: item.digestMode
       });
       const evidence = res.json?.evidence ?? {};
-      const evidenceCoverage = ["digestIds", "eventIds", "stateRefs"].some((key) => Array.isArray(evidence[key]) && evidence[key].length > 0);
+      const evidenceCoverage = Boolean(
+        (typeof evidence.digestSummary === "string" && evidence.digestSummary.length > 0) ||
+        (Array.isArray(evidence.eventSnippets) && evidence.eventSnippets.length > 0) ||
+        (typeof evidence.stateSummary === "string" && evidence.stateSummary.length > 0)
+      );
       runtimeResults.push({
         ok: res.ok && typeof res.json?.answer === "string",
         latencyMs: res.latencyMs,

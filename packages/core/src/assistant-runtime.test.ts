@@ -168,6 +168,9 @@ describe("AssistantSession", () => {
     expect(result.evidence.digestIds).toEqual(["digest-1"]);
     expect(result.evidence.eventIds).toEqual(["evt-1"]);
     expect(result.evidence.stateRefs).toEqual(["digest-1"]);
+    expect(result.evidence.digestSummary).toBe("goal: keep api stable");
+    expect(result.evidence.eventSnippets?.[0]?.snippet).toContain("prioritize digest consistency");
+    expect(result.evidence.stateSummary).toBe("latest_state_snapshot:digest-1");
     expect(ingestEvent).toHaveBeenCalledTimes(2);
     expect(requestDigest).toHaveBeenCalledWith("scope-1");
   });

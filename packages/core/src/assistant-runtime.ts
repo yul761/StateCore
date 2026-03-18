@@ -57,16 +57,25 @@ export interface ResolvedRecall {
   stateRef?: string | null;
 }
 
+export interface GroundingEvidence {
+  digestIds: string[];
+  eventIds: string[];
+  stateRefs: string[];
+  digestSummary?: string | null;
+  eventSnippets?: Array<{
+    id: string;
+    createdAt: string;
+    snippet: string;
+  }>;
+  stateSummary?: string | null;
+}
+
 export interface GroundedAnswer {
   answer: string;
   writeTier: MemoryWriteTier;
   digestTriggered: boolean;
   notes?: string[];
-  evidence: {
-    digestIds: string[];
-    eventIds: string[];
-    stateRefs: string[];
-  };
+  evidence: GroundingEvidence;
 }
 
 export interface MemoryWriteDecision {
@@ -338,11 +347,7 @@ export class AssistantSession {
       writeTier,
       digestTriggered,
       notes,
-      evidence: {
-        digestIds: recall.digest ? [recall.digest.id] : [],
-        eventIds: recall.events.map((event) => event.id),
-        stateRefs: recall.stateRef ? [recall.stateRef] : []
-      }
+      evidence: this.buildEvidence(recall)
     };
   }
 
@@ -387,6 +392,21 @@ export class AssistantSession {
       return { shouldDigest: decision };
     }
     return decision;
+  }
+
+  private buildEvidence(recall: ResolvedRecall): GroundingEvidence {
+    return {
+      digestIds: recall.digest ? [recall.digest.id] : [],
+      eventIds: recall.events.map((event) => event.id),
+      stateRefs: recall.stateRef ? [recall.stateRef] : [],
+      digestSummary: recall.digest?.summary ?? null,
+      eventSnippets: recall.events.slice(0, 5).map((event) => ({
+        id: event.id,
+        createdAt: event.createdAt.toISOString(),
+        snippet: event.content.length > 160 ? `${event.content.slice(0, 157)}...` : event.content
+      })),
+      stateSummary: recall.stateRef ? `latest_state_snapshot:${recall.stateRef}` : null
+    };
   }
 
   private async generateGroundedAnswer(question: string, recall: ResolvedRecall) {

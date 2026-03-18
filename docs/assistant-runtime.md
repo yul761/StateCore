@@ -241,6 +241,12 @@ The current runtime output also carries lightweight audit notes so policy decisi
 - why a turn was classified as `candidate` or `stable`
 - whether digesting was forced, skipped, or triggered by policy
 
+The current runtime evidence object is also structured enough for lightweight grounding inspection:
+
+- digest ids plus digest summary text
+- event ids plus short event snippets
+- state refs plus a state-summary marker
+
 It is a starting boundary, not a finished runtime surface.
 
 ## Mapping to the Current Repository

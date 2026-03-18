@@ -146,7 +146,14 @@ export const RuntimeTurnOutput = z.object({
   evidence: z.object({
     digestIds: z.array(z.string()),
     eventIds: z.array(z.string()),
-    stateRefs: z.array(z.string())
+    stateRefs: z.array(z.string()),
+    digestSummary: z.string().nullable().optional(),
+    eventSnippets: z.array(z.object({
+      id: z.string(),
+      createdAt: z.string(),
+      snippet: z.string()
+    })).optional(),
+    stateSummary: z.string().nullable().optional()
   })
 });
 

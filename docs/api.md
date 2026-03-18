@@ -41,6 +41,7 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
   - body: `{ scopeId, message, source?, policyProfile?, policyOverrides?, writeTier?, documentKey?, digestMode?, metadata? }`
   - runs the assistant runtime session flow
   - returns `{ answer, writeTier, digestTriggered, notes?, evidence }`
+  - `evidence` now includes both ids and lightweight summaries/snippets
   - requires `FEATURE_LLM=true`
   - reference CLI usage:
     - `pm turn "goal: ship a self-hosted runtime" --policy-profile conservative --write-tier stable --digest-mode force --recall-limit 8`
