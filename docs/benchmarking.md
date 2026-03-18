@@ -118,6 +118,10 @@ Replay reports include category-level state diffs for:
 - `constraints`
 - `decisions`
 - `todos`
+- `goalConfidence`
+- `constraintConfidence`
+- `decisionConfidence`
+- `todoConfidence`
 - `transitionTaxonomy`
 
 Replay scoring and reports now track the `recentChanges` transition taxonomy in addition to

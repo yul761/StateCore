@@ -596,6 +596,19 @@ function flattenGoalProvenance(refs) {
   return normalized.length ? [`goal<=${normalized.sort().join("|")}`] : [];
 }
 
+function flattenConfidenceList(entries) {
+  if (!Array.isArray(entries)) return [];
+  return entries
+    .flatMap((entry) => {
+      if (!entry || typeof entry !== "object") return [];
+      const value = typeof entry.value === "string" ? entry.value.trim() : "";
+      const score = typeof entry.score === "number" ? entry.score : null;
+      if (!value || score === null) return [];
+      return [`${value}<=${score}`];
+    })
+    .filter(Boolean);
+}
+
 function flattenRecentChanges(changes) {
   if (!Array.isArray(changes)) return [];
   return changes
@@ -648,6 +661,8 @@ function buildStateDiff(baselineState, rebuiltState) {
   const rebuiltWorking = rebuiltState?.workingNotes ?? {};
   const baselineProvenance = baselineState?.provenance ?? {};
   const rebuiltProvenance = rebuiltState?.provenance ?? {};
+  const baselineConfidence = baselineState?.confidence ?? {};
+  const rebuiltConfidence = rebuiltState?.confidence ?? {};
 
   return {
     goal: diffScalar(baselineStable.goal ?? null, rebuiltStable.goal ?? null),
@@ -660,6 +675,10 @@ function buildStateDiff(baselineState, rebuiltState) {
     constraintProvenance: diffStringLists(flattenValueProvenance(baselineProvenance.constraints), flattenValueProvenance(rebuiltProvenance.constraints)),
     decisionProvenance: diffStringLists(flattenValueProvenance(baselineProvenance.decisions), flattenValueProvenance(rebuiltProvenance.decisions)),
     todoProvenance: diffStringLists(flattenValueProvenance(baselineProvenance.todos), flattenValueProvenance(rebuiltProvenance.todos)),
+    goalConfidence: diffScalar(baselineConfidence.goal ?? null, rebuiltConfidence.goal ?? null),
+    constraintConfidence: diffStringLists(flattenConfidenceList(baselineConfidence.constraints), flattenConfidenceList(rebuiltConfidence.constraints)),
+    decisionConfidence: diffStringLists(flattenConfidenceList(baselineConfidence.decisions), flattenConfidenceList(rebuiltConfidence.decisions)),
+    todoConfidence: diffStringLists(flattenConfidenceList(baselineConfidence.todos), flattenConfidenceList(rebuiltConfidence.todos)),
     recentChanges: diffStringLists(flattenRecentChanges(baselineState?.recentChanges), flattenRecentChanges(rebuiltState?.recentChanges)),
     transitionTaxonomy: diffTransitionTaxonomy(baselineState?.recentChanges, rebuiltState?.recentChanges),
     openQuestions: diffStringLists(baselineWorking.openQuestions, rebuiltWorking.openQuestions),
