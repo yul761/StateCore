@@ -28,6 +28,18 @@ export interface RuntimeRetrieveService {
   retrieve(scopeId: string, limit: number, query?: string): Promise<{
     digest: Digest | null;
     events: Array<{ id: string; content: string; createdAt: Date }>;
+    retrieval?: {
+      matches?: Array<{
+        id: string;
+        sourceType?: "stream" | "document";
+        key?: string | null;
+        heuristicScore?: number;
+        recencyScore?: number;
+        embeddingScore?: number;
+        finalScore?: number;
+        rankingReason?: string;
+      }>;
+    };
   }>;
 }
 
@@ -54,6 +66,18 @@ export interface RuntimeTurnInput {
 export interface ResolvedRecall {
   digest: Digest | null;
   events: Array<{ id: string; content: string; createdAt: Date }>;
+  retrieval?: {
+    matches?: Array<{
+      id: string;
+      sourceType?: "stream" | "document";
+      key?: string | null;
+      heuristicScore?: number;
+      recencyScore?: number;
+      embeddingScore?: number;
+      finalScore?: number;
+      rankingReason?: string;
+    }>;
+  };
   stateRef?: string | null;
   stateSnapshot?: RuntimeStateSnapshot | null;
 }
@@ -97,8 +121,15 @@ export interface GroundingEvidence {
   digestSummary?: string | null;
   eventSnippets?: Array<{
     id: string;
-      createdAt: string;
-      snippet: string;
+    createdAt: string;
+    snippet: string;
+    sourceType?: "stream" | "document";
+    key?: string | null;
+    rankingReason?: string;
+    heuristicScore?: number;
+    recencyScore?: number;
+    embeddingScore?: number;
+    finalScore?: number;
   }>;
   stateSummary?: string | null;
   stateDetails?: {
@@ -250,6 +281,7 @@ export class DefaultRecallPolicy implements RecallPolicy {
     return {
       digest: result.digest,
       events: result.events,
+      retrieval: result.retrieval,
       stateRef: state?.digestId ?? null,
       stateSnapshot: state
     };
@@ -444,16 +476,31 @@ export class AssistantSession {
   private buildEvidence(recall: ResolvedRecall): GroundingEvidence {
     const stateDetails = this.buildStateDetails(recall.stateSnapshot);
     const stateSummary = this.summarizeStateSnapshot(recall.stateSnapshot);
+    const retrievalMatches = new Map(
+      (recall as ResolvedRecall & {
+        retrieval?: { matches?: Array<{ id: string; sourceType?: "stream" | "document"; key?: string | null; rankingReason?: string; heuristicScore?: number; recencyScore?: number; embeddingScore?: number; finalScore?: number }> };
+      }).retrieval?.matches?.map((match) => [match.id, match]) ?? []
+    );
     return {
       digestIds: recall.digest ? [recall.digest.id] : [],
       eventIds: recall.events.map((event) => event.id),
       stateRefs: recall.stateRef ? [recall.stateRef] : [],
       digestSummary: recall.digest?.summary ?? null,
-      eventSnippets: recall.events.slice(0, 5).map((event) => ({
-        id: event.id,
-        createdAt: event.createdAt.toISOString(),
-        snippet: event.content.length > 160 ? `${event.content.slice(0, 157)}...` : event.content
-      })),
+      eventSnippets: recall.events.slice(0, 5).map((event) => {
+        const match = retrievalMatches.get(event.id);
+        return {
+          id: event.id,
+          createdAt: event.createdAt.toISOString(),
+          snippet: event.content.length > 160 ? `${event.content.slice(0, 157)}...` : event.content,
+          sourceType: match?.sourceType,
+          key: match?.key ?? null,
+          rankingReason: match?.rankingReason,
+          heuristicScore: match?.heuristicScore,
+          recencyScore: match?.recencyScore,
+          embeddingScore: match?.embeddingScore,
+          finalScore: match?.finalScore
+        };
+      }),
       stateSummary,
       stateDetails
     };

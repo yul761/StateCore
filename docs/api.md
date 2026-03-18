@@ -48,6 +48,7 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
   - runs the assistant runtime session flow
   - returns `{ answer, writeTier, digestTriggered, notes?, evidence }`
   - `evidence` now includes both ids and lightweight summaries/snippets
+  - `evidence.eventSnippets` now also carries retrieval ranking metadata when available (`sourceType`, scores, `rankingReason`)
   - `evidence.stateSummary` is derived from the latest digest state snapshot when available, not just a snapshot id placeholder
   - `evidence.stateDetails` includes structured state grounding for the latest snapshot, including provenance fields and recent changes when available
   - requires `FEATURE_LLM=true`

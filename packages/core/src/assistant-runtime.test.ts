@@ -121,7 +121,20 @@ describe("AssistantSession", () => {
       },
       events: [
         { id: "evt-1", content: "We decide to prioritize digest consistency", createdAt: new Date("2026-03-17T00:00:00.000Z") }
-      ]
+      ],
+      retrieval: {
+        matches: [
+          {
+            id: "evt-1",
+            sourceType: "stream",
+            rankingReason: "embedding_rerank, concepts=decision, terms=prioritize|digest|consistency",
+            heuristicScore: 0.75,
+            recencyScore: 1,
+            embeddingScore: 0.91,
+            finalScore: 0.876
+          }
+        ]
+      }
     }));
 
     return {
@@ -187,6 +200,14 @@ describe("AssistantSession", () => {
     expect(result.evidence.stateRefs).toEqual(["digest-1"]);
     expect(result.evidence.digestSummary).toBe("goal: keep api stable");
     expect(result.evidence.eventSnippets?.[0]?.snippet).toContain("prioritize digest consistency");
+    expect(result.evidence.eventSnippets?.[0]).toMatchObject({
+      sourceType: "stream",
+      rankingReason: "embedding_rerank, concepts=decision, terms=prioritize|digest|consistency",
+      heuristicScore: 0.75,
+      recencyScore: 1,
+      embeddingScore: 0.91,
+      finalScore: 0.876
+    });
     expect(result.evidence.stateDetails).toEqual({
       digestId: "digest-1",
       goal: "keep api stable",

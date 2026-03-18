@@ -170,7 +170,14 @@ export const RuntimeTurnOutput = z.object({
     eventSnippets: z.array(z.object({
       id: z.string(),
       createdAt: z.string(),
-      snippet: z.string()
+      snippet: z.string(),
+      sourceType: MemoryType.optional(),
+      key: z.string().nullable().optional(),
+      rankingReason: z.string().optional(),
+      heuristicScore: z.number().optional(),
+      recencyScore: z.number().optional(),
+      embeddingScore: z.number().optional(),
+      finalScore: z.number().optional()
     })).optional(),
     stateSummary: z.string().nullable().optional(),
     stateDetails: z.object({
