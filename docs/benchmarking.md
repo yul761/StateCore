@@ -48,6 +48,11 @@ Contradiction-injection drift test:
 DRIFT_RUNS=25 DRIFT_FIXTURE=benchmark-fixtures/contradiction-injected.json node scripts/benchmark/run-drift.mjs
 ```
 
+Goal-evolution drift test:
+```bash
+DRIFT_RUNS=25 DRIFT_FIXTURE=benchmark-fixtures/goal-evolution.json node scripts/benchmark/run-drift.mjs
+```
+
 Replay consistency check:
 ```bash
 REPLAY_FIXTURE=benchmark-fixtures/basic.json node scripts/benchmark/run-replay-check.mjs

@@ -1,0 +1,57 @@
+{
+  "gold": {
+    "goal": ["ship a self-hosted long-term memory runtime for local models"],
+    "constraints": [
+      "keep api stable",
+      "self-hosted first",
+      "do not become a general-purpose agent platform"
+    ],
+    "decisions": [
+      "We decide to focus on low-drift memory reliability before expanding integrations",
+      "We decide to treat assistant runtime as a product boundary, not just loose APIs"
+    ],
+    "todos": [
+      "formalize drift metrics",
+      "add replay consistency checks",
+      "define assistant runtime policies"
+    ],
+    "contradictions": {
+      "goal": [
+        "goal: ship a generic local chat ui",
+        "goal: build a hosted all-in-one ai platform"
+      ],
+      "constraints": [
+        "constraint: optimize for hosted multi-tenant deployment first"
+      ],
+      "decisions": [
+        "We decide to prioritize UI polish over memory stability",
+        "We decide to become a general-purpose agent orchestration framework"
+      ],
+      "todos": [
+        "TODO: remove replay consistency work"
+      ]
+    }
+  },
+  "events": [
+    { "type": "document", "key": "doc:goal", "content": "goal: ship a generic local chat ui" },
+    { "type": "document", "key": "doc:constraints", "content": "constraint: keep api stable\nconstraint: self-hosted first" },
+    { "type": "stream", "content": "We decide to focus on memory continuity for long-running projects" },
+    { "type": "stream", "content": "TODO: formalize drift metrics" },
+    { "type": "stream", "content": "Status update: early demos looked too much like a chat shell" },
+    { "type": "document", "key": "doc:goal", "content": "goal: ship a self-hosted memory layer for project assistants" },
+    { "type": "stream", "content": "We decide to focus on low-drift memory reliability before expanding integrations" },
+    { "type": "stream", "content": "TODO: add replay consistency checks" },
+    { "type": "stream", "content": "Constraint reminder: do not become a general-purpose agent platform" },
+    { "type": "document", "key": "doc:goal", "content": "goal: ship a self-hosted long-term memory runtime for local models" },
+    { "type": "stream", "content": "We decide to treat assistant runtime as a product boundary, not just loose APIs" },
+    { "type": "stream", "content": "TODO: define assistant runtime policies" },
+    { "type": "stream", "content": "Status update: roadmap now centers retention, stability, grounding, and replayability" },
+    { "type": "stream", "content": "Noise: note about optional future desktop demos" }
+  ],
+  "retrieveCases": [
+    { "query": "What is the current project goal?", "expected": "long-term memory runtime", "aliases": ["self-hosted", "local models", "goal"] },
+    { "query": "What constraints exist?", "expected": "keep api stable", "aliases": ["self-hosted", "agent platform", "constraint"] },
+    { "query": "What did we decide?", "expected": "memory reliability", "aliases": ["assistant runtime", "decision", "we decide"] },
+    { "query": "What work remains?", "expected": "drift metrics", "aliases": ["replay consistency", "runtime policies", "todo"] }
+  ]
+}
