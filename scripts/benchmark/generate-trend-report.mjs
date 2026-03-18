@@ -110,6 +110,9 @@ function summarizeBenchmark(data, fileName) {
     groundedResponseStateSummaryRate: data.metrics?.groundedResponse?.stateSummaryRate ?? 0,
     replayRebuildConsistencyRate: data.metrics?.replay?.rebuildConsistencyRate ?? 0,
     replayCrossRunStateDivergenceRate: data.metrics?.replay?.crossRunStateDivergenceRate ?? 0,
+    replayTransitionTaxonomyMatchRate: data.metrics?.replay?.transitionTaxonomyMatchRate ?? 0,
+    replayCrossRunTransitionDivergenceRate: data.metrics?.replay?.crossRunTransitionDivergenceRate ?? 0,
+    replayTransitionTaxonomy: data.metrics?.replay?.transitionTaxonomy ?? {},
     replayStateMatch: Boolean(data.metrics?.replay?.stateMatch),
     startedAt: data.startedAt || null
   };
@@ -161,7 +164,9 @@ function buildDeltaSummary(items) {
     groundedResponseEventScoreRate: Math.round((last.groundedResponseEventScoreRate - first.groundedResponseEventScoreRate) * 1000) / 1000,
     groundedResponseStateSummaryRate: Math.round((last.groundedResponseStateSummaryRate - first.groundedResponseStateSummaryRate) * 1000) / 1000,
     replayRebuildConsistencyRate: Math.round((last.replayRebuildConsistencyRate - first.replayRebuildConsistencyRate) * 1000) / 1000,
-    replayCrossRunStateDivergenceRate: Math.round((last.replayCrossRunStateDivergenceRate - first.replayCrossRunStateDivergenceRate) * 1000) / 1000
+    replayCrossRunStateDivergenceRate: Math.round((last.replayCrossRunStateDivergenceRate - first.replayCrossRunStateDivergenceRate) * 1000) / 1000,
+    replayTransitionTaxonomyMatchRate: Math.round((last.replayTransitionTaxonomyMatchRate - first.replayTransitionTaxonomyMatchRate) * 1000) / 1000,
+    replayCrossRunTransitionDivergenceRate: Math.round((last.replayCrossRunTransitionDivergenceRate - first.replayCrossRunTransitionDivergenceRate) * 1000) / 1000
   };
 }
 
@@ -228,7 +233,8 @@ const md = [
   `- Runtime recent-state-changes rate: ${latest.runtimeRecentStateChangesRate}`,
   `- Grounded response view: success ${latest.groundedResponseSuccessRate}, evidence ${latest.groundedResponseEvidenceCoverageRate}, ranking-reason ${latest.groundedResponseRankingReasonRate}, score ${latest.groundedResponseEventScoreRate}, state-summary ${latest.groundedResponseStateSummaryRate}`,
   `- Answer grounding: evidence ${latest.answerEvidenceCoverageRate}, ranking-reason ${latest.answerEventRankingReasonRate}, score ${latest.answerEventScoreRate}, state-summary ${latest.answerStateSummaryRate}`,
-  `- Replay: state match ${latest.replayStateMatch ? "yes" : "no"}, rebuild consistency ${latest.replayRebuildConsistencyRate}, cross-run divergence ${latest.replayCrossRunStateDivergenceRate}`,
+  `- Replay: state match ${latest.replayStateMatch ? "yes" : "no"}, rebuild consistency ${latest.replayRebuildConsistencyRate}, cross-run divergence ${latest.replayCrossRunStateDivergenceRate}, transition-match ${latest.replayTransitionTaxonomyMatchRate}, cross-run transition divergence ${latest.replayCrossRunTransitionDivergenceRate}`,
+  `- Replay transition taxonomy: ${Object.keys(latest.replayTransitionTaxonomy || {}).length ? Object.entries(latest.replayTransitionTaxonomy).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`,
   "",
   "## Window Delta",
   "",
@@ -255,7 +261,9 @@ const md = [
         `- Grounded response delta: success ${formatDelta(deltaSummary.groundedResponseSuccessRate)}, evidence ${formatDelta(deltaSummary.groundedResponseEvidenceCoverageRate)}, ranking-reason ${formatDelta(deltaSummary.groundedResponseRankingReasonRate)}, score ${formatDelta(deltaSummary.groundedResponseEventScoreRate)}, state-summary ${formatDelta(deltaSummary.groundedResponseStateSummaryRate)}`,
         `- Answer grounding delta: evidence ${formatDelta(deltaSummary.answerEvidenceCoverageRate)}, ranking-reason ${formatDelta(deltaSummary.answerEventRankingReasonRate)}, score ${formatDelta(deltaSummary.answerEventScoreRate)}, state-summary ${formatDelta(deltaSummary.answerStateSummaryRate)}`,
         `- Replay rebuild consistency delta: ${formatDelta(deltaSummary.replayRebuildConsistencyRate)}`,
-        `- Replay cross-run divergence delta: ${formatDelta(deltaSummary.replayCrossRunStateDivergenceRate)}`
+        `- Replay cross-run divergence delta: ${formatDelta(deltaSummary.replayCrossRunStateDivergenceRate)}`,
+        `- Replay transition-match delta: ${formatDelta(deltaSummary.replayTransitionTaxonomyMatchRate)}`,
+        `- Replay cross-run transition divergence delta: ${formatDelta(deltaSummary.replayCrossRunTransitionDivergenceRate)}`
       ]
     : ["- Not enough benchmark runs to compute a delta window."]),
   "",

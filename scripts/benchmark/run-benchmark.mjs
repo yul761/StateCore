@@ -604,6 +604,36 @@ function flattenRecentChanges(changes) {
     .filter(Boolean);
 }
 
+function summarizeTransitionTaxonomy(changes) {
+  const counts = {};
+  if (!Array.isArray(changes)) return counts;
+  for (const change of changes) {
+    if (!change || typeof change !== "object") continue;
+    const field = typeof change.field === "string" ? change.field.trim() : "";
+    const action = typeof change.action === "string" ? change.action.trim() : "";
+    if (!field || !action) continue;
+    const key = `${field}:${action}`;
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+function diffTransitionTaxonomy(beforeChanges, afterChanges) {
+  const baseline = summarizeTransitionTaxonomy(beforeChanges);
+  const rebuilt = summarizeTransitionTaxonomy(afterChanges);
+  const keys = [...new Set([...Object.keys(baseline), ...Object.keys(rebuilt)])].sort();
+  const mismatchedKeys = keys.filter((key) => (baseline[key] || 0) !== (rebuilt[key] || 0));
+  const matchedKeys = keys.filter((key) => !mismatchedKeys.includes(key));
+  return {
+    match: mismatchedKeys.length === 0,
+    baseline,
+    rebuilt,
+    matchedKeys,
+    mismatchedKeys,
+    mismatchRate: Number((mismatchedKeys.length / Math.max(1, keys.length)).toFixed(3))
+  };
+}
+
 function buildStateDiff(baselineState, rebuiltState) {
   const baselineStable = baselineState?.stableFacts ?? {};
   const rebuiltStable = rebuiltState?.stableFacts ?? {};
@@ -624,6 +654,7 @@ function buildStateDiff(baselineState, rebuiltState) {
     decisionProvenance: diffStringLists(flattenValueProvenance(baselineProvenance.decisions), flattenValueProvenance(rebuiltProvenance.decisions)),
     todoProvenance: diffStringLists(flattenValueProvenance(baselineProvenance.todos), flattenValueProvenance(rebuiltProvenance.todos)),
     recentChanges: diffStringLists(flattenRecentChanges(baselineState?.recentChanges), flattenRecentChanges(rebuiltState?.recentChanges)),
+    transitionTaxonomy: diffTransitionTaxonomy(baselineState?.recentChanges, rebuiltState?.recentChanges),
     openQuestions: diffStringLists(baselineWorking.openQuestions, rebuiltWorking.openQuestions),
     risks: diffStringLists(baselineWorking.risks, rebuiltWorking.risks),
     workingContext: diffScalar(baselineWorking.context ?? null, rebuiltWorking.context ?? null)
@@ -675,6 +706,7 @@ function compareReplayRuns(successfulRuns) {
   if (successfulRuns.length < 2) {
     return {
       crossRunStateDivergenceRate: 0,
+      crossRunTransitionDivergenceRate: 0,
       crossRunMatchedCategories: successfulRuns[0]?.matchedCategories ?? [],
       crossRunMismatchedCategories: []
     };
@@ -683,6 +715,7 @@ function compareReplayRuns(successfulRuns) {
   const categoryUniverse = new Set();
   let mismatchRatioTotal = 0;
   let comparisons = 0;
+  let transitionMismatchRatioTotal = 0;
   const mismatched = new Set();
   const matched = new Set();
 
@@ -692,6 +725,7 @@ function compareReplayRuns(successfulRuns) {
     const totalCategories = summary.matchedCategories.length + summary.mismatchedCategories.length;
     mismatchRatioTotal += totalCategories > 0 ? summary.mismatchedCategories.length / totalCategories : 0;
     comparisons += 1;
+    transitionMismatchRatioTotal += diff.transitionTaxonomy?.mismatchRate ?? 0;
 
     for (const key of summary.matchedCategories) {
       categoryUniverse.add(key);
@@ -706,6 +740,7 @@ function compareReplayRuns(successfulRuns) {
 
   return {
     crossRunStateDivergenceRate: Number((mismatchRatioTotal / Math.max(1, comparisons)).toFixed(3)),
+    crossRunTransitionDivergenceRate: Number((transitionMismatchRatioTotal / Math.max(1, comparisons)).toFixed(3)),
     crossRunMatchedCategories: [...matched].filter((key) => categoryUniverse.has(key)).sort(),
     crossRunMismatchedCategories: [...mismatched].sort()
   };
@@ -932,6 +967,9 @@ async function run() {
     stateMatch: false,
     rebuildConsistencyRate: 0,
     crossRunStateDivergenceRate: 0,
+    transitionTaxonomy: {},
+    transitionTaxonomyMatchRate: 0,
+    crossRunTransitionDivergenceRate: 0,
     matchedCategories: [],
     mismatchedCategories: [],
     crossRunMatchedCategories: [],
@@ -1158,6 +1196,7 @@ async function run() {
           .reduce((acc, items) => acc.filter((key) => items.includes(key)), successfulRuns[0].matchedCategories || []);
         const mismatchedCategories = [...new Set(successfulRuns.flatMap((item) => item.mismatchedCategories || []))].sort();
         const crossRun = compareReplayRuns(successfulRuns);
+        const baselineTransitionTaxonomy = summarizeTransitionTaxonomy(baselineState.json.state?.recentChanges);
         replayMetrics = {
           enabled: true,
           rebuildRuns: cfg.replayRuns,
@@ -1166,6 +1205,9 @@ async function run() {
           stateMatch: successfulRuns.every((item) => item.stateMatch),
           rebuildConsistencyRate: Number((successfulRuns.filter((item) => item.stateMatch).length / cfg.replayRuns).toFixed(3)),
           crossRunStateDivergenceRate: crossRun.crossRunStateDivergenceRate,
+          transitionTaxonomy: baselineTransitionTaxonomy,
+          transitionTaxonomyMatchRate: Number((successfulRuns.filter((item) => item.diff?.transitionTaxonomy?.match).length / cfg.replayRuns).toFixed(3)),
+          crossRunTransitionDivergenceRate: crossRun.crossRunTransitionDivergenceRate,
           matchedCategories,
           mismatchedCategories,
           crossRunMatchedCategories: crossRun.crossRunMatchedCategories,
@@ -1527,8 +1569,11 @@ async function run() {
             `- State match: ${report.metrics.replay.stateMatch ? "yes" : "no"}`,
             `- Rebuild consistency rate: ${report.metrics.replay.rebuildConsistencyRate}`,
             `- Cross-run state divergence rate: ${report.metrics.replay.crossRunStateDivergenceRate}`,
+            `- Transition taxonomy match rate: ${report.metrics.replay.transitionTaxonomyMatchRate ?? 0}`,
+            `- Cross-run transition divergence rate: ${report.metrics.replay.crossRunTransitionDivergenceRate ?? 0}`,
             `- Successful rebuilds: ${report.metrics.replay.successfulRuns}/${report.metrics.replay.rebuildRuns}`,
             `- Rebuild snapshots: ${report.metrics.replay.rebuildSnapshots}`,
+            `- Baseline transition taxonomy: ${Object.keys(report.metrics.replay.transitionTaxonomy || {}).length ? Object.entries(report.metrics.replay.transitionTaxonomy).map(([key, count]) => `${key}=${count}`).join(", ") : "none"}`,
             `- Matched categories: ${report.metrics.replay.matchedCategories.length ? report.metrics.replay.matchedCategories.join(", ") : "none"}`,
             `- Mismatched categories: ${report.metrics.replay.mismatchedCategories.length ? report.metrics.replay.mismatchedCategories.join(", ") : "none"}`,
             `- Cross-run matched categories: ${report.metrics.replay.crossRunMatchedCategories.length ? report.metrics.replay.crossRunMatchedCategories.join(", ") : "none"}`,
@@ -1538,6 +1583,11 @@ async function run() {
               if ("missingFromReplay" in value) {
                 lines.push(`  missing=${value.missingFromReplay.length ? value.missingFromReplay.join(" | ") : "none"}`);
                 lines.push(`  added=${value.addedInReplay.length ? value.addedInReplay.join(" | ") : "none"}`);
+              } else if ("mismatchedKeys" in value) {
+                lines.push(`  matched=${value.matchedKeys.length ? value.matchedKeys.join(" | ") : "none"}`);
+                lines.push(`  mismatched=${value.mismatchedKeys.length ? value.mismatchedKeys.join(" | ") : "none"}`);
+                lines.push(`  baseline=${Object.keys(value.baseline || {}).length ? Object.entries(value.baseline).map(([name, count]) => `${name}=${count}`).join(" | ") : "none"}`);
+                lines.push(`  rebuilt=${Object.keys(value.rebuilt || {}).length ? Object.entries(value.rebuilt).map(([name, count]) => `${name}=${count}`).join(" | ") : "none"}`);
               } else {
                 lines.push(`  baseline=${value.baseline ?? "null"}`);
                 lines.push(`  rebuilt=${value.rebuilt ?? "null"}`);

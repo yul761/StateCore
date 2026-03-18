@@ -118,6 +118,11 @@ Replay reports include category-level state diffs for:
 - `constraints`
 - `decisions`
 - `todos`
+- `transitionTaxonomy`
+
+Replay scoring and reports now track the `recentChanges` transition taxonomy in addition to
+final state equality, so rebuild stability covers how state evolved, not just what the last
+snapshot contained.
 - `volatileContext`
 - `evidenceRefs`
 - `goalProvenance`

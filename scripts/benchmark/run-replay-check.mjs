@@ -193,6 +193,36 @@ function flattenRecentChanges(changes) {
     .filter(Boolean);
 }
 
+function summarizeTransitionTaxonomy(changes) {
+  const counts = {};
+  if (!Array.isArray(changes)) return counts;
+  for (const change of changes) {
+    if (!change || typeof change !== "object") continue;
+    const field = typeof change.field === "string" ? change.field.trim() : "";
+    const action = typeof change.action === "string" ? change.action.trim() : "";
+    if (!field || !action) continue;
+    const key = `${field}:${action}`;
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+function diffTransitionTaxonomy(beforeChanges, afterChanges) {
+  const baseline = summarizeTransitionTaxonomy(beforeChanges);
+  const rebuilt = summarizeTransitionTaxonomy(afterChanges);
+  const keys = [...new Set([...Object.keys(baseline), ...Object.keys(rebuilt)])].sort();
+  const mismatchedKeys = keys.filter((key) => (baseline[key] || 0) !== (rebuilt[key] || 0));
+  const matchedKeys = keys.filter((key) => !mismatchedKeys.includes(key));
+  return {
+    match: mismatchedKeys.length === 0,
+    baseline,
+    rebuilt,
+    matchedKeys,
+    mismatchedKeys,
+    mismatchRate: Number((mismatchedKeys.length / Math.max(1, keys.length)).toFixed(3))
+  };
+}
+
 function buildStateDiff(baselineState, rebuiltState) {
   const baselineStable = baselineState?.stableFacts ?? {};
   const rebuiltStable = rebuiltState?.stableFacts ?? {};
@@ -213,6 +243,7 @@ function buildStateDiff(baselineState, rebuiltState) {
     decisionProvenance: diffStringLists(flattenValueProvenance(baselineProvenance.decisions), flattenValueProvenance(rebuiltProvenance.decisions)),
     todoProvenance: diffStringLists(flattenValueProvenance(baselineProvenance.todos), flattenValueProvenance(rebuiltProvenance.todos)),
     recentChanges: diffStringLists(flattenRecentChanges(baselineState?.recentChanges), flattenRecentChanges(rebuiltState?.recentChanges)),
+    transitionTaxonomy: diffTransitionTaxonomy(baselineState?.recentChanges, rebuiltState?.recentChanges),
     openQuestions: diffStringLists(baselineWorking.openQuestions, rebuiltWorking.openQuestions),
     risks: diffStringLists(baselineWorking.risks, rebuiltWorking.risks),
     workingContext: diffScalar(baselineWorking.context ?? null, rebuiltWorking.context ?? null)
@@ -286,7 +317,10 @@ async function run() {
     rebuildSnapshots: rebuildHistory.items.length,
     stateMatch,
     matchedCategories: diffSummary.matchedCategories,
-    mismatchedCategories: diffSummary.mismatchedCategories
+    mismatchedCategories: diffSummary.mismatchedCategories,
+    transitionTaxonomy: summarizeTransitionTaxonomy(baselineState.json.state?.recentChanges),
+    transitionTaxonomyMatch: stateDiff.transitionTaxonomy?.match ?? false,
+    transitionTaxonomyMismatchRate: stateDiff.transitionTaxonomy?.mismatchRate ?? 0
   };
   report.diff = stateDiff;
 
@@ -312,6 +346,8 @@ async function run() {
     `- State match: ${report.summary.stateMatch ? "yes" : "no"}`,
     `- Matched categories: ${report.summary.matchedCategories.length > 0 ? report.summary.matchedCategories.join(", ") : "none"}`,
     `- Mismatched categories: ${report.summary.mismatchedCategories.length > 0 ? report.summary.mismatchedCategories.join(", ") : "none"}`,
+    `- Transition taxonomy match: ${report.summary.transitionTaxonomyMatch ? "yes" : "no"} (${report.summary.transitionTaxonomyMismatchRate} mismatch rate)`,
+    `- Baseline transition taxonomy: ${Object.keys(report.summary.transitionTaxonomy || {}).length > 0 ? Object.entries(report.summary.transitionTaxonomy).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`,
     "",
     "## Category Diff",
     "",
@@ -320,6 +356,11 @@ async function run() {
       if ("missingFromReplay" in value) {
         lines.push(`- Missing from replay: ${value.missingFromReplay.length > 0 ? value.missingFromReplay.join(" | ") : "none"}`);
         lines.push(`- Added in replay: ${value.addedInReplay.length > 0 ? value.addedInReplay.join(" | ") : "none"}`);
+      } else if ("mismatchedKeys" in value) {
+        lines.push(`- Matched transitions: ${value.matchedKeys.length > 0 ? value.matchedKeys.join(" | ") : "none"}`);
+        lines.push(`- Mismatched transitions: ${value.mismatchedKeys.length > 0 ? value.mismatchedKeys.join(" | ") : "none"}`);
+        lines.push(`- Baseline taxonomy: ${Object.keys(value.baseline || {}).length ? Object.entries(value.baseline).map(([name, count]) => `${name}=${count}`).join(" | ") : "none"}`);
+        lines.push(`- Replay taxonomy: ${Object.keys(value.rebuilt || {}).length ? Object.entries(value.rebuilt).map(([name, count]) => `${name}=${count}`).join(" | ") : "none"}`);
       } else {
         lines.push(`- Baseline: ${value.baseline ?? "null"}`);
         lines.push(`- Rebuilt: ${value.rebuilt ?? "null"}`);
