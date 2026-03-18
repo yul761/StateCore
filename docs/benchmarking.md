@@ -39,6 +39,7 @@ node scripts/benchmark/run-ablations.mjs
 ```
 
 The ablation matrix now includes both digest-control variables and assistant runtime policy profiles.
+When comparing ablations, prefer reporting `Long-term Memory Reliability` and runtime metrics alongside the overall score.
 
 Run drift test (50 rounds default):
 ```bash
