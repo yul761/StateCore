@@ -102,6 +102,13 @@ Outputs are written to `benchmark-results/`:
 - full-state equivalence check
 - category-level mismatch report for protected state and evidence context
 
+6. Assistant runtime
+- turn success rate
+- average turn latency
+- evidence coverage rate
+- digest trigger rate
+- observed write-tier distribution
+
 ## Scoring Model (0-100)
 
 Weighted score:
@@ -133,6 +140,7 @@ Env values still override profile defaults.
 - `BENCH_EVENTS` (profile default)
 - `BENCH_INGEST_CONCURRENCY` (profile default)
 - `BENCH_RETRIEVE_QUERIES` (profile default)
+- `BENCH_RUNTIME_RUNS` (profile default)
 - `BENCH_DIGEST_RUNS` (profile default)
 - `BENCH_TIMEOUT_MS` (default 180000)
 - `BENCH_USER_ID` (default benchmark-user)

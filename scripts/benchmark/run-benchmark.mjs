@@ -29,6 +29,7 @@ const cfg = {
   events: Number(process.env.BENCH_EVENTS || 300),
   concurrency: Number(process.env.BENCH_INGEST_CONCURRENCY || 20),
   retrieveQueries: Number(process.env.BENCH_RETRIEVE_QUERIES || 12),
+  runtimeRuns: Number(process.env.BENCH_RUNTIME_RUNS || 4),
   digestRuns: Number(process.env.BENCH_DIGEST_RUNS || 2),
   timeoutMs: Number(process.env.BENCH_TIMEOUT_MS || 180000),
   outputDir: process.env.BENCH_OUTPUT_DIR || "benchmark-results",
@@ -504,6 +505,7 @@ async function run() {
     cfg.events = Number(process.env.BENCH_EVENTS || profiles[cfg.profile].events);
     cfg.concurrency = Number(process.env.BENCH_INGEST_CONCURRENCY || profiles[cfg.profile].concurrency);
     cfg.retrieveQueries = Number(process.env.BENCH_RETRIEVE_QUERIES || profiles[cfg.profile].retrieveQueries);
+    cfg.runtimeRuns = Number(process.env.BENCH_RUNTIME_RUNS || Math.max(2, Math.floor(profiles[cfg.profile].retrieveQueries / 4)));
     cfg.digestRuns = Number(process.env.BENCH_DIGEST_RUNS || profiles[cfg.profile].digestRuns);
   }
 
@@ -604,6 +606,15 @@ async function run() {
     mismatchedCategories: [],
     diff: null,
     error: null
+  };
+  let runtimeMetrics = {
+    enabled: cfg.featureLlm,
+    runs: 0,
+    success: 0,
+    avgLatencyMs: 0,
+    evidenceCoverageRate: 0,
+    digestTriggerRate: 0,
+    writeTierCounts: {}
   };
 
   if (cfg.featureLlm) {
@@ -727,6 +738,50 @@ async function run() {
   }
   report.metrics.replay = replayMetrics;
 
+  if (cfg.featureLlm) {
+    const runtimeCases = (fixture?.retrieveCases ?? retrieveCases)
+      .slice(0, Math.max(1, cfg.runtimeRuns))
+      .map((item, index) => ({
+        message: item.query,
+        digestMode: index === 0 ? "force" : "skip",
+        writeTier: "candidate"
+      }));
+    const runtimeResults = [];
+    for (const item of runtimeCases) {
+      const res = await apiFetch("POST", "/memory/runtime/turn", {
+        scopeId,
+        message: item.message,
+        source: "sdk",
+        writeTier: item.writeTier,
+        digestMode: item.digestMode
+      });
+      const evidence = res.json?.evidence ?? {};
+      const evidenceCoverage = ["digestIds", "eventIds", "stateRefs"].some((key) => Array.isArray(evidence[key]) && evidence[key].length > 0);
+      runtimeResults.push({
+        ok: res.ok && typeof res.json?.answer === "string",
+        latencyMs: res.latencyMs,
+        evidenceCoverage,
+        digestTriggered: Boolean(res.json?.digestTriggered),
+        writeTier: typeof res.json?.writeTier === "string" ? res.json.writeTier : "unknown"
+      });
+    }
+    const runtimeLatencies = runtimeResults.map((result) => result.latencyMs);
+    const writeTierCounts = {};
+    for (const result of runtimeResults) {
+      incrementCounter(writeTierCounts, result.writeTier);
+    }
+    runtimeMetrics = {
+      enabled: true,
+      runs: runtimeResults.length,
+      success: runtimeResults.filter((result) => result.ok).length,
+      avgLatencyMs: Number((runtimeLatencies.reduce((sum, value) => sum + value, 0) / Math.max(1, runtimeLatencies.length)).toFixed(2)),
+      evidenceCoverageRate: Number((runtimeResults.filter((result) => result.evidenceCoverage).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      digestTriggerRate: Number((runtimeResults.filter((result) => result.digestTriggered).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      writeTierCounts
+    };
+  }
+  report.metrics.runtime = runtimeMetrics;
+
   const dueAt = new Date(Date.now() + 20000).toISOString();
   const reminderCreate = await apiFetch("POST", "/reminders", { scopeId, dueAt, text: "Benchmark reminder" });
   let reminderMetrics = {
@@ -801,6 +856,7 @@ async function run() {
     `- Retrieve semantic hit rate: ${report.metrics.retrieve.hitRate}, strict hit rate: ${report.metrics.retrieve.strictHitRate} (p95 ${report.metrics.retrieve.p95Ms} ms)`,
     `- Digest success: ${report.metrics.digest.success}/${report.metrics.digest.runs}, consistency pass ${report.metrics.digest.consistencyPassRate}, avg latency ${report.metrics.digest.avgLatencyMs} ms`,
     `- Replay state match: ${report.metrics.replay.enabled ? (report.metrics.replay.success ? (report.metrics.replay.stateMatch ? "yes" : "no") : `error (${report.metrics.replay.error})`) : "skipped"}${report.metrics.replay.enabled && report.metrics.replay.success ? `, snapshots ${report.metrics.replay.rebuildSnapshots}` : ""}`,
+    `- Runtime turn success: ${report.metrics.runtime.enabled ? `${report.metrics.runtime.success}/${report.metrics.runtime.runs}` : "skipped"}, evidence coverage ${report.metrics.runtime.enabled ? report.metrics.runtime.evidenceCoverageRate : "n/a"}, avg latency ${report.metrics.runtime.enabled ? `${report.metrics.runtime.avgLatencyMs} ms` : "n/a"}`,
     `- Reminder sent: ${report.metrics.reminder.success === 1 ? "yes" : "no"}, delay ${report.metrics.reminder.delayMs} ms`,
     ...(report.metrics.digest.goldRetention
       ? [
@@ -833,6 +889,17 @@ async function run() {
               .sort((a, b) => b[1] - a[1])
               .map(([name, count]) => `  - ${name}: ${count}`)
             : ["  - none"])
+        ]
+      : ["- skipped"]),
+    "",
+    "## Assistant Runtime",
+    ...(report.metrics.runtime.enabled
+      ? [
+          `- Success: ${report.metrics.runtime.success}/${report.metrics.runtime.runs}`,
+          `- Avg latency: ${report.metrics.runtime.avgLatencyMs} ms`,
+          `- Evidence coverage rate: ${report.metrics.runtime.evidenceCoverageRate}`,
+          `- Digest trigger rate: ${report.metrics.runtime.digestTriggerRate}`,
+          `- Write tiers: ${Object.keys(report.metrics.runtime.writeTierCounts || {}).length ? Object.entries(report.metrics.runtime.writeTierCounts).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`
         ]
       : ["- skipped"]),
     "",

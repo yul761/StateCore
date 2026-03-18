@@ -159,6 +159,7 @@ Use the built-in benchmark runner to generate reproducible metrics and a score r
 - Digest success/consistency/latency (when `FEATURE_LLM=true`)
 - Persisted digest consistency taxonomy from state snapshots
 - Replay consistency and category-level state diffs
+- Assistant runtime turn success, evidence coverage, and write-tier distribution
 - Reminder due-to-sent delay
 
 Run:
