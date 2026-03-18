@@ -113,6 +113,32 @@ describe("consistencyCheck", () => {
     expect(result.errors).toContain("changes_repeated_from_previous_digest");
     expect(result.errors).toContain("vague_next_step");
   });
+
+  it("catches decision and todo contradictions against protected state", () => {
+    const result = consistencyCheck({
+      output: {
+        summary: "We should revert the postgres choice and remove benchmark coverage.",
+        changes: [
+          "Revert use postgres for storage",
+          "Remove define drift metrics from the roadmap"
+        ],
+        nextSteps: ["Document replacement storage plan"]
+      },
+      protectedState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: [],
+          decisions: ["use postgres for storage"]
+        },
+        workingNotes: {},
+        todos: ["define drift metrics"]
+      }
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("decision_contradiction");
+    expect(result.errors).toContain("todo_contradiction");
+  });
 });
 
 describe("generateDigestStage2", () => {

@@ -426,6 +426,14 @@ function normalizeBullet(text: string) {
   return normalizeText(text.replace(/^-\s*/, ""));
 }
 
+function mentionsFactWithNegation(text: string, fact: string, negationPattern: RegExp) {
+  const normalized = text.toLowerCase();
+  const keyTokens = tokenize(fact).slice(0, 4);
+  if (!keyTokens.length) return false;
+  const mentionsFact = keyTokens.every((token) => normalized.includes(token));
+  return mentionsFact && negationPattern.test(normalized);
+}
+
 export function consistencyCheck(input: {
   output: DigestOutput;
   previousDigest?: Digest | null;
@@ -459,12 +467,33 @@ export function consistencyCheck(input: {
   }
 
   const summaryLower = input.output.summary.toLowerCase();
+  const combinedText = [
+    input.output.summary,
+    ...input.output.changes,
+    ...input.output.nextSteps
+  ].join("\n").toLowerCase();
   for (const constraint of input.protectedState.stableFacts.constraints ?? []) {
     const keyTokens = tokenize(constraint).slice(0, 3);
     if (!keyTokens.length) continue;
     const mentionsConstraint = keyTokens.every((token) => summaryLower.includes(token));
     if (/\\b(remove|drop|lift|no longer|ignore)\\b/.test(summaryLower) && mentionsConstraint) {
       errors.push("constraint_contradiction");
+      break;
+    }
+  }
+
+  const decisionNegation = /\b(revert|reverse|undo|cancel|drop|abandon|deprioritize|no longer|instead)\b/;
+  for (const decision of input.protectedState.stableFacts.decisions ?? []) {
+    if (mentionsFactWithNegation(combinedText, decision, decisionNegation)) {
+      errors.push("decision_contradiction");
+      break;
+    }
+  }
+
+  const todoNegation = /\b(remove|delete|drop|cancel|skip|ignore|defer|deprioritize)\b/;
+  for (const todo of input.protectedState.todos ?? []) {
+    if (mentionsFactWithNegation(combinedText, todo, todoNegation)) {
+      errors.push("todo_contradiction");
       break;
     }
   }
