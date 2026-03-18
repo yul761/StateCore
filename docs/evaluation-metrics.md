@@ -318,6 +318,13 @@ Suggested fixture labels:
 - expected supported answers
 - expected prohibited answers
 
+Recommended fixture families now include:
+
+- baseline memory continuity
+- decision-heavy continuity
+- noise-heavy retrieval stress
+- contradiction-injected drift checks
+
 Without labeled fixtures, many of the higher-level metrics remain subjective.
 
 ## Metric Calculation Guidance

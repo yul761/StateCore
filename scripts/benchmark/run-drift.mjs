@@ -110,10 +110,21 @@ function loadGoldFacts(fixture) {
       goal: Array.isArray(fixture.gold.goal) ? fixture.gold.goal : [],
       constraints: Array.isArray(fixture.gold.constraints) ? fixture.gold.constraints : [],
       decisions: Array.isArray(fixture.gold.decisions) ? fixture.gold.decisions : [],
-      todos: Array.isArray(fixture.gold.todos) ? fixture.gold.todos : []
+      todos: Array.isArray(fixture.gold.todos) ? fixture.gold.todos : [],
+      contradictions: fixture.gold.contradictions && typeof fixture.gold.contradictions === "object"
+        ? {
+            goal: Array.isArray(fixture.gold.contradictions.goal) ? fixture.gold.contradictions.goal : [],
+            constraints: Array.isArray(fixture.gold.contradictions.constraints) ? fixture.gold.contradictions.constraints : [],
+            decisions: Array.isArray(fixture.gold.contradictions.decisions) ? fixture.gold.contradictions.decisions : [],
+            todos: Array.isArray(fixture.gold.contradictions.todos) ? fixture.gold.contradictions.todos : []
+          }
+        : { goal: [], constraints: [], decisions: [], todos: [] }
     };
   }
-  return parseGoldFacts(fixture.events);
+  return {
+    ...parseGoldFacts(fixture.events),
+    contradictions: { goal: [], constraints: [], decisions: [], todos: [] }
+  };
 }
 
 function factRecall(text, facts) {
@@ -125,6 +136,13 @@ function factRecall(text, facts) {
 
 function driftRateFromRecall(recall) {
   return Number((1 - recall).toFixed(3));
+}
+
+function contradictionRate(text, contradictions) {
+  if (!contradictions.length) return 0;
+  const normalized = normalizeText(text);
+  const hits = contradictions.filter((item) => normalized.includes(normalizeText(item))).length;
+  return Number((hits / contradictions.length).toFixed(3));
 }
 
 function linearSlope(values) {
@@ -218,6 +236,34 @@ async function run() {
             .reduce((sum, m) => sum + (m.todoDriftRate ?? 0), 0) / Math.max(1, report.metrics.filter((m) => m.ok).length)
         ).toFixed(3)
       ),
+      goalContradictionRate: Number(
+        (
+          report.metrics
+            .filter((m) => m.ok)
+            .reduce((sum, m) => sum + (m.goalContradictionRate ?? 0), 0) / Math.max(1, report.metrics.filter((m) => m.ok).length)
+        ).toFixed(3)
+      ),
+      constraintContradictionRate: Number(
+        (
+          report.metrics
+            .filter((m) => m.ok)
+            .reduce((sum, m) => sum + (m.constraintContradictionRate ?? 0), 0) / Math.max(1, report.metrics.filter((m) => m.ok).length)
+        ).toFixed(3)
+      ),
+      decisionContradictionRate: Number(
+        (
+          report.metrics
+            .filter((m) => m.ok)
+            .reduce((sum, m) => sum + (m.decisionContradictionRate ?? 0), 0) / Math.max(1, report.metrics.filter((m) => m.ok).length)
+        ).toFixed(3)
+      ),
+      todoContradictionRate: Number(
+        (
+          report.metrics
+            .filter((m) => m.ok)
+            .reduce((sum, m) => sum + (m.todoContradictionRate ?? 0), 0) / Math.max(1, report.metrics.filter((m) => m.ok).length)
+        ).toFixed(3)
+      ),
       recallSlope: Number(linearSlope(recalls).toFixed(6)),
       repeatedChangeRate: Number(
         (report.metrics.filter((m) => m.ok && m.repeatedChanges).length / Math.max(1, report.metrics.length)).toFixed(3)
@@ -244,6 +290,10 @@ async function run() {
       `- Constraint drift rate: ${report.summary.constraintDriftRate}`,
       `- Decision drift rate: ${report.summary.decisionDriftRate}`,
       `- Todo drift rate: ${report.summary.todoDriftRate}`,
+      `- Goal contradiction rate: ${report.summary.goalContradictionRate}`,
+      `- Constraint contradiction rate: ${report.summary.constraintContradictionRate}`,
+      `- Decision contradiction rate: ${report.summary.decisionContradictionRate}`,
+      `- Todo contradiction rate: ${report.summary.todoContradictionRate}`,
       `- Recall slope: ${report.summary.recallSlope}`,
       `- Repeated change rate: ${report.summary.repeatedChangeRate}`,
       "",
@@ -281,6 +331,10 @@ async function run() {
     const constraintDriftRate = driftRateFromRecall(recallConstraints);
     const decisionDriftRate = driftRateFromRecall(recallDecisions);
     const todoDriftRate = driftRateFromRecall(recallTodos);
+    const goalContradictionRate = contradictionRate(combined, gold.contradictions.goal);
+    const constraintContradictionRate = contradictionRate(combined, gold.contradictions.constraints);
+    const decisionContradictionRate = contradictionRate(combined, gold.contradictions.decisions);
+    const todoContradictionRate = contradictionRate(combined, gold.contradictions.todos);
     const avgRecall = (recallGoal + recallConstraints + recallDecisions + recallTodos) / 4;
     recalls.push(avgRecall);
 
@@ -298,6 +352,10 @@ async function run() {
       constraintDriftRate,
       decisionDriftRate,
       todoDriftRate,
+      goalContradictionRate,
+      constraintContradictionRate,
+      decisionContradictionRate,
+      todoContradictionRate,
       avgRecall,
       repeatedChanges
     });

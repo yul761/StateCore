@@ -42,6 +42,11 @@ Run drift test (50 rounds default):
 DRIFT_RUNS=50 DRIFT_FIXTURE=benchmark-fixtures/decision-heavy.json node scripts/benchmark/run-drift.mjs
 ```
 
+Contradiction-injection drift test:
+```bash
+DRIFT_RUNS=25 DRIFT_FIXTURE=benchmark-fixtures/contradiction-injected.json node scripts/benchmark/run-drift.mjs
+```
+
 Outputs are written to `benchmark-results/`:
 - `benchmark-*.json`
 - `benchmark-*.md`

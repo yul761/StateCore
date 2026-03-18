@@ -1,0 +1,54 @@
+{
+  "gold": {
+    "goal": ["keep the project focused on low-drift long-term memory"],
+    "constraints": [
+      "self-hosted first",
+      "do not become a model hosting platform",
+      "keep api stable"
+    ],
+    "decisions": [
+      "We decide to prioritize digest consistency over flashy demos",
+      "We decide to support OpenAI-compatible local endpoints first"
+    ],
+    "todos": [
+      "define drift metrics",
+      "add replay consistency checks"
+    ],
+    "contradictions": {
+      "goal": [
+        "goal: become a general-purpose hosted AI platform"
+      ],
+      "constraints": [
+        "constraint: require hosted memory service",
+        "constraint: break api compatibility freely"
+      ],
+      "decisions": [
+        "We decide to deprioritize digest consistency in favor of demo polish",
+        "We decide to build a proprietary model hosting layer first"
+      ],
+      "todos": [
+        "TODO: remove drift metrics from the roadmap",
+        "TODO: delete replay consistency work"
+      ]
+    }
+  },
+  "events": [
+    { "type": "document", "key": "doc:goal", "content": "goal: keep the project focused on low-drift long-term memory" },
+    { "type": "document", "key": "doc:constraints", "content": "constraint: self-hosted first\nconstraint: do not become a model hosting platform\nconstraint: keep api stable" },
+    { "type": "stream", "content": "We decide to prioritize digest consistency over flashy demos" },
+    { "type": "stream", "content": "TODO: define drift metrics" },
+    { "type": "stream", "content": "Status update: benchmark harness now emits recall and drift summaries" },
+    { "type": "stream", "content": "We decide to support OpenAI-compatible local endpoints first" },
+    { "type": "stream", "content": "Blocked by fixture coverage gaps in contradiction scenarios" },
+    { "type": "stream", "content": "TODO: add replay consistency checks" },
+    { "type": "stream", "content": "Status update: provider-neutral config landed for local endpoints" },
+    { "type": "stream", "content": "Noise: casual note about unrelated UI experiments" },
+    { "type": "stream", "content": "Reminder: hosted platform work is explicitly out of scope" }
+  ],
+  "retrieveCases": [
+    { "query": "What is the project goal?", "expected": "low-drift", "aliases": ["memory", "goal", "long-term"] },
+    { "query": "What constraints exist?", "expected": "self-hosted", "aliases": ["constraint", "must", "cannot", "platform"] },
+    { "query": "What did we decide?", "expected": "digest consistency", "aliases": ["decision", "agreed", "we decide", "local endpoints"] },
+    { "query": "What todos are pending?", "expected": "drift metrics", "aliases": ["todo", "next step", "replay", "pending"] }
+  ]
+}
