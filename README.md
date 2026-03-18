@@ -178,7 +178,7 @@ BENCH_PROFILE=stress pnpm benchmark
 
 Reports are generated in `benchmark-results/` as JSON + Markdown.
 They include both the existing overall performance score and a separate long-term memory reliability score.
-The reliability score now reflects digest consistency, retention, contradiction control, replay stability, and runtime evidence coverage.
+The reliability score now reflects digest consistency, retention, contradiction and omission control, replay stability, and runtime evidence coverage.
 
 Reproducible run example:
 ```bash

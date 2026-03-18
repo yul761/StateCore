@@ -317,8 +317,10 @@ function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, r
         (digestMetrics.goldRetention.temporaryTodoIntrusionRate || 0)
       ) / 5
     : 0;
+  const omissionRisk = digestMetrics.omissionWarningRate || 0;
+  const integrityRisk = contradiction * 0.75 + omissionRisk * 0.25;
   const retentionScore = clamp(retention * 35);
-  const contradictionScore = clamp((1 - contradiction) * 20);
+  const contradictionScore = clamp((1 - integrityRisk) * 20);
 
   let replayScore = 15;
   if (replayMetrics?.enabled) {
