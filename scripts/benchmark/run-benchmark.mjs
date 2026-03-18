@@ -970,6 +970,15 @@ async function run() {
     evidenceEventScoreRate: 0,
     evidenceStateSummaryRate: 0
   };
+  let groundedResponseMetrics = {
+    enabled: cfg.featureLlm,
+    successRate: 0,
+    evidenceCoverageRate: 0,
+    rankingReasonRate: 0,
+    eventScoreRate: 0,
+    stateSummaryRate: 0,
+    avgLatencyMs: 0
+  };
 
   if (cfg.featureLlm) {
     const durations = [];
@@ -1314,6 +1323,23 @@ async function run() {
   }
   report.metrics.runtime = runtimeMetrics;
   report.metrics.answer = answerMetrics;
+  groundedResponseMetrics = cfg.featureLlm
+    ? {
+        enabled: true,
+        successRate: Number((
+          (
+            (runtimeMetrics.success / Math.max(1, runtimeMetrics.runs)) * 0.6 +
+            (answerMetrics.success / Math.max(1, answerMetrics.runs)) * 0.4
+          )
+        ).toFixed(3)),
+        evidenceCoverageRate: Number((((runtimeMetrics.evidenceCoverageRate || 0) * 0.6) + ((answerMetrics.evidenceCoverageRate || 0) * 0.4)).toFixed(3)),
+        rankingReasonRate: Number((((runtimeMetrics.evidenceEventRankingReasonRate || 0) * 0.6) + ((answerMetrics.evidenceEventRankingReasonRate || 0) * 0.4)).toFixed(3)),
+        eventScoreRate: Number((((runtimeMetrics.evidenceEventScoreRate || 0) * 0.6) + ((answerMetrics.evidenceEventScoreRate || 0) * 0.4)).toFixed(3)),
+        stateSummaryRate: Number((((runtimeMetrics.evidenceStateSummaryRate || 0) * 0.6) + ((answerMetrics.evidenceStateSummaryRate || 0) * 0.4)).toFixed(3)),
+        avgLatencyMs: Number((((runtimeMetrics.avgLatencyMs || 0) * 0.6) + ((answerMetrics.avgLatencyMs || 0) * 0.4)).toFixed(2))
+      }
+    : groundedResponseMetrics;
+  report.metrics.groundedResponse = groundedResponseMetrics;
 
   const dueAt = new Date(Date.now() + 20000).toISOString();
   const reminderCreate = await apiFetch("POST", "/reminders", { scopeId, dueAt, text: "Benchmark reminder" });
@@ -1401,6 +1427,7 @@ async function run() {
     `- Retrieve semantic hit rate: ${report.metrics.retrieve.hitRate}, strict hit rate: ${report.metrics.retrieve.strictHitRate} (p95 ${report.metrics.retrieve.p95Ms} ms)`,
     `- Retrieve mode: ${report.metrics.retrieve.mode}, retrieve limit ${report.metrics.retrieve.limit}, embedding requested ${report.metrics.retrieve.embeddingRequested ? "yes" : "no"}, embedding configured ${report.metrics.retrieve.embeddingConfigured ? "yes" : "no"}, candidate limit ${report.metrics.retrieve.embeddingCandidateLimit}, embedding model ${report.metrics.retrieve.embeddingModel || "none"}`,
     `- Retrieve explainability: ranking reasons ${report.metrics.retrieve.explainabilityRate}, reranked queries ${report.metrics.retrieve.rerankedRate}, embedding top-match ${report.metrics.retrieve.embeddingTopMatchRate}, document top-match ${report.metrics.retrieve.documentTopMatchRate}, source diversity ${report.metrics.retrieve.sourceDiversityRate}`,
+    `- Grounded response view: success ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.successRate : "n/a"}, evidence coverage ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.evidenceCoverageRate : "n/a"}, ranking reasons ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.rankingReasonRate : "n/a"}, event scores ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.eventScoreRate : "n/a"}, state summary ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.stateSummaryRate : "n/a"}, avg latency ${report.metrics.groundedResponse.enabled ? `${report.metrics.groundedResponse.avgLatencyMs} ms` : "n/a"}`,
     `- Answer grounding: success ${report.metrics.answer.enabled ? `${report.metrics.answer.success}/${report.metrics.answer.runs}` : "skipped"}, evidence coverage ${report.metrics.answer.enabled ? report.metrics.answer.evidenceCoverageRate : "n/a"}, ranking reasons ${report.metrics.answer.enabled ? report.metrics.answer.evidenceEventRankingReasonRate : "n/a"}, event scores ${report.metrics.answer.enabled ? report.metrics.answer.evidenceEventScoreRate : "n/a"}, state summary ${report.metrics.answer.enabled ? report.metrics.answer.evidenceStateSummaryRate : "n/a"}, avg latency ${report.metrics.answer.enabled ? `${report.metrics.answer.avgLatencyMs} ms` : "n/a"}`,
     `- Digest success: ${report.metrics.digest.success}/${report.metrics.digest.runs}, consistency pass ${report.metrics.digest.consistencyPassRate}, omission warning rate ${report.metrics.digest.omissionWarningRate ?? 0}, avg latency ${report.metrics.digest.avgLatencyMs} ms`,
     `- Replay state match: ${report.metrics.replay.enabled ? (report.metrics.replay.successfulRuns ? (report.metrics.replay.stateMatch ? "yes" : "no") : `error (${report.metrics.replay.error})`) : "skipped"}${report.metrics.replay.enabled && report.metrics.replay.successfulRuns ? `, successful rebuilds ${report.metrics.replay.successfulRuns}/${report.metrics.replay.rebuildRuns}, snapshots ${report.metrics.replay.rebuildSnapshots}` : ""}`,
@@ -1465,6 +1492,18 @@ async function run() {
           `- Digest trigger rate: ${report.metrics.runtime.digestTriggerRate}`,
           `- Write tiers: ${Object.keys(report.metrics.runtime.writeTierCounts || {}).length ? Object.entries(report.metrics.runtime.writeTierCounts).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`,
           `- Note taxonomy: ${Object.keys(report.metrics.runtime.noteTaxonomy || {}).length ? Object.entries(report.metrics.runtime.noteTaxonomy).sort((a, b) => b[1] - a[1]).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`
+        ]
+      : ["- skipped"]),
+    "",
+    "## Grounded Response",
+    ...(report.metrics.groundedResponse.enabled
+      ? [
+          `- Success rate: ${report.metrics.groundedResponse.successRate}`,
+          `- Avg latency: ${report.metrics.groundedResponse.avgLatencyMs} ms`,
+          `- Evidence coverage rate: ${report.metrics.groundedResponse.evidenceCoverageRate}`,
+          `- Ranking-reason rate: ${report.metrics.groundedResponse.rankingReasonRate}`,
+          `- Event score rate: ${report.metrics.groundedResponse.eventScoreRate}`,
+          `- State summary rate: ${report.metrics.groundedResponse.stateSummaryRate}`
         ]
       : ["- skipped"]),
     "",

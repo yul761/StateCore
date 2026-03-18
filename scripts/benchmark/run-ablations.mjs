@@ -130,6 +130,11 @@ function collectSummary(jsonPath) {
     answerEvidenceEventRankingReasonRate: data.metrics?.answer?.evidenceEventRankingReasonRate ?? 0,
     answerEvidenceEventScoreRate: data.metrics?.answer?.evidenceEventScoreRate ?? 0,
     answerEvidenceStateSummaryRate: data.metrics?.answer?.evidenceStateSummaryRate ?? 0,
+    groundedResponseSuccessRate: data.metrics?.groundedResponse?.successRate ?? 0,
+    groundedResponseEvidenceCoverageRate: data.metrics?.groundedResponse?.evidenceCoverageRate ?? 0,
+    groundedResponseRankingReasonRate: data.metrics?.groundedResponse?.rankingReasonRate ?? 0,
+    groundedResponseEventScoreRate: data.metrics?.groundedResponse?.eventScoreRate ?? 0,
+    groundedResponseStateSummaryRate: data.metrics?.groundedResponse?.stateSummaryRate ?? 0,
     file: path.basename(jsonPath)
   };
 }
@@ -298,6 +303,7 @@ const lines = [
       `- Retention: latest-document digest ${s.latestDocumentRetentionRate}, latest-document state ${s.stateLatestDocumentRetentionRate}, state fact ${s.stateFactRetentionRate}, goal ${s.stateGoalRetentionRate}, constraints ${s.stateConstraintPreservationRate}, decisions ${s.stateDecisionContinuityRate}, todos ${s.stateTodoContinuityRate}`,
       `- Runtime: ${s.runtimeSuccess}/${s.runtimeRuns} success, evidence ${s.runtimeEvidenceCoverageRate}, digest-trigger ${s.runtimeDigestTriggerRate}`,
       `- Runtime evidence detail: digest-summary ${s.runtimeEvidenceDigestSummaryRate}, event-snippet ${s.runtimeEvidenceEventSnippetRate}, ranking-reason ${s.runtimeEvidenceEventRankingReasonRate}, score ${s.runtimeEvidenceEventScoreRate}, embedding-reason ${s.runtimeEvidenceEventEmbeddingReasonRate}, document-source ${s.runtimeEvidenceEventDocumentSourceRate}, state-summary ${s.runtimeEvidenceStateSummaryRate}, state-provenance ${s.runtimeEvidenceStateProvenanceRate}, recent-state-changes ${s.runtimeEvidenceRecentStateChangesRate}`,
+      `- Grounded response view: success ${s.groundedResponseSuccessRate}, evidence ${s.groundedResponseEvidenceCoverageRate}, ranking-reason ${s.groundedResponseRankingReasonRate}, score ${s.groundedResponseEventScoreRate}, state-summary ${s.groundedResponseStateSummaryRate}`,
       `- Answer grounding: ${s.answerSuccess}/${s.answerRuns} success, evidence ${s.answerEvidenceCoverageRate}, ranking-reason ${s.answerEvidenceEventRankingReasonRate}, score ${s.answerEvidenceEventScoreRate}, state-summary ${s.answerEvidenceStateSummaryRate}`,
       `- Runtime policy profile: ${s.runtimePolicyProfile}`,
       `- Runtime overrides: recallLimit=${s.runtimeOverrides.recallLimit ?? "default"}, promoteLongForm=${s.runtimeOverrides.promoteLongFormToDocumented ? "yes" : "no"}, digestOnCandidate=${s.runtimeOverrides.digestOnCandidate ? "yes" : "no"}`,

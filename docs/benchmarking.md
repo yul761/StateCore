@@ -218,6 +218,11 @@ The benchmark now also emits state-backed counterparts for the latest protected 
 - answer event score evidence rate
 - answer state-summary evidence rate
 
+8. Grounded response view
+- combined success rate across runtime turns and answer calls
+- combined evidence coverage / ranking-reason / event-score / state-summary rates
+- intended as the top-level grounding view, with runtime and answer metrics as drill-downs
+
 ## Scoring Model (0-100)
 
 Weighted score:
