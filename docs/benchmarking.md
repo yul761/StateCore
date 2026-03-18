@@ -152,6 +152,9 @@ Outputs are written to `benchmark-results/`:
 - retrieve limit used for each query batch
 - whether embedding rerank was requested and whether an embedding role was configured
 - embedding candidate-limit metadata for reproducibility
+- ranking-reason coverage for returned matches
+- reranked-query rate and embedding top-match rate
+- top-match source-type bias and source-diversity rate
 
 3. Digest (when `FEATURE_LLM=true`)
 - success rate

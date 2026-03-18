@@ -850,16 +850,30 @@ async function run() {
   for (const item of retrieveRuns) {
     const res = await apiFetch("POST", "/memory/retrieve", { scopeId, query: item.query, limit: retrieveLimit });
     const combined = `${res.json.digest || ""}\n${(res.json.events || []).map((e) => e.content).join("\n")}`.toLowerCase();
+    const retrieval = res.json.retrieval ?? {};
+    const matches = Array.isArray(retrieval.matches) ? retrieval.matches : [];
+    const explainedMatches = matches.filter((match) => typeof match?.rankingReason === "string" && match.rankingReason.trim().length > 0);
+    const sourceTypes = [...new Set(matches.map((match) => match?.sourceType).filter(Boolean))];
     retrieveResults.push({
       ok: res.ok,
       latencyMs: res.latencyMs,
       strictHit: combined.includes(item.expected),
-      hit: containsAny(combined, [item.expected, ...item.aliases])
+      hit: containsAny(combined, [item.expected, ...item.aliases]),
+      hasExplainableMatches: matches.length > 0 && explainedMatches.length === matches.length,
+      reranked: Boolean(retrieval.reranked),
+      embeddingTopMatch: matches.some((match, index) => index === 0 && typeof match?.rankingReason === "string" && match.rankingReason.includes("embedding_rerank")),
+      sourceDiversity: sourceTypes.length,
+      documentTopMatch: matches[0]?.sourceType === "document"
     });
   }
   const retrieveLatencies = retrieveResults.map((r) => r.latencyMs);
   const retrieveHitRate = retrieveResults.filter((r) => r.hit).length / Math.max(1, retrieveResults.length);
   const retrieveStrictHitRate = retrieveResults.filter((r) => r.strictHit).length / Math.max(1, retrieveResults.length);
+  const retrieveExplainabilityRate = retrieveResults.filter((r) => r.hasExplainableMatches).length / Math.max(1, retrieveResults.length);
+  const retrieveRerankedRate = retrieveResults.filter((r) => r.reranked).length / Math.max(1, retrieveResults.length);
+  const retrieveEmbeddingTopMatchRate = retrieveResults.filter((r) => r.embeddingTopMatch).length / Math.max(1, retrieveResults.length);
+  const retrieveDocumentTopMatchRate = retrieveResults.filter((r) => r.documentTopMatch).length / Math.max(1, retrieveResults.length);
+  const retrieveSourceDiversityRate = retrieveResults.reduce((sum, r) => sum + Math.min(1, r.sourceDiversity / 2), 0) / Math.max(1, retrieveResults.length);
   report.metrics.retrieve = {
     mode: retrieveMode.mode,
     embeddingRequested: retrieveMode.embeddingRequested,
@@ -871,6 +885,11 @@ async function run() {
     success: retrieveResults.filter((r) => r.ok).length,
     strictHitRate: Number(retrieveStrictHitRate.toFixed(3)),
     hitRate: Number(retrieveHitRate.toFixed(3)),
+    explainabilityRate: Number(retrieveExplainabilityRate.toFixed(3)),
+    rerankedRate: Number(retrieveRerankedRate.toFixed(3)),
+    embeddingTopMatchRate: Number(retrieveEmbeddingTopMatchRate.toFixed(3)),
+    documentTopMatchRate: Number(retrieveDocumentTopMatchRate.toFixed(3)),
+    sourceDiversityRate: Number(retrieveSourceDiversityRate.toFixed(3)),
     p50Ms: Number(percentile(retrieveLatencies, 50).toFixed(2)),
     p95Ms: Number(percentile(retrieveLatencies, 95).toFixed(2))
   };
@@ -1287,6 +1306,7 @@ async function run() {
     `- Ingest throughput: ${report.metrics.ingest.throughputEventsPerSec} events/s (p95 ${report.metrics.ingest.p95Ms} ms)`,
     `- Retrieve semantic hit rate: ${report.metrics.retrieve.hitRate}, strict hit rate: ${report.metrics.retrieve.strictHitRate} (p95 ${report.metrics.retrieve.p95Ms} ms)`,
     `- Retrieve mode: ${report.metrics.retrieve.mode}, retrieve limit ${report.metrics.retrieve.limit}, embedding requested ${report.metrics.retrieve.embeddingRequested ? "yes" : "no"}, embedding configured ${report.metrics.retrieve.embeddingConfigured ? "yes" : "no"}, candidate limit ${report.metrics.retrieve.embeddingCandidateLimit}, embedding model ${report.metrics.retrieve.embeddingModel || "none"}`,
+    `- Retrieve explainability: ranking reasons ${report.metrics.retrieve.explainabilityRate}, reranked queries ${report.metrics.retrieve.rerankedRate}, embedding top-match ${report.metrics.retrieve.embeddingTopMatchRate}, document top-match ${report.metrics.retrieve.documentTopMatchRate}, source diversity ${report.metrics.retrieve.sourceDiversityRate}`,
     `- Digest success: ${report.metrics.digest.success}/${report.metrics.digest.runs}, consistency pass ${report.metrics.digest.consistencyPassRate}, omission warning rate ${report.metrics.digest.omissionWarningRate ?? 0}, avg latency ${report.metrics.digest.avgLatencyMs} ms`,
     `- Replay state match: ${report.metrics.replay.enabled ? (report.metrics.replay.successfulRuns ? (report.metrics.replay.stateMatch ? "yes" : "no") : `error (${report.metrics.replay.error})`) : "skipped"}${report.metrics.replay.enabled && report.metrics.replay.successfulRuns ? `, successful rebuilds ${report.metrics.replay.successfulRuns}/${report.metrics.replay.rebuildRuns}, snapshots ${report.metrics.replay.rebuildSnapshots}` : ""}`,
     `- Runtime turn success: ${report.metrics.runtime.enabled ? `${report.metrics.runtime.success}/${report.metrics.runtime.runs}` : "skipped"}, evidence coverage ${report.metrics.runtime.enabled ? report.metrics.runtime.evidenceCoverageRate : "n/a"}, avg latency ${report.metrics.runtime.enabled ? `${report.metrics.runtime.avgLatencyMs} ms` : "n/a"}`,
