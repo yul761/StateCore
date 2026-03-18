@@ -20,6 +20,8 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
   - body: `{ scopeId, from?, to?, strategy?: 'full'|'since_last_good' }`
   - enqueues `rebuild_digest_chain`
 - **GET /memory/digests?scopeId=&limit=&cursor=**
+- **GET /memory/state?scopeId=**
+  - returns latest `DigestStateSnapshot` for replay/audit use
 
 ## Retrieve
 - **POST /memory/retrieve**

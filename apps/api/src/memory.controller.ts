@@ -153,6 +153,24 @@ export class MemoryController {
     };
   }
 
+  @Get("/memory/state")
+  async getLatestDigestState(@Req() req: RequestWithUser, @Query("scopeId") scopeId?: string) {
+    if (!scopeId) return { error: "scopeId required" };
+    const scope = await this.domain.projectService.getScope(req.userId, scopeId);
+    if (!scope) {
+      return { error: "Scope not found" };
+    }
+    const snapshot = await this.domain.getLatestDigestState(scopeId);
+    if (!snapshot) {
+      return { digestId: null, state: null, createdAt: null };
+    }
+    return {
+      digestId: snapshot.digestId,
+      state: snapshot.state,
+      createdAt: snapshot.createdAt.toISOString()
+    };
+  }
+
   @Post("/memory/retrieve")
   async retrieve(@Req() req: RequestWithUser, @Body() body: unknown) {
     const input = RetrieveInput.parse(body);

@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { prisma } from "@project-memory/db";
 import { DigestService, MemoryService, ProjectService, RetrieveService, ReminderService } from "@project-memory/core";
+import type { DigestState } from "@project-memory/core";
 
 @Injectable()
 export class DomainService {
@@ -137,5 +138,18 @@ export class DomainService {
     this.digestService = new DigestService(digestRepo);
     this.retrieveService = new RetrieveService(digestRepo, memoryRepo);
     this.reminderService = new ReminderService(reminderRepo);
+  }
+
+  async getLatestDigestState(scopeId: string): Promise<{ digestId: string; state: DigestState; createdAt: Date } | null> {
+    const snapshot = await prisma.digestStateSnapshot.findFirst({
+      where: { scopeId },
+      orderBy: { createdAt: "desc" }
+    });
+    if (!snapshot) return null;
+    return {
+      digestId: snapshot.digestId,
+      state: snapshot.state as unknown as DigestState,
+      createdAt: snapshot.createdAt
+    };
   }
 }
