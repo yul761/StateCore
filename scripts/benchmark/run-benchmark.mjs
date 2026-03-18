@@ -302,11 +302,17 @@ function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, r
   const consistencyScore = clamp((digestMetrics.consistencyPassRate || 0) * 30);
   const retention = digestMetrics.goldRetention
     ? (
-        (digestMetrics.goldRetention.goalRetentionRate || digestMetrics.goldRetention.recallGoal || 0) +
-        (digestMetrics.goldRetention.constraintPreservationRate || digestMetrics.goldRetention.recallConstraints || 0) +
-        (digestMetrics.goldRetention.decisionContinuityRate || digestMetrics.goldRetention.recallDecisions || 0) +
-        (digestMetrics.goldRetention.todoContinuityRate || digestMetrics.goldRetention.recallTodos || 0)
-      ) / 4
+        [
+          digestMetrics.goldRetention.goalRetentionRate || digestMetrics.goldRetention.recallGoal || 0,
+          digestMetrics.goldRetention.constraintPreservationRate || digestMetrics.goldRetention.recallConstraints || 0,
+          digestMetrics.goldRetention.decisionContinuityRate || digestMetrics.goldRetention.recallDecisions || 0,
+          digestMetrics.goldRetention.todoContinuityRate || digestMetrics.goldRetention.recallTodos || 0,
+          digestMetrics.goldRetention.stateGoalRetentionRate,
+          digestMetrics.goldRetention.stateConstraintPreservationRate,
+          digestMetrics.goldRetention.stateDecisionContinuityRate,
+          digestMetrics.goldRetention.stateTodoContinuityRate
+        ].filter((value) => typeof value === "number").reduce((sum, value, _, items) => sum + value / items.length, 0)
+      )
     : digestMetrics.consistencyPassRate || 0;
   const contradiction = digestMetrics.goldRetention
     ? (
@@ -415,6 +421,32 @@ function contradictionRate(text, contradictions) {
   const normalized = normalizeText(text);
   const hits = contradictions.filter((item) => normalized.includes(normalizeText(item))).length;
   return hits / contradictions.length;
+}
+
+function stateToFactText(state) {
+  const stable = state?.stableFacts ?? {};
+  return [
+    stable.goal || "",
+    ...(stable.constraints ?? []),
+    ...(stable.decisions ?? []),
+    ...(state?.todos ?? [])
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function stateTodoIntrusionRate(state, transientTodos) {
+  if (!transientTodos.length) return 0;
+  const todos = Array.isArray(state?.todos) ? state.todos : [];
+  const normalizedTodos = todos.map((item) => normalizeText(String(item)));
+  const hits = transientTodos.filter((item) => normalizedTodos.includes(normalizeText(item))).length;
+  return Number((hits / transientTodos.length).toFixed(3));
+}
+
+function averageMetric(runs, key) {
+  const values = runs.map((run) => run[key]).filter((value) => typeof value === "number");
+  if (!values.length) return null;
+  return Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(3));
 }
 
 function canonicalize(value) {
@@ -740,14 +772,22 @@ async function run() {
           String(digest.changes || ""),
           ...(Array.isArray(digest.nextSteps) ? digest.nextSteps : [])
         ].join("\n");
+        const stateText = stateSnapshot.ok && stateSnapshot.json?.state ? stateToFactText(stateSnapshot.json.state) : "";
         goldRetentionRuns.push({
           recallGoal: factRecall(combined, goldFacts.goal),
           recallConstraints: factRecall(combined, goldFacts.constraints),
           recallDecisions: factRecall(combined, goldFacts.decisions),
           recallTodos: factRecall(combined, goldFacts.todos),
+          stateGoalRetentionRate: stateText ? factRecall(stateText, goldFacts.goal) : null,
+          stateConstraintPreservationRate: stateText ? factRecall(stateText, goldFacts.constraints) : null,
+          stateDecisionContinuityRate: stateText ? factRecall(stateText, goldFacts.decisions) : null,
+          stateTodoContinuityRate: stateText ? factRecall(stateText, goldFacts.todos) : null,
           temporaryTodoIntrusionRate: goldFacts.transientTodos.length
             ? Number((countMatches(combined, goldFacts.transientTodos) / goldFacts.transientTodos.length).toFixed(3))
             : 0,
+          stateTemporaryTodoIntrusionRate: stateSnapshot.ok && stateSnapshot.json?.state
+            ? stateTodoIntrusionRate(stateSnapshot.json.state, goldFacts.transientTodos)
+            : null,
           goalContradictionRate: contradictionRate(combined, goldFacts.contradictions.goal),
           constraintContradictionRate: contradictionRate(combined, goldFacts.contradictions.constraints),
           decisionContradictionRate: contradictionRate(combined, goldFacts.contradictions.decisions),
@@ -765,10 +805,24 @@ async function run() {
           constraintPreservationRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallConstraints, 0) / goldRetentionRuns.length).toFixed(3)),
           decisionContinuityRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallDecisions, 0) / goldRetentionRuns.length).toFixed(3)),
           todoContinuityRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallTodos, 0) / goldRetentionRuns.length).toFixed(3)),
+          stateGoalRetentionRate: averageMetric(goldRetentionRuns, "stateGoalRetentionRate"),
+          stateConstraintPreservationRate: averageMetric(goldRetentionRuns, "stateConstraintPreservationRate"),
+          stateDecisionContinuityRate: averageMetric(goldRetentionRuns, "stateDecisionContinuityRate"),
+          stateTodoContinuityRate: averageMetric(goldRetentionRuns, "stateTodoContinuityRate"),
+          stateFactRetentionRate: averageMetric(
+            goldRetentionRuns.map((run) => ({
+              stateFactRetentionRate:
+                [run.stateGoalRetentionRate, run.stateConstraintPreservationRate, run.stateDecisionContinuityRate, run.stateTodoContinuityRate]
+                  .filter((value) => typeof value === "number")
+                  .reduce((sum, value, _, items) => sum + value / items.length, 0)
+            })),
+            "stateFactRetentionRate"
+          ),
           factRetentionRate: Number((
             goldRetentionRuns.reduce((sum, run) => sum + ((run.recallGoal + run.recallConstraints + run.recallDecisions + run.recallTodos) / 4), 0) / goldRetentionRuns.length
           ).toFixed(3)),
           temporaryTodoIntrusionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.temporaryTodoIntrusionRate, 0) / goldRetentionRuns.length).toFixed(3)),
+          stateTemporaryTodoIntrusionRate: averageMetric(goldRetentionRuns, "stateTemporaryTodoIntrusionRate"),
           goalContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.goalContradictionRate, 0) / goldRetentionRuns.length).toFixed(3)),
           constraintContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.constraintContradictionRate, 0) / goldRetentionRuns.length).toFixed(3)),
           decisionContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.decisionContradictionRate, 0) / goldRetentionRuns.length).toFixed(3)),
@@ -996,8 +1050,9 @@ async function run() {
       ? [
           `- Digest gold recall: goal ${report.metrics.digest.goldRetention.recallGoal}, constraints ${report.metrics.digest.goldRetention.recallConstraints}, decisions ${report.metrics.digest.goldRetention.recallDecisions}, todos ${report.metrics.digest.goldRetention.recallTodos}`,
           `- Retention metrics: fact ${report.metrics.digest.goldRetention.factRetentionRate}, goal ${report.metrics.digest.goldRetention.goalRetentionRate}, constraints ${report.metrics.digest.goldRetention.constraintPreservationRate}, decisions ${report.metrics.digest.goldRetention.decisionContinuityRate}, todos ${report.metrics.digest.goldRetention.todoContinuityRate}`,
+          `- State retention metrics: fact ${report.metrics.digest.goldRetention.stateFactRetentionRate ?? "n/a"}, goal ${report.metrics.digest.goldRetention.stateGoalRetentionRate ?? "n/a"}, constraints ${report.metrics.digest.goldRetention.stateConstraintPreservationRate ?? "n/a"}, decisions ${report.metrics.digest.goldRetention.stateDecisionContinuityRate ?? "n/a"}, todos ${report.metrics.digest.goldRetention.stateTodoContinuityRate ?? "n/a"}`,
           `- Digest contradiction rates: goal ${report.metrics.digest.goldRetention.goalContradictionRate}, constraints ${report.metrics.digest.goldRetention.constraintContradictionRate}, decisions ${report.metrics.digest.goldRetention.decisionContradictionRate}, todos ${report.metrics.digest.goldRetention.todoContradictionRate}`,
-          `- Temporary todo intrusion rate: ${report.metrics.digest.goldRetention.temporaryTodoIntrusionRate ?? 0}`
+          `- Temporary todo intrusion rate: digest ${report.metrics.digest.goldRetention.temporaryTodoIntrusionRate ?? 0}, state ${report.metrics.digest.goldRetention.stateTemporaryTodoIntrusionRate ?? "n/a"}`
         ]
       : []),
     "",

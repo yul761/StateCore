@@ -142,6 +142,13 @@ When gold labels are available, benchmark JSON also emits retention-oriented ali
 - `decisionContinuityRate`
 - `todoContinuityRate`
 
+The benchmark now also emits state-backed counterparts for the latest protected snapshot:
+- `stateFactRetentionRate`
+- `stateGoalRetentionRate`
+- `stateConstraintPreservationRate`
+- `stateDecisionContinuityRate`
+- `stateTodoContinuityRate`
+
 4. Reminder
 - due-to-sent latency
 - delivery success
