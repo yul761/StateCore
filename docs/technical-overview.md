@@ -140,7 +140,7 @@ Reports are written to `benchmark-results/` as JSON and Markdown.
 
 ## Current Limitations
 
-- Retrieval is heuristic (no vector index yet).
+- Retrieval is heuristic by default. An optional embedding rerank path can reorder the top heuristic candidates without introducing a vector index.
 - State extraction is rule-based; no semantic entity graph.
 
 ## Extension Paths

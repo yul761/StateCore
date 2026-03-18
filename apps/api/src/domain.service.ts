@@ -1,7 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { prisma } from "@project-memory/db";
-import { DigestService, MemoryService, ProjectService, RetrieveService, ReminderService } from "@project-memory/core";
+import { DigestService, MemoryService, ProjectService, RetrieveService, ReminderService, createModelProvider } from "@project-memory/core";
 import type { DigestConsistencyResult, DigestState } from "@project-memory/core";
+import { apiEnv } from "./env";
 
 @Injectable()
 export class DomainService {
@@ -150,7 +151,28 @@ export class DomainService {
     this.projectService = new ProjectService(projectsRepo, userStateRepo);
     this.memoryService = new MemoryService(memoryRepo);
     this.digestService = new DigestService(digestRepo);
-    this.retrieveService = new RetrieveService(digestRepo, memoryRepo);
+    const provider = apiEnv.featureLlm
+      ? createModelProvider({
+          provider: apiEnv.modelProvider,
+          apiKey: apiEnv.modelApiKey,
+          baseUrl: apiEnv.modelBaseUrl,
+          model: apiEnv.modelName,
+          chatApiKey: apiEnv.chatModelApiKey,
+          chatBaseUrl: apiEnv.chatModelBaseUrl,
+          chatModel: apiEnv.chatModelName,
+          structuredOutputApiKey: apiEnv.structuredOutputModelApiKey,
+          structuredOutputBaseUrl: apiEnv.structuredOutputModelBaseUrl,
+          structuredOutputModel: apiEnv.structuredOutputModelName,
+          embeddingApiKey: apiEnv.embeddingModelApiKey,
+          embeddingBaseUrl: apiEnv.embeddingModelBaseUrl,
+          embeddingModel: apiEnv.embeddingModelName || undefined
+        })
+      : null;
+    this.retrieveService = new RetrieveService(digestRepo, memoryRepo, {
+      embeddingModel: provider?.embedding ?? null,
+      useEmbeddingRerank: apiEnv.retrieveUseEmbeddings,
+      embeddingCandidateLimit: apiEnv.retrieveEmbeddingCandidateLimit
+    });
     this.reminderService = new ReminderService(reminderRepo);
   }
 

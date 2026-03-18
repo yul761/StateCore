@@ -156,6 +156,8 @@ interface ModelProviderFactory {
 
 This is no longer purely aspirational. The current repository already exposes a provider bundle with `chat`, `structuredOutput`, and `embedding` roles, but only the first two are backed by a real client today.
 
+This has now advanced one step further: the repository can construct a real embedding client when `MODEL_EMBEDDING_NAME` is configured. Retrieval still defaults to heuristic ranking, but the provider layer is ready for optional embedding-assisted rerank paths.
+
 ## Compatibility Rule
 
 The provider abstraction should preserve current OpenAI-compatible behavior while making naming and construction more neutral.

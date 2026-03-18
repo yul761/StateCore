@@ -15,7 +15,7 @@ export {
   type ModelProviderFactory
 } from "./model-provider";
 export type { DigestConsistencyResult } from "./digest-control";
-import type { ChatModel } from "./model-provider";
+import type { ChatModel, EmbeddingModel } from "./model-provider";
 
 export const logger = pino({ level: process.env.LOG_LEVEL || "info" });
 
@@ -202,7 +202,15 @@ export class DigestService {
 }
 
 export class RetrieveService {
-  constructor(private digests: DigestRepo, private memories: MemoryRepo) {}
+  constructor(
+    private digests: DigestRepo,
+    private memories: MemoryRepo,
+    private options?: {
+      embeddingModel?: EmbeddingModel | null;
+      useEmbeddingRerank?: boolean;
+      embeddingCandidateLimit?: number;
+    }
+  ) {}
 
   private queryAliases: Record<string, string[]> = {
     decision: ["decide", "decision", "agreed", "we will", "chose"],
@@ -235,6 +243,60 @@ export class RetrieveService {
     return Math.min(1, overlap / queryTokens.size + phraseBoost);
   }
 
+  private cosineSimilarity(a: number[], b: number[]) {
+    if (!a.length || !b.length || a.length !== b.length) return 0;
+    let dot = 0;
+    let magA = 0;
+    let magB = 0;
+    for (let i = 0; i < a.length; i += 1) {
+      dot += a[i] * b[i];
+      magA += a[i] * a[i];
+      magB += b[i] * b[i];
+    }
+    if (magA === 0 || magB === 0) return 0;
+    return dot / (Math.sqrt(magA) * Math.sqrt(magB));
+  }
+
+  private async rerankWithEmbeddings(
+    query: string,
+    ranked: Array<{ event: MemoryEvent; score: number; recency: number }>
+  ) {
+    if (!this.options?.useEmbeddingRerank || !this.options.embeddingModel || !ranked.length) {
+      return ranked;
+    }
+
+    const candidateLimit = Math.min(this.options.embeddingCandidateLimit ?? 24, ranked.length);
+    const topCandidates = ranked.slice(0, candidateLimit);
+    try {
+      const embeddings = await this.options.embeddingModel.embed([query, ...topCandidates.map((item) => item.event.content)]);
+      const queryVector = embeddings[0];
+      const contentVectors = embeddings.slice(1);
+      if (!queryVector || contentVectors.length !== topCandidates.length) {
+        return ranked;
+      }
+
+      const rerankedTop = topCandidates
+        .map((item, index) => {
+          const embeddingScore = this.cosineSimilarity(queryVector, contentVectors[index]);
+          return {
+            ...item,
+            embeddingScore
+          };
+        })
+        .sort((a, b) => {
+          const combinedA = a.embeddingScore * 0.55 + a.score * 0.25 + a.recency * 0.2;
+          const combinedB = b.embeddingScore * 0.55 + b.score * 0.25 + b.recency * 0.2;
+          if (combinedB !== combinedA) return combinedB - combinedA;
+          return b.event.createdAt.getTime() - a.event.createdAt.getTime();
+        })
+        .map(({ embeddingScore: _, ...item }) => item);
+
+      return [...rerankedTop, ...ranked.slice(candidateLimit)];
+    } catch {
+      return ranked;
+    }
+  }
+
   async retrieve(scopeId: string, limit: number, query?: string) {
     const digest = await this.digests.findLatest(scopeId);
     const candidateSize = Math.min(Math.max(limit * 4, 40), 200);
@@ -258,11 +320,16 @@ export class RetrieveService {
         const combinedB = b.score * 0.8 + b.recency * 0.2;
         if (combinedB !== combinedA) return combinedB - combinedA;
         return b.event.createdAt.getTime() - a.event.createdAt.getTime();
-      })
-      .map((item) => item.event)
-      .slice(0, limit);
+      });
 
-    return { digest, events: ranked };
+    const reranked = await this.rerankWithEmbeddings(query, ranked);
+
+    return {
+      digest,
+      events: reranked
+        .map((item) => item.event)
+        .slice(0, limit)
+    };
   }
 }
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createChatModelClient, createEmbeddingModelClient, createModelProvider, EmbeddingClient, LlmClient } from "./index";
+import { createChatModelClient, createEmbeddingModelClient, createModelProvider, EmbeddingClient, LlmClient, RetrieveService } from "./index";
 
 describe("createChatModelClient", () => {
   it("returns null when config is missing", () => {
@@ -178,5 +178,37 @@ describe("createEmbeddingModelClient", () => {
     });
 
     expect(client).toBeInstanceOf(EmbeddingClient);
+  });
+});
+
+describe("RetrieveService", () => {
+  it("can rerank candidates with embeddings when enabled", async () => {
+    const service = new RetrieveService(
+      {
+        findLatest: vi.fn(async () => null)
+      } as any,
+      {
+        listRecent: vi.fn(async () => ({
+          items: [
+            { id: "evt-1", content: "noise only", createdAt: new Date("2026-03-18T00:00:00.000Z") },
+            { id: "evt-2", content: "critical replay stability decision", createdAt: new Date("2026-03-17T00:00:00.000Z") }
+          ]
+        }))
+      } as any,
+      {
+        useEmbeddingRerank: true,
+        embeddingCandidateLimit: 8,
+        embeddingModel: {
+          embed: vi.fn(async () => [
+            [1, 0],
+            [0.1, 0.9],
+            [0.9, 0.1]
+          ])
+        }
+      }
+    );
+
+    const result = await service.retrieve("scope-1", 2, "replay stability");
+    expect(result.events[0]?.id).toBe("evt-2");
   });
 });
