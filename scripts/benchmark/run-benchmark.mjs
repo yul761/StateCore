@@ -88,6 +88,18 @@ function buildRetrieveModeConfig() {
   };
 }
 
+function deriveRetrieveModeFromHealth(health) {
+  const embeddingConfigured = Boolean(health?.model?.embeddingModel);
+  const embeddingRequested = Boolean(health?.retrieve?.useEmbeddings);
+  return {
+    mode: embeddingRequested && embeddingConfigured ? "hybrid" : "heuristic",
+    embeddingRequested,
+    embeddingConfigured,
+    embeddingCandidateLimit: health?.retrieve?.embeddingCandidateLimit ?? cfg.retrieveEmbeddingCandidateLimit,
+    embeddingModel: health?.model?.embeddingModel || null
+  };
+}
+
 function getGitCommit() {
   try {
     return execSync("git rev-parse HEAD", { cwd: root, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
@@ -770,6 +782,23 @@ async function run() {
     report.config.ablationName = process.env.ABLATION_NAME;
   }
 
+  const health = await apiFetch("GET", "/health");
+  if (health.ok) {
+    report.environment.api = health.json;
+    if (health.json?.model && typeof health.json.model === "object") {
+      report.environment.model = {
+        provider: health.json.model.provider || report.environment.model.provider,
+        baseUrl: health.json.model.baseUrl || report.environment.model.baseUrl,
+        model: health.json.model.model || report.environment.model.model,
+        chatModel: health.json.model.chatModel || report.environment.model.chatModel,
+        structuredOutputModel: health.json.model.structuredOutputModel || report.environment.model.structuredOutputModel,
+        embeddingModel: health.json.model.embeddingModel ?? report.environment.model.embeddingModel
+      };
+    }
+  } else {
+    report.notes.push(`Health check failed during benchmark setup (${health.status}); using local benchmark env metadata.`);
+  }
+
   const scopeResp = await apiFetch("POST", "/scopes", { name: `Benchmark ${Date.now()}` });
   if (!scopeResp.ok || !scopeResp.json.id) {
     throw new Error(`failed_create_scope:${scopeResp.status}:${JSON.stringify(scopeResp.json)}`);
@@ -813,7 +842,7 @@ async function run() {
     { query: "What todos are pending?", expected: "todo", aliases: ["next step", "action item", "pending", "follow up"] }
   ];
   const retrieveRuns = Array.from({ length: cfg.retrieveQueries }).map((_, i) => retrieveCases[i % retrieveCases.length]);
-  const retrieveMode = buildRetrieveModeConfig();
+  const retrieveMode = health.ok ? deriveRetrieveModeFromHealth(health.json) : buildRetrieveModeConfig();
   const retrieveResults = [];
   for (const item of retrieveRuns) {
     const res = await apiFetch("POST", "/memory/retrieve", { scopeId, query: item.query, limit: 20 });

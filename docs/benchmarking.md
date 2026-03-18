@@ -243,6 +243,8 @@ Env values still override profile defaults.
 - `BENCH_RETRIEVE_QUERIES` (profile default)
 - `BENCH_RETRIEVE_USE_EMBEDDINGS` (records the intended retrieval mode in benchmark outputs; start the API with matching `RETRIEVE_USE_EMBEDDINGS`)
 - `BENCH_RETRIEVE_EMBEDDING_CANDIDATE_LIMIT` (records the intended hybrid rerank candidate limit; start the API with matching `RETRIEVE_EMBEDDING_CANDIDATE_LIMIT`)
+
+When available, the benchmark runner also reads `/health` and records the API's actual retrieval and model-role configuration so reports can distinguish benchmark-side intent from live API settings.
 - `BENCH_RUNTIME_RUNS` (profile default)
 - `BENCH_RUNTIME_POLICY_PROFILE` (default `default`)
 - `BENCH_RUNTIME_RECALL_LIMIT` (optional override)
