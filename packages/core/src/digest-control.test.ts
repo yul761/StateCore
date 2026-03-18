@@ -148,6 +148,76 @@ describe("protectedStateMerge", () => {
     );
   });
 
+  it("reaffirms semantically equivalent goals without replacing provenance", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: { goal: "ship a self hosted memory runtime", constraints: [], decisions: [] },
+        workingNotes: {},
+        todos: [],
+        provenance: {
+          goal: [{ id: "doc-old", sourceType: "document", key: "doc:goal" }]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [
+        event({ id: "doc-new", scopeId: "sc", userId: "u", type: "document", key: "doc:goal", content: "goal: ship a self-hosted memory runtime" })
+      ],
+      deltaCandidates: []
+    });
+
+    expect(merged.stableFacts.goal).toBe("ship a self hosted memory runtime");
+    expect(merged.provenance?.goal).toEqual([
+      { id: "doc-old", sourceType: "document", key: "doc:goal" },
+      { id: "doc-new", sourceType: "document", key: "doc:goal" }
+    ]);
+    expect(merged.recentChanges).toContainEqual(
+      expect.objectContaining({
+        field: "goal",
+        action: "reaffirm",
+        value: "ship a self hosted memory runtime"
+      })
+    );
+  });
+
+  it("records goal replacement as remove plus set and resets goal provenance", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: { goal: "ship alpha", constraints: [], decisions: [] },
+        workingNotes: {},
+        todos: [],
+        provenance: {
+          goal: [{ id: "doc-old", sourceType: "document", key: "doc:goal" }]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [
+        event({ id: "doc-new", scopeId: "sc", userId: "u", type: "document", key: "doc:goal", content: "goal: ship beta runtime" })
+      ],
+      deltaCandidates: []
+    });
+
+    expect(merged.stableFacts.goal).toBe("ship beta runtime");
+    expect(merged.provenance?.goal).toEqual([
+      { id: "doc-new", sourceType: "document", key: "doc:goal" }
+    ]);
+    expect(merged.recentChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "goal",
+          action: "remove",
+          value: "ship alpha"
+        }),
+        expect.objectContaining({
+          field: "goal",
+          action: "set",
+          value: "ship beta runtime"
+        })
+      ])
+    );
+  });
+
   it("normalizes legacy string evidence refs from previous snapshots", () => {
     const normalized = normalizeDigestState({
       stableFacts: { decisions: [] },

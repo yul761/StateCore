@@ -236,7 +236,7 @@ function normalizeRecentChanges(entries?: Array<{
 }
 
 function normalizeText(value: string) {
-  return value.toLowerCase().replace(/\s+/g, " ").replace(/[^a-z0-9\s:]/g, "").trim();
+  return value.toLowerCase().replace(/[^a-z0-9\s:]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function tokenize(value: string) {
@@ -449,8 +449,37 @@ function setGoalProvenance(refs: DigestEvidenceRef[] | undefined, evidence: Dige
   return [...new Map([...(refs ?? []), evidence].map((ref) => [`${ref.sourceType}:${ref.id}:${ref.key ?? ""}:${ref.kind ?? ""}`, ref])).values()];
 }
 
+function replaceGoalProvenance(evidence: DigestEvidenceRef) {
+  return [evidence];
+}
+
 function pushRecentChange(next: DigestState, change: DigestStateChange) {
   next.recentChanges = [...(next.recentChanges ?? []), change].slice(-25);
+}
+
+function mergeGoalUpdate(next: DigestState, goal: string, evidence: DigestEvidenceRef) {
+  const previousGoal = next.stableFacts.goal?.trim();
+  if (!previousGoal) {
+    next.stableFacts.goal = goal;
+    next.provenance!.goal = replaceGoalProvenance(evidence);
+    pushRecentChange(next, { field: "goal", action: "set", value: goal, evidence });
+    return;
+  }
+
+  const sameGoal =
+    normalizeText(previousGoal) === normalizeText(goal) ||
+    jaccardSimilarity(previousGoal, goal) >= 0.8;
+
+  if (sameGoal) {
+    next.provenance!.goal = setGoalProvenance(next.provenance?.goal, evidence);
+    pushRecentChange(next, { field: "goal", action: "reaffirm", value: previousGoal, evidence });
+    return;
+  }
+
+  pushRecentChange(next, { field: "goal", action: "remove", value: previousGoal, evidence });
+  next.stableFacts.goal = goal;
+  next.provenance!.goal = replaceGoalProvenance(evidence);
+  pushRecentChange(next, { field: "goal", action: "set", value: goal, evidence });
 }
 
 export function protectedStateMerge(input: {
@@ -477,11 +506,8 @@ export function protectedStateMerge(input: {
           key: input.documents[input.documents.length - 1].key ?? undefined
         }
       : null;
-    const action = next.stableFacts.goal === docGoal ? "reaffirm" : "set";
-    next.stableFacts.goal = docGoal;
     if (evidence) {
-      next.provenance.goal = setGoalProvenance(next.provenance.goal, evidence);
-      pushRecentChange(next, { field: "goal", action, value: docGoal, evidence });
+      mergeGoalUpdate(next, docGoal, evidence);
     }
   }
 
@@ -558,10 +584,7 @@ export function protectedStateMerge(input: {
 
       const decisionGoal = parseGoal(text);
       if (decisionGoal) {
-        const action = next.stableFacts.goal === decisionGoal ? "reaffirm" : "set";
-        next.stableFacts.goal = decisionGoal;
-        next.provenance.goal = setGoalProvenance(next.provenance.goal, evidence);
-        pushRecentChange(next, { field: "goal", action, value: decisionGoal, evidence });
+        mergeGoalUpdate(next, decisionGoal, evidence);
       }
     }
 
