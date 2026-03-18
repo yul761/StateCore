@@ -5,9 +5,17 @@ import {
   DigestRebuildInput,
   DigestRequestInput,
   MemoryEventInput,
+  RuntimeTurnInput,
   RetrieveInput
 } from "@project-memory/contracts";
-import { createChatModelClient, generateAnswer, LlmClient } from "@project-memory/core";
+import {
+  AssistantSession,
+  createChatModelClient,
+  DefaultRecallPolicy,
+  generateAnswer,
+  LlmClient,
+  ThresholdDigestPolicy
+} from "@project-memory/core";
 import { digestQueue } from "./queue";
 import { DomainService } from "./domain.service";
 import type { RequestWithUser } from "./types";
@@ -247,5 +255,44 @@ export class MemoryController {
     });
 
     return { answer };
+  }
+
+  @Post("/memory/runtime/turn")
+  async runtimeTurn(@Req() req: RequestWithUser, @Body() body: unknown) {
+    if (!apiEnv.featureLlm || !this.llm) {
+      throw new BadRequestException("FEATURE_LLM disabled");
+    }
+    const input = RuntimeTurnInput.parse(body);
+    const scope = await this.domain.projectService.getScope(req.userId, input.scopeId);
+    if (!scope) {
+      return { error: "Scope not found" };
+    }
+
+    const session = new AssistantSession({
+      userId: req.userId,
+      scopeId: input.scopeId,
+      memoryService: this.domain.memoryService,
+      recallPolicy: new DefaultRecallPolicy(this.domain.retrieveService, {
+        scopeStateLoader: async (scopeId) => this.domain.getLatestDigestState(scopeId)
+      }),
+      llm: this.llm,
+      prompts: {
+        system: answerSystemPrompt,
+        user: answerUserPrompt
+      },
+      digestPolicy: new ThresholdDigestPolicy(),
+      digestTrigger: {
+        requestDigest: async (scopeId) => {
+          await digestQueue.add("digest_scope", { userId: req.userId, scopeId });
+        }
+      },
+      assistantReplySource: "api"
+    });
+
+    return session.handleTurn({
+      message: input.message,
+      source: input.source ?? "api",
+      metadata: input.metadata
+    });
   }
 }

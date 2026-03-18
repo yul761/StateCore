@@ -122,6 +122,24 @@ export const AnswerOutput = z.object({
   answer: z.string()
 });
 
+export const RuntimeTurnInput = z.object({
+  scopeId: z.string().uuid(),
+  message: z.string().min(1),
+  source: MemorySource.optional(),
+  metadata: z.record(z.string(), z.unknown()).optional()
+});
+
+export const RuntimeTurnOutput = z.object({
+  answer: z.string(),
+  writeTier: z.enum(["ephemeral", "candidate", "stable", "documented"]),
+  digestTriggered: z.boolean(),
+  evidence: z.object({
+    digestIds: z.array(z.string()),
+    eventIds: z.array(z.string()),
+    stateRefs: z.array(z.string())
+  })
+});
+
 export const ReminderCreateInput = z.object({
   scopeId: z.string().uuid().nullable().optional(),
   dueAt: z.string().datetime(),

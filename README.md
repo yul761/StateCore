@@ -207,6 +207,9 @@ BENCH_SEED=42 BENCH_FIXTURE=benchmark-fixtures/basic.json pnpm benchmark
 - `packages/prompts` prompt templates
 - `packages/db` Prisma schema + client
 
+Runtime entrypoint:
+- `POST /memory/runtime/turn` runs a memory-aware assistant turn with write-tier classification, recall, grounded answer generation, and optional digest triggering.
+
 See `docs/api.md` for endpoint details.
 See `docs/glossary.md` for term definitions.
 See `docs/technical-overview.md` for architecture and pipeline internals.

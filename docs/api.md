@@ -37,6 +37,11 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
 - **POST /memory/answer**
   - body: `{ scopeId, question }`
   - requires `FEATURE_LLM=true` (otherwise 400)
+- **POST /memory/runtime/turn**
+  - body: `{ scopeId, message, source?, metadata? }`
+  - runs the assistant runtime session flow
+  - returns `{ answer, writeTier, digestTriggered, evidence }`
+  - requires `FEATURE_LLM=true`
 
 ## Scopes
 - **POST /scopes**
