@@ -201,6 +201,7 @@ node scripts/benchmark/run-ablations.mjs
 - Assistant runtime specification: `docs/assistant-runtime.md`
 - Evaluation metrics specification: `docs/evaluation-metrics.md`
 - Provider abstraction specification: `docs/provider-abstraction.md`
+- Runtime profile ablation guide: `docs/runtime-profile-ablation-guide.md`
 - Research overview: `docs/research-overview.md`
 - Evaluation protocol: `docs/evaluation-protocol.md`
 - Research questions: `docs/research-questions.md`
