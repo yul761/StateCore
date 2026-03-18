@@ -177,7 +177,7 @@ Definition:
 
 An aggregate measure of divergence between expected protected state and actual protected state across goals, constraints, decisions, and todos.
 
-This can be implemented later as a weighted combination of lower-level state drift signals.
+The benchmark now derives this as an aggregate of lower-level state drift signals, including state-backed retention loss and state-side intrusion from temporary todos or superseded document facts.
 
 ## 4. Grounding Metrics
 

@@ -166,6 +166,8 @@ The benchmark now also emits state-backed counterparts for the latest protected 
 - `stateLatestDocumentRetentionRate`
 - `supersededDocumentIntrusionRate`
 - `stateSupersededDocumentIntrusionRate`
+- `digestDriftRate`
+- `stateDriftRate`
 
 4. Reminder
 - due-to-sent latency

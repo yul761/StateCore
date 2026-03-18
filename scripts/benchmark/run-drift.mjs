@@ -177,6 +177,16 @@ function linearSlope(values) {
   return (n * sumXY - sumX * sumY) / denom;
 }
 
+function averageDefined(values) {
+  const defined = values.filter((value) => typeof value === "number");
+  if (!defined.length) return 0;
+  return defined.reduce((sum, value) => sum + value, 0) / defined.length;
+}
+
+function aggregateDriftRate(parts) {
+  return Number(averageDefined(parts).toFixed(3));
+}
+
 async function waitForNewDigest(scopeId, previousCount) {
   const start = Date.now();
   while (Date.now() - start <= cfg.timeoutMs) {
@@ -313,6 +323,12 @@ async function run() {
             .reduce((sum, m) => sum + (m.supersededDocumentIntrusionRate ?? 0), 0) / Math.max(1, successful.length)
         ).toFixed(3)
       ),
+      digestDriftRate: Number(
+        (
+          successful
+            .reduce((sum, m) => sum + (m.digestDriftRate ?? 0), 0) / Math.max(1, successful.length)
+        ).toFixed(3)
+      ),
       recallSlope: Number(linearSlope(recalls).toFixed(6)),
       repeatedChangeRate: Number(
         (report.metrics.filter((m) => m.ok && m.repeatedChanges).length / Math.max(1, report.metrics.length)).toFixed(3)
@@ -347,6 +363,7 @@ async function run() {
       `- Temporary todo intrusion rate: ${report.summary.temporaryTodoIntrusionRate}`,
       `- Latest document retention rate: ${report.summary.latestDocumentRetentionRate}`,
       `- Superseded document intrusion rate: ${report.summary.supersededDocumentIntrusionRate}`,
+      `- Aggregate digest drift rate: ${report.summary.digestDriftRate}`,
       `- Recall slope: ${report.summary.recallSlope}`,
       `- Repeated change rate: ${report.summary.repeatedChangeRate}`,
       "",
@@ -407,6 +424,15 @@ async function run() {
     const supersededDocumentIntrusionRate = gold.supersededDocumentFacts.length
       ? Number((countMatches(combined, gold.supersededDocumentFacts) / gold.supersededDocumentFacts.length).toFixed(3))
       : 0;
+    const digestDriftRate = aggregateDriftRate([
+      goalDriftRate,
+      constraintDriftRate,
+      decisionDriftRate,
+      todoDriftRate,
+      1 - latestDocumentRetentionRate,
+      temporaryTodoIntrusionRate,
+      supersededDocumentIntrusionRate
+    ]);
     recalls.push(avgRecall);
 
     const repeatedChanges = prevChanges && normalizeText(prevChanges) === normalizeText(changes);
@@ -430,6 +456,7 @@ async function run() {
       temporaryTodoIntrusionRate,
       latestDocumentRetentionRate,
       supersededDocumentIntrusionRate,
+      digestDriftRate,
       goalMatches: countMatches(combined, gold.goal),
       constraintMatches: countMatches(combined, gold.constraints),
       decisionMatches: countMatches(combined, gold.decisions),

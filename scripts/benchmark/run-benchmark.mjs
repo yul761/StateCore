@@ -455,6 +455,16 @@ function averageMetric(runs, key) {
   return Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(3));
 }
 
+function averageDefined(values) {
+  const defined = values.filter((value) => typeof value === "number");
+  if (!defined.length) return 0;
+  return defined.reduce((sum, value) => sum + value, 0) / defined.length;
+}
+
+function aggregateDriftRate(parts) {
+  return Number(averageDefined(parts).toFixed(3));
+}
+
 function canonicalize(value) {
   if (Array.isArray(value)) {
     const items = value.map(canonicalize);
@@ -910,6 +920,28 @@ async function run() {
             })),
             "stateFactRetentionRate"
           ),
+          digestDriftRate: aggregateDriftRate(goldRetentionRuns.map((run) =>
+            aggregateDriftRate([
+              1 - run.recallGoal,
+              1 - run.recallConstraints,
+              1 - run.recallDecisions,
+              1 - run.recallTodos,
+              1 - run.latestDocumentRetentionRate,
+              run.temporaryTodoIntrusionRate,
+              run.supersededDocumentIntrusionRate
+            ])
+          )),
+          stateDriftRate: aggregateDriftRate(goldRetentionRuns.map((run) =>
+            aggregateDriftRate([
+              typeof run.stateGoalRetentionRate === "number" ? 1 - run.stateGoalRetentionRate : null,
+              typeof run.stateConstraintPreservationRate === "number" ? 1 - run.stateConstraintPreservationRate : null,
+              typeof run.stateDecisionContinuityRate === "number" ? 1 - run.stateDecisionContinuityRate : null,
+              typeof run.stateTodoContinuityRate === "number" ? 1 - run.stateTodoContinuityRate : null,
+              typeof run.stateLatestDocumentRetentionRate === "number" ? 1 - run.stateLatestDocumentRetentionRate : null,
+              run.stateTemporaryTodoIntrusionRate,
+              run.stateSupersededDocumentIntrusionRate
+            ])
+          )),
           latestDocumentRetentionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.latestDocumentRetentionRate, 0) / goldRetentionRuns.length).toFixed(3)),
           stateLatestDocumentRetentionRate: averageMetric(goldRetentionRuns, "stateLatestDocumentRetentionRate"),
           factRetentionRate: Number((
@@ -1153,6 +1185,7 @@ async function run() {
           `- Retention metrics: fact ${report.metrics.digest.goldRetention.factRetentionRate}, goal ${report.metrics.digest.goldRetention.goalRetentionRate}, constraints ${report.metrics.digest.goldRetention.constraintPreservationRate}, decisions ${report.metrics.digest.goldRetention.decisionContinuityRate}, todos ${report.metrics.digest.goldRetention.todoContinuityRate}`,
           `- Latest document retention rate: digest ${report.metrics.digest.goldRetention.latestDocumentRetentionRate ?? "n/a"}, state ${report.metrics.digest.goldRetention.stateLatestDocumentRetentionRate ?? "n/a"}`,
           `- State retention metrics: fact ${report.metrics.digest.goldRetention.stateFactRetentionRate ?? "n/a"}, goal ${report.metrics.digest.goldRetention.stateGoalRetentionRate ?? "n/a"}, constraints ${report.metrics.digest.goldRetention.stateConstraintPreservationRate ?? "n/a"}, decisions ${report.metrics.digest.goldRetention.stateDecisionContinuityRate ?? "n/a"}, todos ${report.metrics.digest.goldRetention.stateTodoContinuityRate ?? "n/a"}`,
+          `- Drift rates: digest ${report.metrics.digest.goldRetention.digestDriftRate ?? "n/a"}, state ${report.metrics.digest.goldRetention.stateDriftRate ?? "n/a"}`,
           `- Digest contradiction rates: goal ${report.metrics.digest.goldRetention.goalContradictionRate}, constraints ${report.metrics.digest.goldRetention.constraintContradictionRate}, decisions ${report.metrics.digest.goldRetention.decisionContradictionRate}, todos ${report.metrics.digest.goldRetention.todoContradictionRate}`,
           `- Intrusion rates: temporary todos digest ${report.metrics.digest.goldRetention.temporaryTodoIntrusionRate ?? 0}, temporary todos state ${report.metrics.digest.goldRetention.stateTemporaryTodoIntrusionRate ?? "n/a"}, superseded docs digest ${report.metrics.digest.goldRetention.supersededDocumentIntrusionRate ?? 0}, superseded docs state ${report.metrics.digest.goldRetention.stateSupersededDocumentIntrusionRate ?? "n/a"}`
         ]
