@@ -204,7 +204,8 @@ To compare results across machines:
 1. Use a fixed `BENCH_SEED`.
 2. Use the same `BENCH_FIXTURE` file (or none).
 3. Keep the same `BENCH_PROFILE` or explicit env overrides.
-4. Report the generated JSON with config metadata.
+4. Record model provider metadata (`MODEL_PROVIDER`, `MODEL_NAME`, `MODEL_BASE_URL`).
+5. Report the generated JSON with config metadata.
 
 ## Interpreting Results
 

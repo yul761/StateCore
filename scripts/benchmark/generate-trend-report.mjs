@@ -48,6 +48,11 @@ function summarizeBenchmark(data, fileName) {
     describe: data.describe || "unknown",
     fixture: data.config?.fixture || "(none)",
     profile: data.config?.profile || "unknown",
+    model: {
+      provider: data.environment?.model?.provider || "unknown",
+      name: data.environment?.model?.model || "unknown",
+      baseUrl: data.environment?.model?.baseUrl || "unknown"
+    },
     overall: data.scores?.overall ?? 0,
     reliability: data.scores?.reliability ?? 0,
     reliabilityBreakdown: {
@@ -125,6 +130,7 @@ const md = [
   `- Describe: ${latest.describe}`,
   `- Fixture: ${latest.fixture}`,
   `- Profile: ${latest.profile}`,
+  `- Model provider: ${latest.model.provider}, model ${latest.model.name}, base ${latest.model.baseUrl}`,
   `- Overall: ${latest.overall}`,
   `- Reliability: ${latest.reliability}`,
   `- Reliability breakdown: consistency ${latest.reliabilityBreakdown.consistency}, retention ${latest.reliabilityBreakdown.retention}, contradiction control ${latest.reliabilityBreakdown.contradictionControl}, replay ${latest.reliabilityBreakdown.replay}, runtime grounding ${latest.reliabilityBreakdown.runtimeGrounding}`,
@@ -155,6 +161,7 @@ const md = [
       `- Commit: ${item.commit}`,
       `- Fixture: ${item.fixture}`,
       `- Profile: ${item.profile}`,
+      `- Model provider: ${item.model.provider}, model ${item.model.name}, base ${item.model.baseUrl}`,
       `- Overall: ${item.overall}`,
       `- Reliability: ${item.reliability}`,
       `- Reliability breakdown: consistency ${item.reliabilityBreakdown.consistency}, retention ${item.reliabilityBreakdown.retention}, contradiction control ${item.reliabilityBreakdown.contradictionControl}, replay ${item.reliabilityBreakdown.replay}, runtime grounding ${item.reliabilityBreakdown.runtimeGrounding}`,

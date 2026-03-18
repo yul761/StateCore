@@ -8,7 +8,7 @@ Short descriptive title of the experiment.
 
 ## Methods
 - Environment (OS, hardware, Node, DB, Redis)
-- LLM settings (if enabled)
+- LLM settings (provider, model, base URL, if enabled)
 - Benchmark config (seed, fixture, profile, overrides)
 - Runtime policy profile (if runtime benchmark is included)
 

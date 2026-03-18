@@ -44,6 +44,12 @@ const cfg = {
   includeReplay: process.env.BENCH_INCLUDE_REPLAY !== "false"
 };
 
+const modelConfig = {
+  provider: process.env.MODEL_PROVIDER || "openai-compatible",
+  baseUrl: process.env.MODEL_BASE_URL || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+  model: process.env.MODEL_NAME || process.env.OPENAI_MODEL || "gpt-4o-mini"
+};
+
 const headers = { "Content-Type": "application/json", "x-user-id": cfg.userId };
 
 function percentile(values, p) {
@@ -545,7 +551,10 @@ async function run() {
     startedAt,
     commit: getGitCommit(),
     describe: getGitDescribe(),
-    environment: getEnvSnapshot(),
+    environment: {
+      ...getEnvSnapshot(),
+      model: modelConfig
+    },
     config: cfg,
     metrics: {},
     scores: {},
@@ -912,6 +921,7 @@ async function run() {
     `- Describe: ${report.describe}`,
     `- Node: ${report.environment.node} (${report.environment.platform}/${report.environment.arch})`,
     `- CPU: ${report.environment.cpu} (${report.environment.cores} cores, ${report.environment.memoryGb} GB)` ,
+    `- Model provider: ${report.environment.model.provider}, model ${report.environment.model.model}, base ${report.environment.model.baseUrl}`,
     "",
     "## Scores",
     "",
