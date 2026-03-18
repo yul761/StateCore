@@ -388,15 +388,17 @@ function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, r
   if (runtimeMetrics?.enabled) {
     const groundingQuality =
       (
-        (runtimeMetrics.evidenceCoverageRate || 0) * 0.4 +
-        (runtimeMetrics.evidenceEventRankingReasonRate || 0) * 0.35 +
-        (runtimeMetrics.evidenceEventScoreRate || 0) * 0.25
+        (runtimeMetrics.evidenceCoverageRate || 0) * 0.35 +
+        (runtimeMetrics.evidenceEventRankingReasonRate || 0) * 0.3 +
+        (runtimeMetrics.evidenceEventScoreRate || 0) * 0.2 +
+        (runtimeMetrics.evidenceStateTransitionTaxonomyRate || 0) * 0.15
       );
     const answerGroundingQuality = answerMetrics?.enabled
       ? (
-          (answerMetrics.evidenceCoverageRate || 0) * 0.4 +
-          (answerMetrics.evidenceEventRankingReasonRate || 0) * 0.35 +
-          (answerMetrics.evidenceEventScoreRate || 0) * 0.25
+          (answerMetrics.evidenceCoverageRate || 0) * 0.35 +
+          (answerMetrics.evidenceEventRankingReasonRate || 0) * 0.3 +
+          (answerMetrics.evidenceEventScoreRate || 0) * 0.2 +
+          (answerMetrics.evidenceStateTransitionTaxonomyRate || 0) * 0.15
         )
       : 1;
     const combinedGroundingQuality = (groundingQuality * 0.6) + (answerGroundingQuality * 0.4);
@@ -1386,6 +1388,7 @@ async function run() {
         rankingReasonRate: Number((((runtimeMetrics.evidenceEventRankingReasonRate || 0) * 0.6) + ((answerMetrics.evidenceEventRankingReasonRate || 0) * 0.4)).toFixed(3)),
         eventScoreRate: Number((((runtimeMetrics.evidenceEventScoreRate || 0) * 0.6) + ((answerMetrics.evidenceEventScoreRate || 0) * 0.4)).toFixed(3)),
         stateSummaryRate: Number((((runtimeMetrics.evidenceStateSummaryRate || 0) * 0.6) + ((answerMetrics.evidenceStateSummaryRate || 0) * 0.4)).toFixed(3)),
+        stateTransitionTaxonomyRate: Number((((runtimeMetrics.evidenceStateTransitionTaxonomyRate || 0) * 0.6) + ((answerMetrics.evidenceStateTransitionTaxonomyRate || 0) * 0.4)).toFixed(3)),
         avgLatencyMs: Number((((runtimeMetrics.avgLatencyMs || 0) * 0.6) + ((answerMetrics.avgLatencyMs || 0) * 0.4)).toFixed(2))
       }
     : groundedResponseMetrics;
@@ -1477,7 +1480,7 @@ async function run() {
     `- Retrieve semantic hit rate: ${report.metrics.retrieve.hitRate}, strict hit rate: ${report.metrics.retrieve.strictHitRate} (p95 ${report.metrics.retrieve.p95Ms} ms)`,
     `- Retrieve mode: ${report.metrics.retrieve.mode}, retrieve limit ${report.metrics.retrieve.limit}, embedding requested ${report.metrics.retrieve.embeddingRequested ? "yes" : "no"}, embedding configured ${report.metrics.retrieve.embeddingConfigured ? "yes" : "no"}, candidate limit ${report.metrics.retrieve.embeddingCandidateLimit}, embedding model ${report.metrics.retrieve.embeddingModel || "none"}`,
     `- Retrieve explainability: ranking reasons ${report.metrics.retrieve.explainabilityRate}, reranked queries ${report.metrics.retrieve.rerankedRate}, embedding top-match ${report.metrics.retrieve.embeddingTopMatchRate}, document top-match ${report.metrics.retrieve.documentTopMatchRate}, source diversity ${report.metrics.retrieve.sourceDiversityRate}`,
-    `- Grounded response view: success ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.successRate : "n/a"}, evidence coverage ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.evidenceCoverageRate : "n/a"}, ranking reasons ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.rankingReasonRate : "n/a"}, event scores ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.eventScoreRate : "n/a"}, state summary ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.stateSummaryRate : "n/a"}, avg latency ${report.metrics.groundedResponse.enabled ? `${report.metrics.groundedResponse.avgLatencyMs} ms` : "n/a"}`,
+    `- Grounded response view: success ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.successRate : "n/a"}, evidence coverage ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.evidenceCoverageRate : "n/a"}, ranking reasons ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.rankingReasonRate : "n/a"}, event scores ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.eventScoreRate : "n/a"}, state summary ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.stateSummaryRate : "n/a"}, state transition taxonomy ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.stateTransitionTaxonomyRate : "n/a"}, avg latency ${report.metrics.groundedResponse.enabled ? `${report.metrics.groundedResponse.avgLatencyMs} ms` : "n/a"}`,
     `- Answer grounding: success ${report.metrics.answer.enabled ? `${report.metrics.answer.success}/${report.metrics.answer.runs}` : "skipped"}, evidence coverage ${report.metrics.answer.enabled ? report.metrics.answer.evidenceCoverageRate : "n/a"}, ranking reasons ${report.metrics.answer.enabled ? report.metrics.answer.evidenceEventRankingReasonRate : "n/a"}, event scores ${report.metrics.answer.enabled ? report.metrics.answer.evidenceEventScoreRate : "n/a"}, state summary ${report.metrics.answer.enabled ? report.metrics.answer.evidenceStateSummaryRate : "n/a"}, avg latency ${report.metrics.answer.enabled ? `${report.metrics.answer.avgLatencyMs} ms` : "n/a"}`,
     `- Digest success: ${report.metrics.digest.success}/${report.metrics.digest.runs}, consistency pass ${report.metrics.digest.consistencyPassRate}, omission warning rate ${report.metrics.digest.omissionWarningRate ?? 0}, avg latency ${report.metrics.digest.avgLatencyMs} ms`,
     `- Replay state match: ${report.metrics.replay.enabled ? (report.metrics.replay.successfulRuns ? (report.metrics.replay.stateMatch ? "yes" : "no") : `error (${report.metrics.replay.error})`) : "skipped"}${report.metrics.replay.enabled && report.metrics.replay.successfulRuns ? `, successful rebuilds ${report.metrics.replay.successfulRuns}/${report.metrics.replay.rebuildRuns}, snapshots ${report.metrics.replay.rebuildSnapshots}` : ""}`,
@@ -1554,7 +1557,8 @@ async function run() {
           `- Evidence coverage rate: ${report.metrics.groundedResponse.evidenceCoverageRate}`,
           `- Ranking-reason rate: ${report.metrics.groundedResponse.rankingReasonRate}`,
           `- Event score rate: ${report.metrics.groundedResponse.eventScoreRate}`,
-          `- State summary rate: ${report.metrics.groundedResponse.stateSummaryRate}`
+          `- State summary rate: ${report.metrics.groundedResponse.stateSummaryRate}`,
+          `- State transition-taxonomy rate: ${report.metrics.groundedResponse.stateTransitionTaxonomyRate ?? 0}`
         ]
       : ["- skipped"]),
     "",

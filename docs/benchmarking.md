@@ -127,6 +127,9 @@ snapshot contained.
 `Long-term Memory Reliability` uses a replay stability blend that combines rebuild
 consistency, cross-run state divergence, transition-taxonomy match rate, and cross-run
 transition divergence.
+
+The grounded-response view also tracks whether runtime and answer evidence include a
+structured state transition taxonomy, not just plain state summaries.
 - `volatileContext`
 - `evidenceRefs`
 - `goalProvenance`
