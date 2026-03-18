@@ -22,6 +22,7 @@
     "changeset": "pnpm dlx changeset",
     "release:status": "pnpm dlx changeset status",
     "benchmark": "node ./scripts/benchmark/run-benchmark.mjs",
+    "benchmark:trend": "node ./scripts/benchmark/generate-trend-report.mjs",
     "smoke:no-llm": "./scripts/smoke-no-llm.sh",
     "smoke:llm": "./scripts/smoke-llm.sh",
     "smoke:reminders": "./scripts/smoke-reminders.sh",

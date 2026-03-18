@@ -205,6 +205,11 @@ Generate a draft research report from recent benchmark artifacts:
 node scripts/benchmark/generate-research-report.mjs
 ```
 
+Generate a trend report from recent benchmark artifacts:
+```bash
+pnpm benchmark:trend
+```
+
 ## Research Artifacts
 - Vision and roadmap: `docs/vision-and-roadmap.md`
 - Drift definition: `docs/drift-definition.md`

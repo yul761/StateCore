@@ -73,6 +73,16 @@ Generate a research-report draft from the latest benchmark and ablation outputs:
 node scripts/benchmark/generate-research-report.mjs
 ```
 
+Generate a trend report from recent benchmark JSON artifacts:
+```bash
+pnpm benchmark:trend
+```
+
+Fixture-scoped trend report:
+```bash
+BENCH_TREND_FIXTURE=benchmark-fixtures/document-heavy.json pnpm benchmark:trend
+```
+
 Replay consistency check:
 ```bash
 REPLAY_FIXTURE=benchmark-fixtures/basic.json node scripts/benchmark/run-replay-check.mjs
@@ -92,6 +102,8 @@ Replay reports include category-level state diffs for:
 Outputs are written to `benchmark-results/`:
 - `benchmark-*.json`
 - `benchmark-*.md`
+- `trend-*.json`
+- `trend-*.md`
 
 ## What It Measures
 
@@ -200,6 +212,8 @@ For external sharing, focus on:
 - p95 ingest latency
 - retrieve hit rate + p95
 - digest consistency pass rate
+- long-term memory reliability trend
+- reliability breakdown trend
 - reminder delay distribution
 - overall score trend across commits
 
