@@ -113,6 +113,11 @@ function summarizeBenchmark(data, fileName) {
     replayTransitionTaxonomyMatchRate: data.metrics?.replay?.transitionTaxonomyMatchRate ?? 0,
     replayCrossRunTransitionDivergenceRate: data.metrics?.replay?.crossRunTransitionDivergenceRate ?? 0,
     replayTransitionTaxonomy: data.metrics?.replay?.transitionTaxonomy ?? {},
+    replayStabilityBlend: Number(((
+      ((1 - (data.metrics?.replay?.crossRunStateDivergenceRate ?? 0)) * 0.5) +
+      ((data.metrics?.replay?.transitionTaxonomyMatchRate ?? 0) * 0.25) +
+      ((1 - (data.metrics?.replay?.crossRunTransitionDivergenceRate ?? 0)) * 0.25)
+    )).toFixed(3)),
     replayStateMatch: Boolean(data.metrics?.replay?.stateMatch),
     startedAt: data.startedAt || null
   };
@@ -166,7 +171,8 @@ function buildDeltaSummary(items) {
     replayRebuildConsistencyRate: Math.round((last.replayRebuildConsistencyRate - first.replayRebuildConsistencyRate) * 1000) / 1000,
     replayCrossRunStateDivergenceRate: Math.round((last.replayCrossRunStateDivergenceRate - first.replayCrossRunStateDivergenceRate) * 1000) / 1000,
     replayTransitionTaxonomyMatchRate: Math.round((last.replayTransitionTaxonomyMatchRate - first.replayTransitionTaxonomyMatchRate) * 1000) / 1000,
-    replayCrossRunTransitionDivergenceRate: Math.round((last.replayCrossRunTransitionDivergenceRate - first.replayCrossRunTransitionDivergenceRate) * 1000) / 1000
+    replayCrossRunTransitionDivergenceRate: Math.round((last.replayCrossRunTransitionDivergenceRate - first.replayCrossRunTransitionDivergenceRate) * 1000) / 1000,
+    replayStabilityBlend: Math.round((last.replayStabilityBlend - first.replayStabilityBlend) * 1000) / 1000
   };
 }
 
@@ -233,7 +239,7 @@ const md = [
   `- Runtime recent-state-changes rate: ${latest.runtimeRecentStateChangesRate}`,
   `- Grounded response view: success ${latest.groundedResponseSuccessRate}, evidence ${latest.groundedResponseEvidenceCoverageRate}, ranking-reason ${latest.groundedResponseRankingReasonRate}, score ${latest.groundedResponseEventScoreRate}, state-summary ${latest.groundedResponseStateSummaryRate}`,
   `- Answer grounding: evidence ${latest.answerEvidenceCoverageRate}, ranking-reason ${latest.answerEventRankingReasonRate}, score ${latest.answerEventScoreRate}, state-summary ${latest.answerStateSummaryRate}`,
-  `- Replay: state match ${latest.replayStateMatch ? "yes" : "no"}, rebuild consistency ${latest.replayRebuildConsistencyRate}, cross-run divergence ${latest.replayCrossRunStateDivergenceRate}, transition-match ${latest.replayTransitionTaxonomyMatchRate}, cross-run transition divergence ${latest.replayCrossRunTransitionDivergenceRate}`,
+  `- Replay: state match ${latest.replayStateMatch ? "yes" : "no"}, rebuild consistency ${latest.replayRebuildConsistencyRate}, cross-run divergence ${latest.replayCrossRunStateDivergenceRate}, transition-match ${latest.replayTransitionTaxonomyMatchRate}, cross-run transition divergence ${latest.replayCrossRunTransitionDivergenceRate}, stability blend ${latest.replayStabilityBlend}`,
   `- Replay transition taxonomy: ${Object.keys(latest.replayTransitionTaxonomy || {}).length ? Object.entries(latest.replayTransitionTaxonomy).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`,
   "",
   "## Window Delta",
@@ -263,7 +269,8 @@ const md = [
         `- Replay rebuild consistency delta: ${formatDelta(deltaSummary.replayRebuildConsistencyRate)}`,
         `- Replay cross-run divergence delta: ${formatDelta(deltaSummary.replayCrossRunStateDivergenceRate)}`,
         `- Replay transition-match delta: ${formatDelta(deltaSummary.replayTransitionTaxonomyMatchRate)}`,
-        `- Replay cross-run transition divergence delta: ${formatDelta(deltaSummary.replayCrossRunTransitionDivergenceRate)}`
+        `- Replay cross-run transition divergence delta: ${formatDelta(deltaSummary.replayCrossRunTransitionDivergenceRate)}`,
+        `- Replay stability blend delta: ${formatDelta(deltaSummary.replayStabilityBlend)}`
       ]
     : ["- Not enough benchmark runs to compute a delta window."]),
   "",
@@ -298,7 +305,7 @@ const md = [
       `- Runtime recent-state-changes rate: ${item.runtimeRecentStateChangesRate}`,
       `- Grounded response view: success ${item.groundedResponseSuccessRate}, evidence ${item.groundedResponseEvidenceCoverageRate}, ranking-reason ${item.groundedResponseRankingReasonRate}, score ${item.groundedResponseEventScoreRate}, state-summary ${item.groundedResponseStateSummaryRate}`,
       `- Answer grounding: evidence ${item.answerEvidenceCoverageRate}, ranking-reason ${item.answerEventRankingReasonRate}, score ${item.answerEventScoreRate}, state-summary ${item.answerStateSummaryRate}`,
-      `- Replay: state match ${item.replayStateMatch ? "yes" : "no"}, rebuild consistency ${item.replayRebuildConsistencyRate}, cross-run divergence ${item.replayCrossRunStateDivergenceRate}`,
+      `- Replay: state match ${item.replayStateMatch ? "yes" : "no"}, rebuild consistency ${item.replayRebuildConsistencyRate}, cross-run divergence ${item.replayCrossRunStateDivergenceRate}, transition-match ${item.replayTransitionTaxonomyMatchRate}, cross-run transition divergence ${item.replayCrossRunTransitionDivergenceRate}, stability blend ${item.replayStabilityBlend}`,
       `- Started: ${item.startedAt || "unknown"}`,
       ""
     ].join("\n")

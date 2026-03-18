@@ -375,7 +375,10 @@ function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, r
       replayScore = 0;
     } else {
       const consistency = replayMetrics.rebuildConsistencyRate ?? 0;
-      const stability = 1 - (replayMetrics.crossRunStateDivergenceRate ?? 0);
+      const stateStability = 1 - (replayMetrics.crossRunStateDivergenceRate ?? 0);
+      const transitionMatch = replayMetrics.transitionTaxonomyMatchRate ?? 0;
+      const transitionStability = 1 - (replayMetrics.crossRunTransitionDivergenceRate ?? 0);
+      const stability = (stateStability * 0.5) + (transitionMatch * 0.25) + (transitionStability * 0.25);
       const successRate = (replayMetrics.successfulRuns || 0) / Math.max(1, replayMetrics.rebuildRuns || 1);
       replayScore = clamp(((consistency * 0.7) + (stability * 0.3)) * successRate * 15);
     }
@@ -1571,6 +1574,7 @@ async function run() {
             `- Cross-run state divergence rate: ${report.metrics.replay.crossRunStateDivergenceRate}`,
             `- Transition taxonomy match rate: ${report.metrics.replay.transitionTaxonomyMatchRate ?? 0}`,
             `- Cross-run transition divergence rate: ${report.metrics.replay.crossRunTransitionDivergenceRate ?? 0}`,
+            `- Replay stability blend: ${Number((((1 - (report.metrics.replay.crossRunStateDivergenceRate ?? 0)) * 0.5) + ((report.metrics.replay.transitionTaxonomyMatchRate ?? 0) * 0.25) + ((1 - (report.metrics.replay.crossRunTransitionDivergenceRate ?? 0)) * 0.25)).toFixed(3))}`,
             `- Successful rebuilds: ${report.metrics.replay.successfulRuns}/${report.metrics.replay.rebuildRuns}`,
             `- Rebuild snapshots: ${report.metrics.replay.rebuildSnapshots}`,
             `- Baseline transition taxonomy: ${Object.keys(report.metrics.replay.transitionTaxonomy || {}).length ? Object.entries(report.metrics.replay.transitionTaxonomy).map(([key, count]) => `${key}=${count}`).join(", ") : "none"}`,

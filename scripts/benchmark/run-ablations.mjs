@@ -137,6 +137,11 @@ function collectSummary(jsonPath) {
     groundedResponseStateSummaryRate: data.metrics?.groundedResponse?.stateSummaryRate ?? 0,
     replayTransitionTaxonomyMatchRate: data.metrics?.replay?.transitionTaxonomyMatchRate ?? 0,
     replayCrossRunTransitionDivergenceRate: data.metrics?.replay?.crossRunTransitionDivergenceRate ?? 0,
+    replayStabilityBlend: Number(((
+      ((1 - (data.metrics?.replay?.crossRunStateDivergenceRate ?? 0)) * 0.5) +
+      ((data.metrics?.replay?.transitionTaxonomyMatchRate ?? 0) * 0.25) +
+      ((1 - (data.metrics?.replay?.crossRunTransitionDivergenceRate ?? 0)) * 0.25)
+    )).toFixed(3)),
     file: path.basename(jsonPath)
   };
 }
@@ -170,7 +175,8 @@ function compareAgainstBaseline(baseline, item) {
     runtimeEvidenceRecentStateChangesRate: roundDelta((item.runtimeEvidenceRecentStateChangesRate ?? 0) - (baseline.runtimeEvidenceRecentStateChangesRate ?? 0)),
     runtimeDigestTriggerRate: roundDelta((item.runtimeDigestTriggerRate ?? 0) - (baseline.runtimeDigestTriggerRate ?? 0)),
     replayTransitionTaxonomyMatchRate: roundDelta((item.replayTransitionTaxonomyMatchRate ?? 0) - (baseline.replayTransitionTaxonomyMatchRate ?? 0)),
-    replayCrossRunTransitionDivergenceRate: roundDelta((item.replayCrossRunTransitionDivergenceRate ?? 0) - (baseline.replayCrossRunTransitionDivergenceRate ?? 0))
+    replayCrossRunTransitionDivergenceRate: roundDelta((item.replayCrossRunTransitionDivergenceRate ?? 0) - (baseline.replayCrossRunTransitionDivergenceRate ?? 0)),
+    replayStabilityBlend: roundDelta((item.replayStabilityBlend ?? 0) - (baseline.replayStabilityBlend ?? 0))
   };
 }
 
@@ -319,7 +325,7 @@ const lines = [
       `- Runtime evidence detail: digest-summary ${s.runtimeEvidenceDigestSummaryRate}, event-snippet ${s.runtimeEvidenceEventSnippetRate}, ranking-reason ${s.runtimeEvidenceEventRankingReasonRate}, score ${s.runtimeEvidenceEventScoreRate}, embedding-reason ${s.runtimeEvidenceEventEmbeddingReasonRate}, document-source ${s.runtimeEvidenceEventDocumentSourceRate}, state-summary ${s.runtimeEvidenceStateSummaryRate}, state-provenance ${s.runtimeEvidenceStateProvenanceRate}, recent-state-changes ${s.runtimeEvidenceRecentStateChangesRate}`,
       `- Grounded response view: success ${s.groundedResponseSuccessRate}, evidence ${s.groundedResponseEvidenceCoverageRate}, ranking-reason ${s.groundedResponseRankingReasonRate}, score ${s.groundedResponseEventScoreRate}, state-summary ${s.groundedResponseStateSummaryRate}`,
       `- Answer grounding: ${s.answerSuccess}/${s.answerRuns} success, evidence ${s.answerEvidenceCoverageRate}, ranking-reason ${s.answerEvidenceEventRankingReasonRate}, score ${s.answerEvidenceEventScoreRate}, state-summary ${s.answerEvidenceStateSummaryRate}`,
-      `- Replay transitions: match ${s.replayTransitionTaxonomyMatchRate}, cross-run divergence ${s.replayCrossRunTransitionDivergenceRate}`,
+      `- Replay transitions: match ${s.replayTransitionTaxonomyMatchRate}, cross-run divergence ${s.replayCrossRunTransitionDivergenceRate}, stability blend ${s.replayStabilityBlend}`,
       `- Runtime policy profile: ${s.runtimePolicyProfile}`,
       `- Runtime overrides: recallLimit=${s.runtimeOverrides.recallLimit ?? "default"}, promoteLongForm=${s.runtimeOverrides.promoteLongFormToDocumented ? "yes" : "no"}, digestOnCandidate=${s.runtimeOverrides.digestOnCandidate ? "yes" : "no"}`,
       `- Report: ${s.file}`,

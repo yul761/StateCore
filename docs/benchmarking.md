@@ -123,6 +123,10 @@ Replay reports include category-level state diffs for:
 Replay scoring and reports now track the `recentChanges` transition taxonomy in addition to
 final state equality, so rebuild stability covers how state evolved, not just what the last
 snapshot contained.
+
+`Long-term Memory Reliability` uses a replay stability blend that combines rebuild
+consistency, cross-run state divergence, transition-taxonomy match rate, and cross-run
+transition divergence.
 - `volatileContext`
 - `evidenceRefs`
 - `goalProvenance`
