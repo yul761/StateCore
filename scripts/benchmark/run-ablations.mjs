@@ -70,6 +70,13 @@ function collectSummary(jsonPath) {
     name: data.config?.ablationName || "unknown",
     overall: data.scores?.overall ?? 0,
     reliability: data.scores?.reliability ?? 0,
+    reliabilityBreakdown: {
+      consistency: data.scores?.reliabilityBreakdown?.consistency ?? 0,
+      retention: data.scores?.reliabilityBreakdown?.retention ?? 0,
+      contradictionControl: data.scores?.reliabilityBreakdown?.contradictionControl ?? 0,
+      replay: data.scores?.reliabilityBreakdown?.replay ?? 0,
+      runtimeGrounding: data.scores?.reliabilityBreakdown?.runtimeGrounding ?? 0
+    },
     ingest: data.scores?.ingest ?? 0,
     retrieve: data.scores?.retrieve ?? 0,
     digest: data.scores?.digest ?? 0,
@@ -208,6 +215,7 @@ const lines = [
       "",
       `- Overall: ${s.overall}`,
       `- Reliability: ${s.reliability}`,
+      `- Reliability breakdown: consistency ${s.reliabilityBreakdown.consistency}, retention ${s.reliabilityBreakdown.retention}, contradiction-control ${s.reliabilityBreakdown.contradictionControl}, replay ${s.reliabilityBreakdown.replay}, runtime-grounding ${s.reliabilityBreakdown.runtimeGrounding}`,
       ...(s.name !== "baseline" && deltaSummary?.baseline
         ? [
             `- Baseline deltas: overall ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).overall)}, reliability ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).reliability)}, evidence ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).runtimeEvidenceCoverageRate)}, digest-trigger ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).runtimeDigestTriggerRate)}`

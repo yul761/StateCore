@@ -151,6 +151,14 @@ This memory-first score is distinct from the overall performance score and combi
 - replay consistency
 - runtime evidence coverage and runtime turn success
 
+Benchmark JSON and Markdown reports also emit a reliability breakdown so changes can be attributed to:
+
+- consistency
+- retention
+- contradiction control
+- replay
+- runtime grounding
+
 ## Profiles And Tuning
 
 `BENCH_PROFILE` presets:
