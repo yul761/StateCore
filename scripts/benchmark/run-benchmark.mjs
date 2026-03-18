@@ -35,7 +35,8 @@ const cfg = {
   featureLlm: process.env.FEATURE_LLM === "true",
   profile: process.env.BENCH_PROFILE || "balanced",
   seed: Number(process.env.BENCH_SEED || 42),
-  fixture: process.env.BENCH_FIXTURE || ""
+  fixture: process.env.BENCH_FIXTURE || "",
+  includeReplay: process.env.BENCH_INCLUDE_REPLAY !== "false"
 };
 
 const headers = { "Content-Type": "application/json", "x-user-id": cfg.userId };
@@ -317,6 +318,83 @@ function contradictionRate(text, contradictions) {
   return hits / contradictions.length;
 }
 
+function canonicalize(value) {
+  if (Array.isArray(value)) {
+    const items = value.map(canonicalize);
+    if (items.every((item) => typeof item === "string")) {
+      return [...items].sort();
+    }
+    return items;
+  }
+  if (value && typeof value === "object") {
+    return Object.keys(value)
+      .sort()
+      .reduce((acc, key) => {
+        acc[key] = canonicalize(value[key]);
+        return acc;
+      }, {});
+  }
+  return value;
+}
+
+function toStringList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item) => typeof item === "string");
+}
+
+function diffStringLists(before, after) {
+  const baseline = [...new Set(toStringList(before))].sort();
+  const rebuilt = [...new Set(toStringList(after))].sort();
+  const baselineSet = new Set(baseline);
+  const rebuiltSet = new Set(rebuilt);
+  return {
+    match: JSON.stringify(baseline) === JSON.stringify(rebuilt),
+    missingFromReplay: baseline.filter((item) => !rebuiltSet.has(item)),
+    addedInReplay: rebuilt.filter((item) => !baselineSet.has(item))
+  };
+}
+
+function diffScalar(before, after) {
+  return {
+    match: before === after,
+    baseline: before ?? null,
+    rebuilt: after ?? null
+  };
+}
+
+function buildStateDiff(baselineState, rebuiltState) {
+  const baselineStable = baselineState?.stableFacts ?? {};
+  const rebuiltStable = rebuiltState?.stableFacts ?? {};
+  const baselineWorking = baselineState?.workingNotes ?? {};
+  const rebuiltWorking = rebuiltState?.workingNotes ?? {};
+
+  return {
+    goal: diffScalar(baselineStable.goal ?? null, rebuiltStable.goal ?? null),
+    constraints: diffStringLists(baselineStable.constraints, rebuiltStable.constraints),
+    decisions: diffStringLists(baselineStable.decisions, rebuiltStable.decisions),
+    todos: diffStringLists(baselineState?.todos, rebuiltState?.todos),
+    volatileContext: diffStringLists(baselineState?.volatileContext, rebuiltState?.volatileContext),
+    evidenceRefs: diffStringLists(baselineState?.evidenceRefs, rebuiltState?.evidenceRefs),
+    openQuestions: diffStringLists(baselineWorking.openQuestions, rebuiltWorking.openQuestions),
+    risks: diffStringLists(baselineWorking.risks, rebuiltWorking.risks),
+    workingContext: diffScalar(baselineWorking.context ?? null, rebuiltWorking.context ?? null)
+  };
+}
+
+function summarizeStateDiff(diff) {
+  const mismatchedCategories = Object.entries(diff)
+    .filter(([, value]) => !value.match)
+    .map(([key]) => key);
+  const matchedCategories = Object.entries(diff)
+    .filter(([, value]) => value.match)
+    .map(([key]) => key);
+  return {
+    stateMatch: mismatchedCategories.length === 0,
+    matchedCategories,
+    mismatchedCategories
+  };
+}
+
 function containsAny(text, terms) {
   const normalized = normalizeText(text);
   return terms.some((term) => normalized.includes(normalizeText(term).trim()));
@@ -348,6 +426,33 @@ async function waitForReminderSent(reminderId, dueAtIso) {
     await new Promise((resolve) => setTimeout(resolve, 5000));
   }
   return { ok: false, delayMs: cfg.timeoutMs };
+}
+
+async function waitForStateHistory(scopeId, rebuildGroupId) {
+  const start = Date.now();
+  let stableRepeats = 0;
+  let lastCount = -1;
+  while (Date.now() - start <= cfg.timeoutMs) {
+    const result = await apiFetch(
+      "GET",
+      `/memory/state/history?scopeId=${scopeId}&limit=50&rebuildGroupId=${encodeURIComponent(rebuildGroupId)}`
+    );
+    if (!result.ok) return { ok: false, error: `state_history_failed:${result.status}` };
+    const items = result.json.items || [];
+    if (items.length > 0) {
+      if (items.length === lastCount) {
+        stableRepeats += 1;
+      } else {
+        stableRepeats = 0;
+      }
+      lastCount = items.length;
+      if (stableRepeats >= 1) {
+        return { ok: true, items };
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+  return { ok: false, error: "state_history_timeout" };
 }
 
 async function run() {
@@ -450,6 +555,16 @@ async function run() {
     failureTaxonomy: {},
     goldRetention: null
   };
+  let replayMetrics = {
+    enabled: cfg.featureLlm && cfg.includeReplay,
+    success: 0,
+    rebuildSnapshots: 0,
+    stateMatch: false,
+    matchedCategories: [],
+    mismatchedCategories: [],
+    diff: null,
+    error: null
+  };
 
   if (cfg.featureLlm) {
     const durations = [];
@@ -522,6 +637,42 @@ async function run() {
   }
   report.metrics.digest = digestMetrics;
 
+  if (cfg.featureLlm && cfg.includeReplay) {
+    const baselineState = await apiFetch("GET", `/memory/state?scopeId=${scopeId}`);
+    if (!baselineState.ok || !baselineState.json.state) {
+      replayMetrics.error = `baseline_state_failed:${baselineState.status}`;
+    } else {
+      const rebuild = await apiFetch("POST", "/memory/digest/rebuild", { scopeId, strategy: "full" });
+      if (!rebuild.ok || !rebuild.json.rebuildGroupId) {
+        replayMetrics.error = `rebuild_enqueue_failed:${rebuild.status}`;
+      } else {
+        const rebuildHistory = await waitForStateHistory(scopeId, rebuild.json.rebuildGroupId);
+        if (!rebuildHistory.ok) {
+          replayMetrics.error = rebuildHistory.error;
+        } else {
+          const latestRebuildState = rebuildHistory.items[0]?.state ?? null;
+          const baselineCanonical = canonicalize(baselineState.json.state);
+          const rebuildCanonical = canonicalize(latestRebuildState);
+          const diff = buildStateDiff(baselineState.json.state, latestRebuildState);
+          const diffSummary = summarizeStateDiff(diff);
+          replayMetrics = {
+            enabled: true,
+            success: 1,
+            rebuildSnapshots: rebuildHistory.items.length,
+            stateMatch: JSON.stringify(baselineCanonical) === JSON.stringify(rebuildCanonical),
+            matchedCategories: diffSummary.matchedCategories,
+            mismatchedCategories: diffSummary.mismatchedCategories,
+            diff,
+            error: null
+          };
+        }
+      }
+    }
+  } else if (!cfg.includeReplay) {
+    report.notes.push("Replay check skipped because BENCH_INCLUDE_REPLAY=false.");
+  }
+  report.metrics.replay = replayMetrics;
+
   const dueAt = new Date(Date.now() + 20000).toISOString();
   const reminderCreate = await apiFetch("POST", "/reminders", { scopeId, dueAt, text: "Benchmark reminder" });
   let reminderMetrics = {
@@ -593,6 +744,7 @@ async function run() {
     `- Ingest throughput: ${report.metrics.ingest.throughputEventsPerSec} events/s (p95 ${report.metrics.ingest.p95Ms} ms)`,
     `- Retrieve semantic hit rate: ${report.metrics.retrieve.hitRate}, strict hit rate: ${report.metrics.retrieve.strictHitRate} (p95 ${report.metrics.retrieve.p95Ms} ms)`,
     `- Digest success: ${report.metrics.digest.success}/${report.metrics.digest.runs}, consistency pass ${report.metrics.digest.consistencyPassRate}, avg latency ${report.metrics.digest.avgLatencyMs} ms`,
+    `- Replay state match: ${report.metrics.replay.enabled ? (report.metrics.replay.success ? (report.metrics.replay.stateMatch ? "yes" : "no") : `error (${report.metrics.replay.error})`) : "skipped"}${report.metrics.replay.enabled && report.metrics.replay.success ? `, snapshots ${report.metrics.replay.rebuildSnapshots}` : ""}`,
     `- Reminder sent: ${report.metrics.reminder.success === 1 ? "yes" : "no"}, delay ${report.metrics.reminder.delayMs} ms`,
     ...(report.metrics.digest.goldRetention
       ? [
@@ -608,6 +760,29 @@ async function run() {
           .sort((a, b) => b[1] - a[1])
           .map(([name, count]) => `- ${name}: ${count}`)
         : ["- none"]
+      : ["- skipped"]),
+    "",
+    "## Replay Consistency",
+    ...(report.metrics.replay.enabled
+      ? report.metrics.replay.success
+        ? [
+            `- State match: ${report.metrics.replay.stateMatch ? "yes" : "no"}`,
+            `- Rebuild snapshots: ${report.metrics.replay.rebuildSnapshots}`,
+            `- Matched categories: ${report.metrics.replay.matchedCategories.length ? report.metrics.replay.matchedCategories.join(", ") : "none"}`,
+            `- Mismatched categories: ${report.metrics.replay.mismatchedCategories.length ? report.metrics.replay.mismatchedCategories.join(", ") : "none"}`,
+            ...Object.entries(report.metrics.replay.diff || {}).flatMap(([key, value]) => {
+              const lines = [`- ${key}: ${value.match ? "match" : "mismatch"}`];
+              if ("missingFromReplay" in value) {
+                lines.push(`  missing=${value.missingFromReplay.length ? value.missingFromReplay.join(" | ") : "none"}`);
+                lines.push(`  added=${value.addedInReplay.length ? value.addedInReplay.join(" | ") : "none"}`);
+              } else {
+                lines.push(`  baseline=${value.baseline ?? "null"}`);
+                lines.push(`  rebuilt=${value.rebuilt ?? "null"}`);
+              }
+              return lines;
+            })
+          ]
+        : [`- Error: ${report.metrics.replay.error}`]
       : ["- skipped"]),
     "",
     "## Notes",
