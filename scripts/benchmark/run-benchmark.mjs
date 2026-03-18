@@ -35,6 +35,7 @@ const cfg = {
   runtimePromoteLongForm: process.env.BENCH_RUNTIME_PROMOTE_LONG_FORM === "true",
   runtimeDigestOnCandidate: process.env.BENCH_RUNTIME_DIGEST_ON_CANDIDATE === "true",
   digestRuns: Number(process.env.BENCH_DIGEST_RUNS || 2),
+  replayRuns: Number(process.env.BENCH_REPLAY_RUNS || 3),
   timeoutMs: Number(process.env.BENCH_TIMEOUT_MS || 180000),
   outputDir: process.env.BENCH_OUTPUT_DIR || "benchmark-results",
   featureLlm: process.env.FEATURE_LLM === "true",
@@ -336,14 +337,13 @@ function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, r
 
   let replayScore = 15;
   if (replayMetrics?.enabled) {
-    if (!replayMetrics.success) {
+    if (!(replayMetrics.successfulRuns > 0)) {
       replayScore = 0;
-    } else if (replayMetrics.stateMatch) {
-      replayScore = 15;
     } else {
-      const totalCategories = (replayMetrics.matchedCategories?.length || 0) + (replayMetrics.mismatchedCategories?.length || 0);
-      const matchedRatio = totalCategories > 0 ? (replayMetrics.matchedCategories?.length || 0) / totalCategories : 0;
-      replayScore = clamp(matchedRatio * 15);
+      const consistency = replayMetrics.rebuildConsistencyRate ?? 0;
+      const stability = 1 - (replayMetrics.crossRunStateDivergenceRate ?? 0);
+      const successRate = (replayMetrics.successfulRuns || 0) / Math.max(1, replayMetrics.rebuildRuns || 1);
+      replayScore = clamp(((consistency * 0.7) + (stability * 0.3)) * successRate * 15);
     }
   }
 
@@ -541,6 +541,73 @@ function summarizeStateDiff(diff) {
   };
 }
 
+async function runReplayRebuild(scopeId, baselineState) {
+  const rebuild = await apiFetch("POST", "/memory/digest/rebuild", { scopeId, strategy: "full" });
+  if (!rebuild.ok || !rebuild.json.rebuildGroupId) {
+    return { ok: false, error: `rebuild_enqueue_failed:${rebuild.status}` };
+  }
+  const rebuildHistory = await waitForStateHistory(scopeId, rebuild.json.rebuildGroupId);
+  if (!rebuildHistory.ok) {
+    return { ok: false, error: rebuildHistory.error };
+  }
+
+  const latestRebuildState = rebuildHistory.items[0]?.state ?? null;
+  const baselineCanonical = canonicalize(baselineState);
+  const rebuildCanonical = canonicalize(latestRebuildState);
+  const diff = buildStateDiff(baselineState, latestRebuildState);
+  const diffSummary = summarizeStateDiff(diff);
+
+  return {
+    ok: true,
+    rebuildSnapshots: rebuildHistory.items.length,
+    stateMatch: JSON.stringify(baselineCanonical) === JSON.stringify(rebuildCanonical),
+    matchedCategories: diffSummary.matchedCategories,
+    mismatchedCategories: diffSummary.mismatchedCategories,
+    diff,
+    canonicalState: rebuildCanonical
+  };
+}
+
+function compareReplayRuns(successfulRuns) {
+  if (successfulRuns.length < 2) {
+    return {
+      crossRunStateDivergenceRate: 0,
+      crossRunMatchedCategories: successfulRuns[0]?.matchedCategories ?? [],
+      crossRunMismatchedCategories: []
+    };
+  }
+
+  const categoryUniverse = new Set();
+  let mismatchRatioTotal = 0;
+  let comparisons = 0;
+  const mismatched = new Set();
+  const matched = new Set();
+
+  for (let i = 1; i < successfulRuns.length; i += 1) {
+    const diff = buildStateDiff(successfulRuns[i - 1].canonicalState, successfulRuns[i].canonicalState);
+    const summary = summarizeStateDiff(diff);
+    const totalCategories = summary.matchedCategories.length + summary.mismatchedCategories.length;
+    mismatchRatioTotal += totalCategories > 0 ? summary.mismatchedCategories.length / totalCategories : 0;
+    comparisons += 1;
+
+    for (const key of summary.matchedCategories) {
+      categoryUniverse.add(key);
+      if (!mismatched.has(key)) matched.add(key);
+    }
+    for (const key of summary.mismatchedCategories) {
+      categoryUniverse.add(key);
+      mismatched.add(key);
+      matched.delete(key);
+    }
+  }
+
+  return {
+    crossRunStateDivergenceRate: Number((mismatchRatioTotal / Math.max(1, comparisons)).toFixed(3)),
+    crossRunMatchedCategories: [...matched].filter((key) => categoryUniverse.has(key)).sort(),
+    crossRunMismatchedCategories: [...mismatched].sort()
+  };
+}
+
 function containsAny(text, terms) {
   const normalized = normalizeText(text);
   return terms.some((term) => normalized.includes(normalizeText(term).trim()));
@@ -709,11 +776,16 @@ async function run() {
   };
   let replayMetrics = {
     enabled: cfg.featureLlm && cfg.includeReplay,
-    success: 0,
+    rebuildRuns: cfg.featureLlm && cfg.includeReplay ? cfg.replayRuns : 0,
+    successfulRuns: 0,
     rebuildSnapshots: 0,
     stateMatch: false,
+    rebuildConsistencyRate: 0,
+    crossRunStateDivergenceRate: 0,
     matchedCategories: [],
     mismatchedCategories: [],
+    crossRunMatchedCategories: [],
+    crossRunMismatchedCategories: [],
     diff: null,
     error: null
   };
@@ -874,30 +946,35 @@ async function run() {
     if (!baselineState.ok || !baselineState.json.state) {
       replayMetrics.error = `baseline_state_failed:${baselineState.status}`;
     } else {
-      const rebuild = await apiFetch("POST", "/memory/digest/rebuild", { scopeId, strategy: "full" });
-      if (!rebuild.ok || !rebuild.json.rebuildGroupId) {
-        replayMetrics.error = `rebuild_enqueue_failed:${rebuild.status}`;
+      const replayRuns = [];
+      for (let i = 0; i < cfg.replayRuns; i += 1) {
+        const result = await runReplayRebuild(scopeId, baselineState.json.state);
+        replayRuns.push({ run: i + 1, ...result });
+      }
+      const successfulRuns = replayRuns.filter((item) => item.ok);
+      if (!successfulRuns.length) {
+        replayMetrics.error = replayRuns.find((item) => item.error)?.error || "rebuild_failed";
       } else {
-        const rebuildHistory = await waitForStateHistory(scopeId, rebuild.json.rebuildGroupId);
-        if (!rebuildHistory.ok) {
-          replayMetrics.error = rebuildHistory.error;
-        } else {
-          const latestRebuildState = rebuildHistory.items[0]?.state ?? null;
-          const baselineCanonical = canonicalize(baselineState.json.state);
-          const rebuildCanonical = canonicalize(latestRebuildState);
-          const diff = buildStateDiff(baselineState.json.state, latestRebuildState);
-          const diffSummary = summarizeStateDiff(diff);
-          replayMetrics = {
-            enabled: true,
-            success: 1,
-            rebuildSnapshots: rebuildHistory.items.length,
-            stateMatch: JSON.stringify(baselineCanonical) === JSON.stringify(rebuildCanonical),
-            matchedCategories: diffSummary.matchedCategories,
-            mismatchedCategories: diffSummary.mismatchedCategories,
-            diff,
-            error: null
-          };
-        }
+        const matchedCategories = successfulRuns
+          .map((item) => item.matchedCategories)
+          .reduce((acc, items) => acc.filter((key) => items.includes(key)), successfulRuns[0].matchedCategories || []);
+        const mismatchedCategories = [...new Set(successfulRuns.flatMap((item) => item.mismatchedCategories || []))].sort();
+        const crossRun = compareReplayRuns(successfulRuns);
+        replayMetrics = {
+          enabled: true,
+          rebuildRuns: cfg.replayRuns,
+          successfulRuns: successfulRuns.length,
+          rebuildSnapshots: successfulRuns.reduce((sum, item) => sum + (item.rebuildSnapshots || 0), 0),
+          stateMatch: successfulRuns.every((item) => item.stateMatch),
+          rebuildConsistencyRate: Number((successfulRuns.filter((item) => item.stateMatch).length / cfg.replayRuns).toFixed(3)),
+          crossRunStateDivergenceRate: crossRun.crossRunStateDivergenceRate,
+          matchedCategories,
+          mismatchedCategories,
+          crossRunMatchedCategories: crossRun.crossRunMatchedCategories,
+          crossRunMismatchedCategories: crossRun.crossRunMismatchedCategories,
+          diff: successfulRuns[successfulRuns.length - 1].diff,
+          error: successfulRuns.length === cfg.replayRuns ? null : replayRuns.find((item) => !item.ok)?.error || null
+        };
       }
     }
   } else if (!cfg.includeReplay) {
@@ -1067,7 +1144,7 @@ async function run() {
     `- Ingest throughput: ${report.metrics.ingest.throughputEventsPerSec} events/s (p95 ${report.metrics.ingest.p95Ms} ms)`,
     `- Retrieve semantic hit rate: ${report.metrics.retrieve.hitRate}, strict hit rate: ${report.metrics.retrieve.strictHitRate} (p95 ${report.metrics.retrieve.p95Ms} ms)`,
     `- Digest success: ${report.metrics.digest.success}/${report.metrics.digest.runs}, consistency pass ${report.metrics.digest.consistencyPassRate}, omission warning rate ${report.metrics.digest.omissionWarningRate ?? 0}, avg latency ${report.metrics.digest.avgLatencyMs} ms`,
-    `- Replay state match: ${report.metrics.replay.enabled ? (report.metrics.replay.success ? (report.metrics.replay.stateMatch ? "yes" : "no") : `error (${report.metrics.replay.error})`) : "skipped"}${report.metrics.replay.enabled && report.metrics.replay.success ? `, snapshots ${report.metrics.replay.rebuildSnapshots}` : ""}`,
+    `- Replay state match: ${report.metrics.replay.enabled ? (report.metrics.replay.successfulRuns ? (report.metrics.replay.stateMatch ? "yes" : "no") : `error (${report.metrics.replay.error})`) : "skipped"}${report.metrics.replay.enabled && report.metrics.replay.successfulRuns ? `, successful rebuilds ${report.metrics.replay.successfulRuns}/${report.metrics.replay.rebuildRuns}, snapshots ${report.metrics.replay.rebuildSnapshots}` : ""}`,
     `- Runtime turn success: ${report.metrics.runtime.enabled ? `${report.metrics.runtime.success}/${report.metrics.runtime.runs}` : "skipped"}, evidence coverage ${report.metrics.runtime.enabled ? report.metrics.runtime.evidenceCoverageRate : "n/a"}, avg latency ${report.metrics.runtime.enabled ? `${report.metrics.runtime.avgLatencyMs} ms` : "n/a"}`,
     `- Reminder sent: ${report.metrics.reminder.success === 1 ? "yes" : "no"}, delay ${report.metrics.reminder.delayMs} ms`,
     ...(report.metrics.digest.goldRetention
@@ -1127,12 +1204,17 @@ async function run() {
     "",
     "## Replay Consistency",
     ...(report.metrics.replay.enabled
-      ? report.metrics.replay.success
+      ? report.metrics.replay.successfulRuns
         ? [
             `- State match: ${report.metrics.replay.stateMatch ? "yes" : "no"}`,
+            `- Rebuild consistency rate: ${report.metrics.replay.rebuildConsistencyRate}`,
+            `- Cross-run state divergence rate: ${report.metrics.replay.crossRunStateDivergenceRate}`,
+            `- Successful rebuilds: ${report.metrics.replay.successfulRuns}/${report.metrics.replay.rebuildRuns}`,
             `- Rebuild snapshots: ${report.metrics.replay.rebuildSnapshots}`,
             `- Matched categories: ${report.metrics.replay.matchedCategories.length ? report.metrics.replay.matchedCategories.join(", ") : "none"}`,
             `- Mismatched categories: ${report.metrics.replay.mismatchedCategories.length ? report.metrics.replay.mismatchedCategories.join(", ") : "none"}`,
+            `- Cross-run matched categories: ${report.metrics.replay.crossRunMatchedCategories.length ? report.metrics.replay.crossRunMatchedCategories.join(", ") : "none"}`,
+            `- Cross-run mismatched categories: ${report.metrics.replay.crossRunMismatchedCategories.length ? report.metrics.replay.crossRunMismatchedCategories.join(", ") : "none"}`,
             ...Object.entries(report.metrics.replay.diff || {}).flatMap(([key, value]) => {
               const lines = [`- ${key}: ${value.match ? "match" : "mismatch"}`];
               if ("missingFromReplay" in value) {

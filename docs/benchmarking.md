@@ -103,6 +103,11 @@ Replay consistency check:
 REPLAY_FIXTURE=benchmark-fixtures/basic.json node scripts/benchmark/run-replay-check.mjs
 ```
 
+Increase repeated rebuild checks inside the main benchmark:
+```bash
+BENCH_REPLAY_RUNS=5 pnpm benchmark
+```
+
 Replay reports include category-level state diffs for:
 - `goal`
 - `constraints`
@@ -199,6 +204,8 @@ This memory-first score is distinct from the overall performance score and combi
 - contradiction and omission penalties
 - temporary todo intrusion penalties when available
 - replay consistency
+- rebuild consistency across repeated replay runs
+- cross-run replay divergence penalties
 - runtime evidence coverage and runtime turn success
 
 Benchmark JSON and Markdown reports also emit a reliability breakdown so changes can be attributed to:

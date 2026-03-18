@@ -76,6 +76,8 @@ function summarizeBenchmark(data, fileName) {
     stateTodoContinuityRate: data.metrics?.digest?.goldRetention?.stateTodoContinuityRate ?? 0,
     runtimeEvidenceCoverage: data.metrics?.runtime?.evidenceCoverageRate ?? 0,
     runtimeDigestSummaryRate: data.metrics?.runtime?.evidenceDigestSummaryRate ?? 0,
+    replayRebuildConsistencyRate: data.metrics?.replay?.rebuildConsistencyRate ?? 0,
+    replayCrossRunStateDivergenceRate: data.metrics?.replay?.crossRunStateDivergenceRate ?? 0,
     replayStateMatch: Boolean(data.metrics?.replay?.stateMatch),
     startedAt: data.startedAt || null
   };
@@ -101,7 +103,9 @@ function buildDeltaSummary(items) {
     latestDocumentRetentionRate: Math.round((last.latestDocumentRetentionRate - first.latestDocumentRetentionRate) * 1000) / 1000,
     supersededDocumentIntrusionRate: Math.round((last.supersededDocumentIntrusionRate - first.supersededDocumentIntrusionRate) * 1000) / 1000,
     stateFactRetentionRate: Math.round((last.stateFactRetentionRate - first.stateFactRetentionRate) * 1000) / 1000,
-    runtimeEvidenceCoverage: Math.round((last.runtimeEvidenceCoverage - first.runtimeEvidenceCoverage) * 1000) / 1000
+    runtimeEvidenceCoverage: Math.round((last.runtimeEvidenceCoverage - first.runtimeEvidenceCoverage) * 1000) / 1000,
+    replayRebuildConsistencyRate: Math.round((last.replayRebuildConsistencyRate - first.replayRebuildConsistencyRate) * 1000) / 1000,
+    replayCrossRunStateDivergenceRate: Math.round((last.replayCrossRunStateDivergenceRate - first.replayCrossRunStateDivergenceRate) * 1000) / 1000
   };
 }
 
@@ -157,7 +161,7 @@ const md = [
   `- State retention: fact ${latest.stateFactRetentionRate}, goal ${latest.stateGoalRetentionRate}, constraints ${latest.stateConstraintPreservationRate}, decisions ${latest.stateDecisionContinuityRate}, todos ${latest.stateTodoContinuityRate}`,
   `- Runtime evidence coverage: ${latest.runtimeEvidenceCoverage}`,
   `- Runtime digest summary rate: ${latest.runtimeDigestSummaryRate}`,
-  `- Replay state match: ${latest.replayStateMatch ? "yes" : "no"}`,
+  `- Replay: state match ${latest.replayStateMatch ? "yes" : "no"}, rebuild consistency ${latest.replayRebuildConsistencyRate}, cross-run divergence ${latest.replayCrossRunStateDivergenceRate}`,
   "",
   "## Window Delta",
   "",
@@ -173,7 +177,9 @@ const md = [
         `- Latest document retention delta: ${formatDelta(deltaSummary.latestDocumentRetentionRate)}`,
         `- Superseded document intrusion delta: ${formatDelta(deltaSummary.supersededDocumentIntrusionRate)}`,
         `- State fact retention delta: ${formatDelta(deltaSummary.stateFactRetentionRate)}`,
-        `- Runtime evidence coverage delta: ${formatDelta(deltaSummary.runtimeEvidenceCoverage)}`
+        `- Runtime evidence coverage delta: ${formatDelta(deltaSummary.runtimeEvidenceCoverage)}`,
+        `- Replay rebuild consistency delta: ${formatDelta(deltaSummary.replayRebuildConsistencyRate)}`,
+        `- Replay cross-run divergence delta: ${formatDelta(deltaSummary.replayCrossRunStateDivergenceRate)}`
       ]
     : ["- Not enough benchmark runs to compute a delta window."]),
   "",
@@ -197,7 +203,7 @@ const md = [
       `- State retention: fact ${item.stateFactRetentionRate}, goal ${item.stateGoalRetentionRate}, constraints ${item.stateConstraintPreservationRate}, decisions ${item.stateDecisionContinuityRate}, todos ${item.stateTodoContinuityRate}`,
       `- Runtime evidence coverage: ${item.runtimeEvidenceCoverage}`,
       `- Runtime digest summary rate: ${item.runtimeDigestSummaryRate}`,
-      `- Replay state match: ${item.replayStateMatch ? "yes" : "no"}`,
+      `- Replay: state match ${item.replayStateMatch ? "yes" : "no"}, rebuild consistency ${item.replayRebuildConsistencyRate}, cross-run divergence ${item.replayCrossRunStateDivergenceRate}`,
       `- Started: ${item.startedAt || "unknown"}`,
       ""
     ].join("\n")
