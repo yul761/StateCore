@@ -178,6 +178,7 @@ BENCH_SEED=42 BENCH_FIXTURE=benchmark-fixtures/basic.json pnpm benchmark
 - Digest state specification: `docs/digest-state.md`
 - Assistant runtime specification: `docs/assistant-runtime.md`
 - Evaluation metrics specification: `docs/evaluation-metrics.md`
+- Provider abstraction specification: `docs/provider-abstraction.md`
 - Research overview: `docs/research-overview.md`
 - Evaluation protocol: `docs/evaluation-protocol.md`
 - Research questions: `docs/research-questions.md`
