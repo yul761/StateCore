@@ -42,13 +42,22 @@ const cfg = {
   profile: process.env.BENCH_PROFILE || "balanced",
   seed: Number(process.env.BENCH_SEED || 42),
   fixture: process.env.BENCH_FIXTURE || "",
-  includeReplay: process.env.BENCH_INCLUDE_REPLAY !== "false"
+  includeReplay: process.env.BENCH_INCLUDE_REPLAY !== "false",
+  retrieveUseEmbeddings:
+    (process.env.BENCH_RETRIEVE_USE_EMBEDDINGS || process.env.RETRIEVE_USE_EMBEDDINGS || "false") === "true",
+  retrieveEmbeddingCandidateLimit: Number(
+    process.env.BENCH_RETRIEVE_EMBEDDING_CANDIDATE_LIMIT || process.env.RETRIEVE_EMBEDDING_CANDIDATE_LIMIT || 24
+  )
 };
 
 const modelConfig = {
   provider: process.env.MODEL_PROVIDER || "openai-compatible",
   baseUrl: process.env.MODEL_BASE_URL || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-  model: process.env.MODEL_NAME || process.env.OPENAI_MODEL || "gpt-4o-mini"
+  model: process.env.MODEL_NAME || process.env.OPENAI_MODEL || "gpt-4o-mini",
+  chatModel: process.env.MODEL_CHAT_NAME || process.env.MODEL_NAME || process.env.OPENAI_MODEL || "gpt-4o-mini",
+  structuredOutputModel:
+    process.env.MODEL_STRUCTURED_OUTPUT_NAME || process.env.MODEL_NAME || process.env.OPENAI_MODEL || "gpt-4o-mini",
+  embeddingModel: process.env.MODEL_EMBEDDING_NAME || null
 };
 
 const headers = { "Content-Type": "application/json", "x-user-id": cfg.userId };
@@ -66,6 +75,17 @@ function clamp(v, min = 0, max = 100) {
 
 function msNow() {
   return new Date().toISOString();
+}
+
+function buildRetrieveModeConfig() {
+  const embeddingConfigured = Boolean(modelConfig.embeddingModel);
+  return {
+    mode: cfg.retrieveUseEmbeddings && embeddingConfigured ? "hybrid" : "heuristic",
+    embeddingRequested: cfg.retrieveUseEmbeddings,
+    embeddingConfigured,
+    embeddingCandidateLimit: cfg.retrieveEmbeddingCandidateLimit,
+    embeddingModel: modelConfig.embeddingModel
+  };
 }
 
 function getGitCommit() {
@@ -764,6 +784,9 @@ async function run() {
     report.notes.push(`Using fixture: ${fixture.source}`);
     if (fixture.gold) report.notes.push("Fixture includes explicit gold labels.");
   }
+  if (cfg.retrieveUseEmbeddings && !modelConfig.embeddingModel) {
+    report.notes.push("Embedding rerank was requested for benchmark metadata, but MODEL_EMBEDDING_NAME is not configured.");
+  }
   const events = fixture?.events ?? generateEvents(cfg.events, rng);
   const ingestStart = performance.now();
   const ingestResults = await withConcurrency(events, cfg.concurrency, async (item) => {
@@ -790,6 +813,7 @@ async function run() {
     { query: "What todos are pending?", expected: "todo", aliases: ["next step", "action item", "pending", "follow up"] }
   ];
   const retrieveRuns = Array.from({ length: cfg.retrieveQueries }).map((_, i) => retrieveCases[i % retrieveCases.length]);
+  const retrieveMode = buildRetrieveModeConfig();
   const retrieveResults = [];
   for (const item of retrieveRuns) {
     const res = await apiFetch("POST", "/memory/retrieve", { scopeId, query: item.query, limit: 20 });
@@ -805,6 +829,11 @@ async function run() {
   const retrieveHitRate = retrieveResults.filter((r) => r.hit).length / Math.max(1, retrieveResults.length);
   const retrieveStrictHitRate = retrieveResults.filter((r) => r.strictHit).length / Math.max(1, retrieveResults.length);
   report.metrics.retrieve = {
+    mode: retrieveMode.mode,
+    embeddingRequested: retrieveMode.embeddingRequested,
+    embeddingConfigured: retrieveMode.embeddingConfigured,
+    embeddingCandidateLimit: retrieveMode.embeddingCandidateLimit,
+    embeddingModel: retrieveMode.embeddingModel,
     total: retrieveResults.length,
     success: retrieveResults.filter((r) => r.ok).length,
     strictHitRate: Number(retrieveStrictHitRate.toFixed(3)),
@@ -1201,6 +1230,7 @@ async function run() {
     `- Node: ${report.environment.node} (${report.environment.platform}/${report.environment.arch})`,
     `- CPU: ${report.environment.cpu} (${report.environment.cores} cores, ${report.environment.memoryGb} GB)` ,
     `- Model provider: ${report.environment.model.provider}, model ${report.environment.model.model}, base ${report.environment.model.baseUrl}`,
+    `- Model roles: chat ${report.environment.model.chatModel}, structured ${report.environment.model.structuredOutputModel}, embedding ${report.environment.model.embeddingModel || "disabled"}`,
     "",
     "## Scores",
     "",
@@ -1223,6 +1253,7 @@ async function run() {
     "",
     `- Ingest throughput: ${report.metrics.ingest.throughputEventsPerSec} events/s (p95 ${report.metrics.ingest.p95Ms} ms)`,
     `- Retrieve semantic hit rate: ${report.metrics.retrieve.hitRate}, strict hit rate: ${report.metrics.retrieve.strictHitRate} (p95 ${report.metrics.retrieve.p95Ms} ms)`,
+    `- Retrieve mode: ${report.metrics.retrieve.mode}, embedding requested ${report.metrics.retrieve.embeddingRequested ? "yes" : "no"}, embedding configured ${report.metrics.retrieve.embeddingConfigured ? "yes" : "no"}, candidate limit ${report.metrics.retrieve.embeddingCandidateLimit}, embedding model ${report.metrics.retrieve.embeddingModel || "none"}`,
     `- Digest success: ${report.metrics.digest.success}/${report.metrics.digest.runs}, consistency pass ${report.metrics.digest.consistencyPassRate}, omission warning rate ${report.metrics.digest.omissionWarningRate ?? 0}, avg latency ${report.metrics.digest.avgLatencyMs} ms`,
     `- Replay state match: ${report.metrics.replay.enabled ? (report.metrics.replay.successfulRuns ? (report.metrics.replay.stateMatch ? "yes" : "no") : `error (${report.metrics.replay.error})`) : "skipped"}${report.metrics.replay.enabled && report.metrics.replay.successfulRuns ? `, successful rebuilds ${report.metrics.replay.successfulRuns}/${report.metrics.replay.rebuildRuns}, snapshots ${report.metrics.replay.rebuildSnapshots}` : ""}`,
     `- Runtime turn success: ${report.metrics.runtime.enabled ? `${report.metrics.runtime.success}/${report.metrics.runtime.runs}` : "skipped"}, evidence coverage ${report.metrics.runtime.enabled ? report.metrics.runtime.evidenceCoverageRate : "n/a"}, avg latency ${report.metrics.runtime.enabled ? `${report.metrics.runtime.avgLatencyMs} ms` : "n/a"}`,

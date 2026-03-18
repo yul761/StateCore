@@ -126,6 +126,7 @@ curl -X POST "http://localhost:3001/telegram/webhook/set"
 Set `FEATURE_LLM=true` and configure `MODEL_PROVIDER`, `MODEL_BASE_URL`, `MODEL_NAME`, and `MODEL_API_KEY` to enable `/memory/answer` and digest jobs. If needed, `MODEL_CHAT_*`, `MODEL_STRUCTURED_OUTPUT_*`, and `MODEL_EMBEDDING_*` can override the shared defaults for answer/runtime, digest, and future embedding workloads. Legacy `OPENAI_*` variables are still accepted. If disabled, the API returns a clear error and worker jobs fail fast.
 
 Optional hybrid retrieval can be enabled with `RETRIEVE_USE_EMBEDDINGS=true`. When enabled and an embedding provider role is configured, `/memory/retrieve` keeps the existing heuristic candidate selection but reranks top candidates with embeddings.
+For benchmark reproducibility, `BENCH_RETRIEVE_USE_EMBEDDINGS` and `BENCH_RETRIEVE_EMBEDDING_CANDIDATE_LIMIT` can be set alongside the API retrieval env so reports record the intended retrieval mode.
 
 ## Digest Control Layer
 Digest is processed as a controlled pipeline (not a single LLM call):
