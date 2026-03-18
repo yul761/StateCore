@@ -36,6 +36,9 @@ export type MemoryWriteTier = "ephemeral" | "candidate" | "stable" | "documented
 export interface RuntimeTurnInput {
   message: string;
   source?: MemorySource;
+  writeTier?: MemoryWriteTier;
+  documentKey?: string;
+  digestMode?: "auto" | "force" | "skip";
   metadata?: Record<string, unknown>;
 }
 
@@ -97,6 +100,7 @@ export interface AssistantSessionOptions {
 
 export class DefaultMemoryWritePolicy implements MemoryWritePolicy {
   classifyTurn(input: RuntimeTurnInput): MemoryWriteTier {
+    if (input.writeTier) return input.writeTier;
     const text = input.message.trim().toLowerCase();
     if (!text) return "ephemeral";
     if (/^(thanks|thank you|ok|okay|cool|got it|sounds good)[.!]?$/i.test(text)) return "ephemeral";
@@ -174,13 +178,18 @@ export class AssistantSession {
     }
 
     let digestTriggered = false;
-    if (this.digestPolicy && this.options.digestTrigger) {
-      digestTriggered = await this.digestPolicy.shouldDigest({
-        turn: input,
-        writeTier,
-        recall
-      });
-      if (digestTriggered) {
+    const shouldAttemptDigest = input.digestMode !== "skip" && Boolean(this.options.digestTrigger);
+    if (shouldAttemptDigest) {
+      if (input.digestMode === "force") {
+        digestTriggered = true;
+      } else if (this.digestPolicy && this.options.digestTrigger) {
+        digestTriggered = await this.digestPolicy.shouldDigest({
+          turn: input,
+          writeTier,
+          recall
+        });
+      }
+      if (digestTriggered && this.options.digestTrigger) {
         await this.options.digestTrigger.requestDigest(this.options.scopeId);
       }
     }
@@ -199,7 +208,7 @@ export class AssistantSession {
 
   private async writeTurn(input: RuntimeTurnInput, writeTier: MemoryWriteTier) {
     if (writeTier === "documented") {
-      const explicitKey = typeof input.metadata?.documentKey === "string" ? input.metadata.documentKey : null;
+      const explicitKey = input.documentKey ?? (typeof input.metadata?.documentKey === "string" ? input.metadata.documentKey : null);
       await this.options.memoryService.ingestEvent({
         userId: this.options.userId,
         scopeId: this.options.scopeId,

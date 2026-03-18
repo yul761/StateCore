@@ -292,6 +292,9 @@ export class MemoryController {
     return session.handleTurn({
       message: input.message,
       source: input.source ?? "api",
+      writeTier: input.writeTier,
+      documentKey: input.documentKey,
+      digestMode: input.digestMode ?? "auto",
       metadata: input.metadata
     });
   }

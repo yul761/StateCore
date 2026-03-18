@@ -126,6 +126,9 @@ export const RuntimeTurnInput = z.object({
   scopeId: z.string().uuid(),
   message: z.string().min(1),
   source: MemorySource.optional(),
+  writeTier: z.enum(["ephemeral", "candidate", "stable", "documented"]).optional(),
+  documentKey: z.string().min(1).optional(),
+  digestMode: z.enum(["auto", "force", "skip"]).optional(),
   metadata: z.record(z.string(), z.unknown()).optional()
 });
 

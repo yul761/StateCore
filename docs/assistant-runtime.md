@@ -216,6 +216,12 @@ The current implementation is intentionally small:
 - `DefaultRecallPolicy`
 - `ThresholdDigestPolicy`
 
+The current runtime turn input also supports explicit policy hints:
+
+- `writeTier`
+- `documentKey`
+- `digestMode`
+
 It is a starting boundary, not a finished runtime surface.
 
 ## Mapping to the Current Repository

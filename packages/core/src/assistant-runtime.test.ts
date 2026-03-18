@@ -110,4 +110,38 @@ describe("AssistantSession", () => {
     expect(result.digestTriggered).toBe(false);
     expect(ingestEvent).not.toHaveBeenCalled();
   });
+
+  it("respects explicit write tier and forced digest mode", async () => {
+    const { memoryService, retrieveService, ingestEvent } = buildServices();
+    const requestDigest = vi.fn(async () => undefined);
+    const session = new AssistantSession({
+      userId: "user-1",
+      scopeId: "scope-1",
+      memoryService,
+      recallPolicy: new DefaultRecallPolicy(retrieveService),
+      llm: { chat: vi.fn(async () => "Stored") } as any,
+      prompts: {
+        system: "Use memory.",
+        user: "Question: {{question}}\nDigest: {{digest}}\nEvents:\n{{events}}"
+      },
+      digestPolicy: new ThresholdDigestPolicy(99),
+      digestTrigger: { requestDigest }
+    });
+
+    const result = await session.handleTurn({
+      message: "Temporary spec note",
+      source: "sdk",
+      writeTier: "documented",
+      documentKey: "doc:runtime-test",
+      digestMode: "force"
+    });
+
+    expect(result.writeTier).toBe("documented");
+    expect(result.digestTriggered).toBe(true);
+    expect(requestDigest).toHaveBeenCalledWith("scope-1");
+    expect(ingestEvent).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      type: "document",
+      key: "doc:runtime-test"
+    }));
+  });
 });
