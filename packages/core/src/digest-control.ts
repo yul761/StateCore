@@ -453,6 +453,14 @@ function replaceGoalProvenance(evidence: DigestEvidenceRef) {
   return [evidence];
 }
 
+function removeValueProvenance(
+  entries: DigestStateValueProvenance[] | undefined,
+  value: string
+) {
+  const normalizedValue = normalizeText(value);
+  return normalizeValueProvenanceList((entries ?? []).filter((entry) => normalizeText(entry.value) !== normalizedValue));
+}
+
 function pushRecentChange(next: DigestState, change: DigestStateChange) {
   next.recentChanges = [...(next.recentChanges ?? []), change].slice(-25);
 }
@@ -480,6 +488,63 @@ function mergeGoalUpdate(next: DigestState, goal: string, evidence: DigestEviden
   next.stableFacts.goal = goal;
   next.provenance!.goal = replaceGoalProvenance(evidence);
   pushRecentChange(next, { field: "goal", action: "set", value: goal, evidence });
+}
+
+function valuesBackedOnlyByDocumentKey(
+  entries: DigestStateValueProvenance[] | undefined,
+  documentKey: string
+) {
+  return (entries ?? [])
+    .filter((entry) =>
+      entry.refs.length > 0 &&
+      entry.refs.every((ref) => ref.sourceType === "document" && ref.key === documentKey)
+    )
+    .map((entry) => entry.value);
+}
+
+function mergeDocumentBackedList(input: {
+  currentValues: string[];
+  currentProvenance: DigestStateValueProvenance[] | undefined;
+  incomingValues: string[];
+  evidence: DigestEvidenceRef;
+  field: "constraints" | "todos";
+  documentKey?: string;
+  next: DigestState;
+}) {
+  const incoming = [...new Map(input.incomingValues.map((value) => [normalizeText(value), value])).values()];
+  const existingByNormalized = new Map(input.currentValues.map((value) => [normalizeText(value), value]));
+
+  if (input.documentKey) {
+    const removableValues = valuesBackedOnlyByDocumentKey(input.currentProvenance, input.documentKey);
+    for (const value of removableValues) {
+      if (!incoming.some((candidate) => normalizeText(candidate) === normalizeText(value))) {
+        input.currentValues.splice(input.currentValues.findIndex((item) => normalizeText(item) === normalizeText(value)), 1);
+        input.currentProvenance = removeValueProvenance(input.currentProvenance, value);
+        pushRecentChange(input.next, { field: input.field, action: "remove", value, evidence: input.evidence });
+      }
+    }
+  }
+
+  for (const value of incoming) {
+    const existing = existingByNormalized.get(normalizeText(value));
+    if (!existing) {
+      input.currentValues.push(value);
+      pushRecentChange(input.next, { field: input.field, action: "add", value, evidence: input.evidence });
+      input.currentProvenance = upsertValueProvenance(input.currentProvenance, value, input.evidence);
+      continue;
+    }
+
+    const sameValue = normalizeText(existing) === normalizeText(value) || jaccardSimilarity(existing, value) >= 0.8;
+    if (sameValue) {
+      input.currentProvenance = upsertValueProvenance(input.currentProvenance, existing, input.evidence);
+      pushRecentChange(input.next, { field: input.field, action: "reaffirm", value: existing, evidence: input.evidence });
+    }
+  }
+
+  return {
+    values: [...new Set(input.currentValues)],
+    provenance: input.currentProvenance
+  };
 }
 
 export function protectedStateMerge(input: {
@@ -511,42 +576,36 @@ export function protectedStateMerge(input: {
     }
   }
 
-  const docConstraints = parseLinesWithPrefix(docText, "constraint:");
-  for (const constraint of docConstraints) {
-    const evidence = input.documents.find((doc) => doc.content.includes(constraint));
-    const normalizedEvidence = evidence
-      ? { id: evidence.id, sourceType: "document" as const, key: evidence.key ?? undefined }
-      : null;
-    if (!next.stableFacts.constraints.includes(constraint)) {
-      next.stableFacts.constraints.push(constraint);
-      if (normalizedEvidence) {
-        pushRecentChange(next, { field: "constraints", action: "add", value: constraint, evidence: normalizedEvidence });
-      }
-    } else if (normalizedEvidence) {
-      pushRecentChange(next, { field: "constraints", action: "reaffirm", value: constraint, evidence: normalizedEvidence });
-    }
-    if (normalizedEvidence) {
-      next.provenance.constraints = upsertValueProvenance(next.provenance.constraints, constraint, normalizedEvidence);
-    }
+  for (const doc of input.documents) {
+    const docConstraints = parseLinesWithPrefix(doc.content, "constraint:");
+    if (!docConstraints.length) continue;
+    const mergedConstraints = mergeDocumentBackedList({
+      currentValues: [...(next.stableFacts.constraints ?? [])],
+      currentProvenance: next.provenance.constraints,
+      incomingValues: docConstraints,
+      evidence: { id: doc.id, sourceType: "document", key: doc.key ?? undefined },
+      field: "constraints",
+      documentKey: doc.key ?? undefined,
+      next
+    });
+    next.stableFacts.constraints = mergedConstraints.values;
+    next.provenance.constraints = mergedConstraints.provenance;
   }
 
-  const docTodos = parseLinesWithPrefix(docText, "todo:");
-  for (const todo of docTodos) {
-    const evidence = input.documents.find((doc) => doc.content.includes(todo));
-    const normalizedEvidence = evidence
-      ? { id: evidence.id, sourceType: "document" as const, key: evidence.key ?? undefined }
-      : null;
-    if (!next.todos.includes(todo)) {
-      next.todos.push(todo);
-      if (normalizedEvidence) {
-        pushRecentChange(next, { field: "todos", action: "add", value: todo, evidence: normalizedEvidence });
-      }
-    } else if (normalizedEvidence) {
-      pushRecentChange(next, { field: "todos", action: "reaffirm", value: todo, evidence: normalizedEvidence });
-    }
-    if (normalizedEvidence) {
-      next.provenance.todos = upsertValueProvenance(next.provenance.todos, todo, normalizedEvidence);
-    }
+  for (const doc of input.documents) {
+    const docTodos = parseLinesWithPrefix(doc.content, "todo:");
+    if (!docTodos.length) continue;
+    const mergedTodos = mergeDocumentBackedList({
+      currentValues: [...(next.todos ?? [])],
+      currentProvenance: next.provenance.todos,
+      incomingValues: docTodos,
+      evidence: { id: doc.id, sourceType: "document", key: doc.key ?? undefined },
+      field: "todos",
+      documentKey: doc.key ?? undefined,
+      next
+    });
+    next.todos = mergedTodos.values;
+    next.provenance.todos = mergedTodos.provenance;
   }
 
   for (const doc of input.documents) {

@@ -218,6 +218,100 @@ describe("protectedStateMerge", () => {
     );
   });
 
+  it("supersedes document-backed constraints and todos when the same document key changes", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: ["self-hosted first", "keep api stable"],
+          decisions: []
+        },
+        workingNotes: {},
+        todos: ["ship runtime", "publish benchmark report"],
+        provenance: {
+          constraints: [
+            { value: "self-hosted first", refs: [{ id: "doc-old", sourceType: "document", key: "doc:plan" }] },
+            { value: "keep api stable", refs: [{ id: "doc-old", sourceType: "document", key: "doc:plan" }] }
+          ],
+          todos: [
+            { value: "ship runtime", refs: [{ id: "doc-old", sourceType: "document", key: "doc:plan" }] },
+            { value: "publish benchmark report", refs: [{ id: "doc-old", sourceType: "document", key: "doc:plan" }] }
+          ]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [
+        event({
+          id: "doc-new",
+          scopeId: "sc",
+          userId: "u",
+          type: "document",
+          key: "doc:plan",
+          content: "constraint: self-hosted first\ntodo: ship runtime"
+        })
+      ],
+      deltaCandidates: []
+    });
+
+    expect(merged.stableFacts.constraints).toEqual(["self-hosted first"]);
+    expect(merged.todos).toEqual(["ship runtime"]);
+    expect(merged.recentChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "constraints", action: "remove", value: "keep api stable" }),
+        expect.objectContaining({ field: "constraints", action: "reaffirm", value: "self-hosted first" }),
+        expect.objectContaining({ field: "todos", action: "remove", value: "publish benchmark report" }),
+        expect.objectContaining({ field: "todos", action: "reaffirm", value: "ship runtime" })
+      ])
+    );
+  });
+
+  it("does not remove constraints or todos backed by non-document evidence when a document changes", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: ["self-hosted first", "keep api stable"],
+          decisions: []
+        },
+        workingNotes: {},
+        todos: ["ship runtime", "publish benchmark report"],
+        provenance: {
+          constraints: [
+            { value: "self-hosted first", refs: [{ id: "doc-old", sourceType: "document", key: "doc:plan" }] },
+            { value: "keep api stable", refs: [{ id: "evt-1", sourceType: "event", kind: "constraint" }] }
+          ],
+          todos: [
+            { value: "ship runtime", refs: [{ id: "doc-old", sourceType: "document", key: "doc:plan" }] },
+            { value: "publish benchmark report", refs: [{ id: "evt-2", sourceType: "event", kind: "todo" }] }
+          ]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [
+        event({
+          id: "doc-new",
+          scopeId: "sc",
+          userId: "u",
+          type: "document",
+          key: "doc:plan",
+          content: "constraint: self-hosted first\ntodo: ship runtime"
+        })
+      ],
+      deltaCandidates: []
+    });
+
+    expect(merged.stableFacts.constraints).toEqual(expect.arrayContaining(["self-hosted first", "keep api stable"]));
+    expect(merged.todos).toEqual(expect.arrayContaining(["ship runtime", "publish benchmark report"]));
+    expect(merged.recentChanges).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "constraints", action: "remove", value: "keep api stable" }),
+        expect.objectContaining({ field: "todos", action: "remove", value: "publish benchmark report" })
+      ])
+    );
+  });
+
   it("normalizes legacy string evidence refs from previous snapshots", () => {
     const normalized = normalizeDigestState({
       stableFacts: { decisions: [] },
