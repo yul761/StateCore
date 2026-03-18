@@ -434,6 +434,13 @@ function mentionsFactWithNegation(text: string, fact: string, negationPattern: R
   return mentionsFact && negationPattern.test(normalized);
 }
 
+function mentionsFact(text: string, fact: string, tokenCount = 3) {
+  const normalized = text.toLowerCase();
+  const keyTokens = tokenize(fact).slice(0, tokenCount);
+  if (!keyTokens.length) return false;
+  return keyTokens.every((token) => normalized.includes(token));
+}
+
 export function consistencyCheck(input: {
   output: DigestOutput;
   previousDigest?: Digest | null;
@@ -472,7 +479,18 @@ export function consistencyCheck(input: {
     ...input.output.changes,
     ...input.output.nextSteps
   ].join("\n").toLowerCase();
-  for (const constraint of input.protectedState.stableFacts.constraints ?? []) {
+  if (stableGoal && !mentionedGoal && !mentionsFact(combinedText, stableGoal, 3)) {
+    warnings.push("goal_omission");
+  }
+
+  const stableConstraints = input.protectedState.stableFacts.constraints ?? [];
+  if (
+    stableConstraints.length > 0 &&
+    stableConstraints.every((constraint) => !mentionsFact(combinedText, constraint, 2))
+  ) {
+    warnings.push("constraint_omission");
+  }
+  for (const constraint of stableConstraints) {
     const keyTokens = tokenize(constraint).slice(0, 3);
     if (!keyTokens.length) continue;
     const mentionsConstraint = keyTokens.every((token) => summaryLower.includes(token));

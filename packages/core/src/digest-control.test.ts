@@ -139,6 +139,29 @@ describe("consistencyCheck", () => {
     expect(result.errors).toContain("decision_contradiction");
     expect(result.errors).toContain("todo_contradiction");
   });
+
+  it("catches goal and constraint omissions when protected facts disappear entirely", () => {
+    const result = consistencyCheck({
+      output: {
+        summary: "Worked on benchmark polish and queue cleanup.",
+        changes: ["Updated benchmark markdown output"],
+        nextSteps: ["Write queue latency notes"]
+      },
+      protectedState: {
+        stableFacts: {
+          goal: "ship low drift memory runtime",
+          constraints: ["self-hosted first", "keep api stable"],
+          decisions: []
+        },
+        workingNotes: {},
+        todos: []
+      }
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toContain("goal_omission");
+    expect(result.warnings).toContain("constraint_omission");
+  });
 });
 
 describe("generateDigestStage2", () => {
