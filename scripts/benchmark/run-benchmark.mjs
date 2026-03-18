@@ -278,6 +278,15 @@ function scoreReminder(successRate, avgDelayMs) {
   return clamp(successScore + delayScore);
 }
 
+function omissionWarningRate(consistencyTaxonomy) {
+  const warnings = consistencyTaxonomy?.warnings || {};
+  const omissionKeys = ["goal_omission", "constraint_omission", "decision_omission", "todo_omission"];
+  const omissionTotal = omissionKeys.reduce((sum, key) => sum + (warnings[key] || 0), 0);
+  const warningTotal = Object.values(warnings).reduce((sum, count) => sum + count, 0);
+  if (warningTotal === 0) return 0;
+  return Number((omissionTotal / warningTotal).toFixed(3));
+}
+
 function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, runtimeMetrics) {
   if (!digestMetrics?.enabled) {
     return {
@@ -652,6 +661,7 @@ async function run() {
     runs: 0,
     success: 0,
     consistencyPassRate: 0,
+    omissionWarningRate: 0,
     avgLatencyMs: 0,
     failureTaxonomy: {},
     consistencyTaxonomy: { errors: {}, warnings: {} },
@@ -761,6 +771,7 @@ async function run() {
       runs: cfg.digestRuns,
       success: durations.length,
       consistencyPassRate: Number((consistencyPass.filter(Boolean).length / Math.max(1, consistencyPass.length)).toFixed(3)),
+      omissionWarningRate: omissionWarningRate(consistencyTaxonomy),
       avgLatencyMs: Number((durations.reduce((a, b) => a + b, 0) / Math.max(1, durations.length)).toFixed(2)),
       failureTaxonomy,
       consistencyTaxonomy,
@@ -968,7 +979,7 @@ async function run() {
     "",
     `- Ingest throughput: ${report.metrics.ingest.throughputEventsPerSec} events/s (p95 ${report.metrics.ingest.p95Ms} ms)`,
     `- Retrieve semantic hit rate: ${report.metrics.retrieve.hitRate}, strict hit rate: ${report.metrics.retrieve.strictHitRate} (p95 ${report.metrics.retrieve.p95Ms} ms)`,
-    `- Digest success: ${report.metrics.digest.success}/${report.metrics.digest.runs}, consistency pass ${report.metrics.digest.consistencyPassRate}, avg latency ${report.metrics.digest.avgLatencyMs} ms`,
+    `- Digest success: ${report.metrics.digest.success}/${report.metrics.digest.runs}, consistency pass ${report.metrics.digest.consistencyPassRate}, omission warning rate ${report.metrics.digest.omissionWarningRate ?? 0}, avg latency ${report.metrics.digest.avgLatencyMs} ms`,
     `- Replay state match: ${report.metrics.replay.enabled ? (report.metrics.replay.success ? (report.metrics.replay.stateMatch ? "yes" : "no") : `error (${report.metrics.replay.error})`) : "skipped"}${report.metrics.replay.enabled && report.metrics.replay.success ? `, snapshots ${report.metrics.replay.rebuildSnapshots}` : ""}`,
     `- Runtime turn success: ${report.metrics.runtime.enabled ? `${report.metrics.runtime.success}/${report.metrics.runtime.runs}` : "skipped"}, evidence coverage ${report.metrics.runtime.enabled ? report.metrics.runtime.evidenceCoverageRate : "n/a"}, avg latency ${report.metrics.runtime.enabled ? `${report.metrics.runtime.avgLatencyMs} ms` : "n/a"}`,
     `- Reminder sent: ${report.metrics.reminder.success === 1 ? "yes" : "no"}, delay ${report.metrics.reminder.delayMs} ms`,
