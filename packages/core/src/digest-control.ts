@@ -287,9 +287,11 @@ function tokenize(value: string) {
   const normalized = normalizeText(value);
   return normalized
     .split(" ")
+    .map((token) => token.replace(/:+$/g, ""))
     .filter((token) => token.length > 2)
     .map((token) => {
       if (token === "docs" || token === "doc") return "documentation";
+      if (token === "blocker") return "blocked";
       return token;
     });
 }
@@ -807,21 +809,39 @@ export function protectedStateMerge(input: {
     }
 
     if (delta.features.kind === "question") {
-      next.workingNotes.openQuestions = [...(next.workingNotes.openQuestions ?? []), text].slice(-10);
-      next.provenance.openQuestions = upsertValueProvenance(next.provenance.openQuestions, text, evidence);
-      pushRecentChange(next, { field: "openQuestions", action: "add", value: text, evidence });
+      const existing = findBestSemanticMatch(next.workingNotes.openQuestions ?? [], text, 0.7);
+      if (!existing) {
+        next.workingNotes.openQuestions = [...(next.workingNotes.openQuestions ?? []), text].slice(-10);
+        next.provenance.openQuestions = upsertValueProvenance(next.provenance.openQuestions, text, evidence);
+        pushRecentChange(next, { field: "openQuestions", action: "add", value: text, evidence });
+      } else {
+        next.provenance.openQuestions = upsertValueProvenance(next.provenance.openQuestions, existing, evidence);
+        pushRecentChange(next, { field: "openQuestions", action: "reaffirm", value: existing, evidence });
+      }
     }
 
     if (delta.features.kind === "status" || delta.features.kind === "note") {
-      next.volatileContext = [...(next.volatileContext ?? []), text].slice(-10);
-      next.provenance.volatileContext = upsertValueProvenance(next.provenance.volatileContext, text, evidence);
-      pushRecentChange(next, { field: "volatileContext", action: "add", value: text, evidence });
+      const existing = findBestSemanticMatch(next.volatileContext ?? [], text, 0.7);
+      if (!existing) {
+        next.volatileContext = [...(next.volatileContext ?? []), text].slice(-10);
+        next.provenance.volatileContext = upsertValueProvenance(next.provenance.volatileContext, text, evidence);
+        pushRecentChange(next, { field: "volatileContext", action: "add", value: text, evidence });
+      } else {
+        next.provenance.volatileContext = upsertValueProvenance(next.provenance.volatileContext, existing, evidence);
+        pushRecentChange(next, { field: "volatileContext", action: "reaffirm", value: existing, evidence });
+      }
     }
 
     if (/\b(risk|blocked|blocker)\b/.test(lowered)) {
-      next.workingNotes.risks = [...(next.workingNotes.risks ?? []), text].slice(-10);
-      next.provenance.risks = upsertValueProvenance(next.provenance.risks, text, evidence);
-      pushRecentChange(next, { field: "risks", action: "add", value: text, evidence });
+      const existing = findBestSemanticMatch(next.workingNotes.risks ?? [], text, 0.7);
+      if (!existing) {
+        next.workingNotes.risks = [...(next.workingNotes.risks ?? []), text].slice(-10);
+        next.provenance.risks = upsertValueProvenance(next.provenance.risks, text, evidence);
+        pushRecentChange(next, { field: "risks", action: "add", value: text, evidence });
+      } else {
+        next.provenance.risks = upsertValueProvenance(next.provenance.risks, existing, evidence);
+        pushRecentChange(next, { field: "risks", action: "reaffirm", value: existing, evidence });
+      }
     }
   }
 

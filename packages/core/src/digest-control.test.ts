@@ -452,6 +452,84 @@ describe("protectedStateMerge", () => {
     );
   });
 
+  it("reaffirms semantically equivalent working-note entries from stream events", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: [],
+          decisions: []
+        },
+        workingNotes: {
+          openQuestions: ["should we support ollama first"],
+          risks: ["blocked by provider setup"]
+        },
+        todos: [],
+        volatileContext: ["Status update queue stable"],
+        provenance: {
+          openQuestions: [{ value: "should we support ollama first", refs: [{ id: "evt-q-old", sourceType: "event", kind: "question" }] }],
+          risks: [{ value: "blocked by provider setup", refs: [{ id: "evt-r-old", sourceType: "event", kind: "status" }] }],
+          volatileContext: [{ value: "Status update queue stable", refs: [{ id: "evt-v-old", sourceType: "event", kind: "status" }] }]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "evt-question",
+          reason: "working_note_signal",
+          features: { kind: "question", importanceScore: 0.7, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-question",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "Should we support Ollama first?"
+          })
+        },
+        {
+          eventId: "evt-status",
+          reason: "working_note_signal",
+          features: { kind: "status", importanceScore: 0.6, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-status",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "status update: queue is stable"
+          })
+        },
+        {
+          eventId: "evt-risk",
+          reason: "working_note_signal",
+          features: { kind: "status", importanceScore: 0.8, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-risk",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "blocker: provider setup"
+          })
+        }
+      ]
+    });
+
+    expect(merged.workingNotes.openQuestions).toEqual(["should we support ollama first"]);
+    expect(merged.volatileContext).toEqual(
+      expect.arrayContaining(["Status update queue stable", "blocker: provider setup"])
+    );
+    expect(merged.volatileContext?.filter((item) => item === "Status update queue stable")).toHaveLength(1);
+    expect(merged.workingNotes.risks).toEqual(["blocked by provider setup"]);
+    expect(merged.recentChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "openQuestions", action: "reaffirm", value: "should we support ollama first" }),
+        expect.objectContaining({ field: "volatileContext", action: "reaffirm", value: "Status update queue stable" }),
+        expect.objectContaining({ field: "risks", action: "reaffirm", value: "blocked by provider setup" })
+      ])
+    );
+  });
+
   it("removes matching todos when a stream event marks them done or cancelled", () => {
     const merged = protectedStateMerge({
       prevState: {
