@@ -20,6 +20,10 @@ function mulberry32(seed) {
 function makeFixture(name, opts) {
   const rng = mulberry32(opts.seed);
   const events = [];
+  const goals = [opts.goal.replace(/^goal:\s*/i, "").trim()];
+  const constraints = opts.constraints.map((item) => item.replace(/^constraint:\s*/i, "").trim());
+  const decisions = [];
+  const todos = [];
 
   events.push({ type: "document", key: "doc:goal", content: opts.goal });
   events.push({ type: "document", key: "doc:constraints", content: opts.constraints.join("\n") });
@@ -27,9 +31,13 @@ function makeFixture(name, opts) {
   for (let i = 0; i < opts.total; i += 1) {
     const roll = rng();
     if (roll < opts.decisionRate) {
-      events.push({ type: "stream", content: `We decide to prioritize ${opts.topic} batch ${i}` });
+      const text = `We decide to prioritize ${opts.topic} batch ${i}`;
+      events.push({ type: "stream", content: text });
+      decisions.push(text);
     } else if (roll < opts.decisionRate + opts.todoRate) {
-      events.push({ type: "stream", content: `TODO: validate ${opts.topic} metric ${i}` });
+      const text = `validate ${opts.topic} metric ${i}`;
+      events.push({ type: "stream", content: `TODO: ${text}` });
+      todos.push(text);
     } else if (roll < opts.decisionRate + opts.todoRate + opts.blockerRate) {
       events.push({ type: "stream", content: `Blocked by ${opts.blocker} ${i}` });
     } else if (roll < opts.decisionRate + opts.todoRate + opts.blockerRate + opts.statusRate) {
@@ -46,7 +54,16 @@ function makeFixture(name, opts) {
     { query: "What todos are pending?", expected: "todo", aliases: ["next step", "action item", "pending", "follow up"] }
   ];
 
-  const payload = { events, retrieveCases };
+  const payload = {
+    gold: {
+      goal: goals,
+      constraints,
+      decisions,
+      todos
+    },
+    events,
+    retrieveCases
+  };
   const outPath = path.join(outDir, `${name}.json`);
   writeFileSync(outPath, JSON.stringify(payload, null, 2));
   // eslint-disable-next-line no-console

@@ -1,4 +1,13 @@
 {
+  "gold": {
+    "goal": ["evaluate retrieval robustness under noise"],
+    "constraints": ["no vector index", "deterministic scoring"],
+    "decisions": [],
+    "todos": [
+      "validate retrieval metric 7",
+      "validate retrieval metric 17"
+    ]
+  },
   "events": [
     { "type": "document", "key": "doc:goal", "content": "goal: evaluate retrieval robustness under noise" },
     { "type": "document", "key": "doc:constraints", "content": "constraint: no vector index\nconstraint: deterministic scoring" },

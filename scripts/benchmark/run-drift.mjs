@@ -65,7 +65,11 @@ function loadFixture(fixturePath) {
   if (!Array.isArray(parsed.events)) {
     throw new Error("invalid_fixture: missing events array");
   }
-  return { events: parsed.events, source: fullPath };
+  return {
+    events: parsed.events,
+    gold: parsed.gold ?? null,
+    source: fullPath
+  };
 }
 
 function normalizeText(value) {
@@ -98,6 +102,18 @@ function parseGoldFacts(events) {
     decisions: uniq(decisions),
     todos: uniq(todos)
   };
+}
+
+function loadGoldFacts(fixture) {
+  if (fixture.gold && typeof fixture.gold === "object") {
+    return {
+      goal: Array.isArray(fixture.gold.goal) ? fixture.gold.goal : [],
+      constraints: Array.isArray(fixture.gold.constraints) ? fixture.gold.constraints : [],
+      decisions: Array.isArray(fixture.gold.decisions) ? fixture.gold.decisions : [],
+      todos: Array.isArray(fixture.gold.todos) ? fixture.gold.todos : []
+    };
+  }
+  return parseGoldFacts(fixture.events);
 }
 
 function factRecall(text, facts) {
@@ -146,7 +162,7 @@ async function run() {
   };
 
   const fixture = loadFixture(cfg.fixture);
-  const gold = parseGoldFacts(fixture.events);
+  const gold = loadGoldFacts(fixture);
 
   const scopeResp = await apiFetch("POST", "/scopes", { name: `Drift ${Date.now()}` });
   if (!scopeResp.ok || !scopeResp.json.id) {
@@ -232,7 +248,7 @@ async function run() {
       `- Repeated change rate: ${report.summary.repeatedChangeRate}`,
       "",
       "## Notes",
-      "- Recall is computed against gold facts parsed from fixture events.",
+      `- Gold facts source: ${fixture.gold ? "fixture.gold labels" : "parsed from fixture events"}.`,
       "- Positive slope indicates improving recall; negative slope indicates drift."
     ].join("\n");
 

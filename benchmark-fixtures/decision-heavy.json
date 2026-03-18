@@ -1,4 +1,23 @@
 {
+  "gold": {
+    "goal": ["maximize digest consistency under noisy streams"],
+    "constraints": ["avoid hosted dependencies", "keep api stable"],
+    "decisions": [
+      "We decide to prioritize consistency batch 0",
+      "We decide to prioritize consistency batch 3",
+      "We decide to prioritize consistency batch 5",
+      "We decide to prioritize consistency batch 7",
+      "We decide to prioritize consistency batch 10",
+      "We decide to prioritize consistency batch 13",
+      "We decide to prioritize consistency batch 16",
+      "We decide to prioritize consistency batch 19"
+    ],
+    "todos": [
+      "validate consistency metric 1",
+      "validate consistency metric 8",
+      "validate consistency metric 14"
+    ]
+  },
   "events": [
     { "type": "document", "key": "doc:goal", "content": "goal: maximize digest consistency under noisy streams" },
     { "type": "document", "key": "doc:constraints", "content": "constraint: avoid hosted dependencies\nconstraint: keep api stable" },

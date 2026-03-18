@@ -24,6 +24,14 @@ Generate additional fixtures:
 node scripts/benchmark/generate-fixtures.mjs
 ```
 
+Fixture files may include explicit `gold` labels for:
+- `goal`
+- `constraints`
+- `decisions`
+- `todos`
+
+Drift benchmarks will prefer these labels when present and fall back to parsing event text otherwise.
+
 Run ablations (controlled variable sweeps):
 ```bash
 node scripts/benchmark/run-ablations.mjs

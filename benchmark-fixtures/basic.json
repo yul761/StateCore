@@ -1,4 +1,10 @@
 {
+  "gold": {
+    "goal": ["ship a research-grade memory engine"],
+    "constraints": ["keep api stable", "avoid hosted dependencies"],
+    "decisions": ["We decide to focus on digest consistency"],
+    "todos": ["add consistency pass rate tracking"]
+  },
   "events": [
     { "type": "document", "key": "doc:goal", "content": "goal: ship a research-grade memory engine" },
     { "type": "document", "key": "doc:constraints", "content": "constraint: keep api stable\nconstraint: avoid hosted dependencies" },
