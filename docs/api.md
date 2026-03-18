@@ -42,6 +42,8 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
   - runs the assistant runtime session flow
   - returns `{ answer, writeTier, digestTriggered, evidence }`
   - requires `FEATURE_LLM=true`
+  - reference CLI usage:
+    - `pm turn "goal: ship a self-hosted runtime" --write-tier stable --digest-mode force`
 
 ## Scopes
 - **POST /scopes**

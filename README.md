@@ -50,6 +50,7 @@ pnpm dev:cli -- scopes
 pnpm dev:cli -- state
 pnpm dev:cli -- state-history
 pnpm dev:cli -- turn "What changed in the project plan?"
+pnpm dev:cli -- turn "goal: ship a self-hosted memory runtime" --write-tier stable --digest-mode force
 ```
 
 No-LLM smoke test:
