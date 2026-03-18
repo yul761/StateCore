@@ -222,6 +222,11 @@ The current runtime turn input also supports explicit policy hints:
 - `documentKey`
 - `digestMode`
 
+The current runtime output also carries lightweight audit notes so policy decisions are inspectable, for example:
+
+- why a turn was classified as `candidate` or `stable`
+- whether digesting was forced, skipped, or triggered by policy
+
 It is a starting boundary, not a finished runtime surface.
 
 ## Mapping to the Current Repository

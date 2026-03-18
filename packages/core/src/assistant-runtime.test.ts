@@ -12,15 +12,24 @@ describe("DefaultMemoryWritePolicy", () => {
   const policy = new DefaultMemoryWritePolicy();
 
   it("classifies acknowledgements as ephemeral", () => {
-    expect(policy.classifyTurn({ message: "thanks" })).toBe("ephemeral");
+    expect(policy.classifyTurn({ message: "thanks" })).toEqual({
+      tier: "ephemeral",
+      reason: "acknowledgement_only"
+    });
   });
 
   it("classifies explicit structured facts as stable", () => {
-    expect(policy.classifyTurn({ message: "constraint: keep api stable" })).toBe("stable");
+    expect(policy.classifyTurn({ message: "constraint: keep api stable" })).toEqual({
+      tier: "stable",
+      reason: "explicit_structured_memory"
+    });
   });
 
   it("classifies spec-like messages as documented", () => {
-    expect(policy.classifyTurn({ message: "Architecture spec update for retrieval ranking" })).toBe("documented");
+    expect(policy.classifyTurn({ message: "Architecture spec update for retrieval ranking" })).toEqual({
+      tier: "documented",
+      reason: "document_like_update"
+    });
   });
 });
 
@@ -80,6 +89,8 @@ describe("AssistantSession", () => {
     expect(result.answer).toBe("Grounded answer");
     expect(result.writeTier).toBe("stable");
     expect(result.digestTriggered).toBe(true);
+    expect(result.notes).toContain("write_tier:stable_fact_signal");
+    expect(result.notes).toContain("digest:stable_or_documented_turn");
     expect(result.evidence.digestIds).toEqual(["digest-1"]);
     expect(result.evidence.eventIds).toEqual(["evt-1"]);
     expect(result.evidence.stateRefs).toEqual(["digest-1"]);
@@ -108,6 +119,7 @@ describe("AssistantSession", () => {
 
     expect(result.writeTier).toBe("ephemeral");
     expect(result.digestTriggered).toBe(false);
+    expect(result.notes).toContain("write_tier:acknowledgement_only");
     expect(ingestEvent).not.toHaveBeenCalled();
   });
 
@@ -138,10 +150,40 @@ describe("AssistantSession", () => {
 
     expect(result.writeTier).toBe("documented");
     expect(result.digestTriggered).toBe(true);
+    expect(result.notes).toContain("write_tier:explicit_write_tier");
+    expect(result.notes).toContain("digest:forced_by_input");
     expect(requestDigest).toHaveBeenCalledWith("scope-1");
     expect(ingestEvent).toHaveBeenNthCalledWith(1, expect.objectContaining({
       type: "document",
       key: "doc:runtime-test"
     }));
+  });
+
+  it("records skipped digest mode in notes", async () => {
+    const { memoryService, retrieveService } = buildServices();
+    const requestDigest = vi.fn(async () => undefined);
+    const session = new AssistantSession({
+      userId: "user-1",
+      scopeId: "scope-1",
+      memoryService,
+      recallPolicy: new DefaultRecallPolicy(retrieveService),
+      llm: { chat: vi.fn(async () => "Stored") } as any,
+      prompts: {
+        system: "Use memory.",
+        user: "Question: {{question}}\nDigest: {{digest}}\nEvents:\n{{events}}"
+      },
+      digestPolicy: new ThresholdDigestPolicy(),
+      digestTrigger: { requestDigest }
+    });
+
+    const result = await session.handleTurn({
+      message: "TODO: measure drift",
+      source: "sdk",
+      digestMode: "skip"
+    });
+
+    expect(result.digestTriggered).toBe(false);
+    expect(result.notes).toContain("digest:skipped_by_input");
+    expect(requestDigest).not.toHaveBeenCalled();
   });
 });

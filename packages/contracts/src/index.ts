@@ -136,6 +136,7 @@ export const RuntimeTurnOutput = z.object({
   answer: z.string(),
   writeTier: z.enum(["ephemeral", "candidate", "stable", "documented"]),
   digestTriggered: z.boolean(),
+  notes: z.array(z.string()).optional(),
   evidence: z.object({
     digestIds: z.array(z.string()),
     eventIds: z.array(z.string()),

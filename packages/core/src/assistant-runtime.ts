@@ -52,6 +52,7 @@ export interface GroundedAnswer {
   answer: string;
   writeTier: MemoryWriteTier;
   digestTriggered: boolean;
+  notes?: string[];
   evidence: {
     digestIds: string[];
     eventIds: string[];
@@ -59,8 +60,13 @@ export interface GroundedAnswer {
   };
 }
 
+export interface MemoryWriteDecision {
+  tier: MemoryWriteTier;
+  reason?: string;
+}
+
 export interface MemoryWritePolicy {
-  classifyTurn(input: RuntimeTurnInput): MemoryWriteTier | Promise<MemoryWriteTier>;
+  classifyTurn(input: RuntimeTurnInput): MemoryWriteTier | MemoryWriteDecision | Promise<MemoryWriteTier | MemoryWriteDecision>;
 }
 
 export interface RecallPolicy {
@@ -75,7 +81,7 @@ export interface DigestPolicy {
     turn: RuntimeTurnInput;
     writeTier: MemoryWriteTier;
     recall: ResolvedRecall;
-  }): boolean | Promise<boolean>;
+  }): boolean | { shouldDigest: boolean; reason?: string } | Promise<boolean | { shouldDigest: boolean; reason?: string }>;
 }
 
 export interface DigestTrigger {
@@ -99,17 +105,23 @@ export interface AssistantSessionOptions {
 }
 
 export class DefaultMemoryWritePolicy implements MemoryWritePolicy {
-  classifyTurn(input: RuntimeTurnInput): MemoryWriteTier {
-    if (input.writeTier) return input.writeTier;
+  classifyTurn(input: RuntimeTurnInput): MemoryWriteDecision {
+    if (input.writeTier) return { tier: input.writeTier, reason: "explicit_write_tier" };
     const text = input.message.trim().toLowerCase();
-    if (!text) return "ephemeral";
-    if (/^(thanks|thank you|ok|okay|cool|got it|sounds good)[.!]?$/i.test(text)) return "ephemeral";
-    if (/^(goal|constraint|decision|todo)\s*:/i.test(text)) return "stable";
-    if (/\b(uploaded doc|document update|spec|architecture|roadmap)\b/i.test(text)) return "documented";
-    if (/\b(decide|decision|constraint|must|cannot|todo|next step|action item|blocked|risk)\b/i.test(text)) {
-      return "stable";
+    if (!text) return { tier: "ephemeral", reason: "empty_message" };
+    if (/^(thanks|thank you|ok|okay|cool|got it|sounds good)[.!]?$/i.test(text)) {
+      return { tier: "ephemeral", reason: "acknowledgement_only" };
     }
-    return "candidate";
+    if (/^(goal|constraint|decision|todo)\s*:/i.test(text)) {
+      return { tier: "stable", reason: "explicit_structured_memory" };
+    }
+    if (/\b(uploaded doc|document update|spec|architecture|roadmap)\b/i.test(text)) {
+      return { tier: "documented", reason: "document_like_update" };
+    }
+    if (/\b(decide|decision|constraint|must|cannot|todo|next step|action item|blocked|risk)\b/i.test(text)) {
+      return { tier: "stable", reason: "stable_fact_signal" };
+    }
+    return { tier: "candidate", reason: "default_candidate_memory" };
   }
 }
 
@@ -136,11 +148,21 @@ export class DefaultRecallPolicy implements RecallPolicy {
 export class ThresholdDigestPolicy implements DigestPolicy {
   constructor(private threshold = 1) {}
 
-  async shouldDigest(input: { writeTier: MemoryWriteTier }): Promise<boolean> {
+  async shouldDigest(input: { writeTier: MemoryWriteTier }): Promise<{ shouldDigest: boolean; reason?: string }> {
     if (this.threshold <= 1) {
-      return input.writeTier === "stable" || input.writeTier === "documented";
+      return {
+        shouldDigest: input.writeTier === "stable" || input.writeTier === "documented",
+        reason: input.writeTier === "stable" || input.writeTier === "documented"
+          ? "stable_or_documented_turn"
+          : "write_tier_below_threshold"
+      };
     }
-    return input.writeTier === "documented";
+    return {
+      shouldDigest: input.writeTier === "documented",
+      reason: input.writeTier === "documented"
+        ? "documented_turn"
+        : "threshold_requires_documented_turn"
+    };
   }
 }
 
@@ -154,7 +176,9 @@ export class AssistantSession {
   }
 
   async handleTurn(input: RuntimeTurnInput): Promise<GroundedAnswer> {
-    const writeTier = await this.memoryWritePolicy.classifyTurn(input);
+    const writeDecision = this.normalizeWriteDecision(await this.memoryWritePolicy.classifyTurn(input));
+    const writeTier = writeDecision.tier;
+    const notes = writeDecision.reason ? [`write_tier:${writeDecision.reason}`] : [];
 
     if (writeTier !== "ephemeral") {
       await this.writeTurn(input, writeTier);
@@ -182,22 +206,30 @@ export class AssistantSession {
     if (shouldAttemptDigest) {
       if (input.digestMode === "force") {
         digestTriggered = true;
+        notes.push("digest:forced_by_input");
       } else if (this.digestPolicy && this.options.digestTrigger) {
-        digestTriggered = await this.digestPolicy.shouldDigest({
+        const digestDecision = this.normalizeDigestDecision(await this.digestPolicy.shouldDigest({
           turn: input,
           writeTier,
           recall
-        });
+        }));
+        digestTriggered = digestDecision.shouldDigest;
+        if (digestDecision.reason) {
+          notes.push(`digest:${digestDecision.reason}`);
+        }
       }
       if (digestTriggered && this.options.digestTrigger) {
         await this.options.digestTrigger.requestDigest(this.options.scopeId);
       }
+    } else if (input.digestMode === "skip") {
+      notes.push("digest:skipped_by_input");
     }
 
     return {
       answer,
       writeTier,
       digestTriggered,
+      notes,
       evidence: {
         digestIds: recall.digest ? [recall.digest.id] : [],
         eventIds: recall.events.map((event) => event.id),
@@ -231,6 +263,22 @@ export class AssistantSession {
 
   private deriveDocumentKey(message: string) {
     return `runtime:${createHash("sha1").update(message).digest("hex").slice(0, 12)}`;
+  }
+
+  private normalizeWriteDecision(decision: MemoryWriteTier | MemoryWriteDecision): MemoryWriteDecision {
+    if (typeof decision === "string") {
+      return { tier: decision };
+    }
+    return decision;
+  }
+
+  private normalizeDigestDecision(
+    decision: boolean | { shouldDigest: boolean; reason?: string }
+  ): { shouldDigest: boolean; reason?: string } {
+    if (typeof decision === "boolean") {
+      return { shouldDigest: decision };
+    }
+    return decision;
   }
 
   private async generateGroundedAnswer(question: string, recall: ResolvedRecall) {

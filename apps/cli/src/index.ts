@@ -274,6 +274,7 @@ program
     console.log(JSON.stringify({
       writeTier: result.writeTier,
       digestTriggered: result.digestTriggered,
+      notes: result.notes ?? [],
       evidence: result.evidence
     }, null, 2));
   });
