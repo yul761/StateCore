@@ -3,8 +3,10 @@ import { createHash } from "crypto";
 import { z } from "zod";
 export {
   LlmClient,
+  EmbeddingClient,
   type LlmClientOptions,
   createChatModelClient,
+  createEmbeddingModelClient,
   createModelProvider,
   type ChatModel,
   type StructuredOutputModel,

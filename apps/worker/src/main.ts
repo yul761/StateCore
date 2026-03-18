@@ -29,6 +29,9 @@ const llm = workerEnv.featureLlm
       structuredOutputApiKey: workerEnv.structuredOutputModelApiKey,
       structuredOutputBaseUrl: workerEnv.structuredOutputModelBaseUrl,
       structuredOutputModel: workerEnv.structuredOutputModelName,
+      embeddingApiKey: workerEnv.embeddingModelApiKey,
+      embeddingBaseUrl: workerEnv.embeddingModelBaseUrl,
+      embeddingModel: workerEnv.embeddingModelName || undefined,
       timeoutMs: 20000
     })?.structuredOutput ?? null
   : null;

@@ -35,6 +35,9 @@ const envSchema = z.object({
   MODEL_STRUCTURED_OUTPUT_API_KEY: z.string().optional(),
   MODEL_STRUCTURED_OUTPUT_BASE_URL: z.string().optional(),
   MODEL_STRUCTURED_OUTPUT_NAME: z.string().optional(),
+  MODEL_EMBEDDING_API_KEY: z.string().optional(),
+  MODEL_EMBEDDING_BASE_URL: z.string().optional(),
+  MODEL_EMBEDDING_NAME: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
   OPENAI_MODEL: z.string().optional(),
@@ -69,10 +72,13 @@ const modelBaseUrl = env.MODEL_BASE_URL || env.OPENAI_BASE_URL || "https://api.o
 const modelName = env.MODEL_NAME || env.OPENAI_MODEL || "gpt-4o-mini";
 const chatModelBaseUrl = env.MODEL_CHAT_BASE_URL || modelBaseUrl;
 const structuredOutputModelBaseUrl = env.MODEL_STRUCTURED_OUTPUT_BASE_URL || modelBaseUrl;
+const embeddingModelBaseUrl = env.MODEL_EMBEDDING_BASE_URL || modelBaseUrl;
 const chatModelApiKey = env.MODEL_CHAT_API_KEY ?? env.MODEL_API_KEY ?? env.OPENAI_API_KEY ?? "";
 const structuredOutputModelApiKey = env.MODEL_STRUCTURED_OUTPUT_API_KEY ?? env.MODEL_API_KEY ?? env.OPENAI_API_KEY ?? "";
+const embeddingModelApiKey = env.MODEL_EMBEDDING_API_KEY ?? env.MODEL_API_KEY ?? env.OPENAI_API_KEY ?? "";
 const chatModelName = env.MODEL_CHAT_NAME || modelName;
 const structuredOutputModelName = env.MODEL_STRUCTURED_OUTPUT_NAME || modelName;
+const embeddingModelName = env.MODEL_EMBEDDING_NAME || "";
 const modelApiKey = env.MODEL_API_KEY || env.OPENAI_API_KEY || "";
 const modelProvider = env.MODEL_PROVIDER || "openai-compatible";
 const requiresApiKey = requiresApiKeyForBaseUrl(modelBaseUrl);
@@ -95,6 +101,12 @@ if (toBool(env.FEATURE_LLM) && requiresApiKeyForBaseUrl(structuredOutputModelBas
   process.exit(1);
 }
 
+if (toBool(env.FEATURE_LLM) && embeddingModelName && requiresApiKeyForBaseUrl(embeddingModelBaseUrl) && !embeddingModelApiKey) {
+  // eslint-disable-next-line no-console
+  console.error("Invalid environment variables", { MODEL_EMBEDDING_API_KEY: ["MODEL_EMBEDDING_API_KEY, MODEL_API_KEY, or OPENAI_API_KEY required for embedding model configuration when FEATURE_LLM=true"] });
+  process.exit(1);
+}
+
 export const workerEnv = {
   databaseUrl: env.DATABASE_URL,
   redisUrl: env.REDIS_URL,
@@ -110,6 +122,9 @@ export const workerEnv = {
   structuredOutputModelApiKey,
   structuredOutputModelBaseUrl,
   structuredOutputModelName,
+  embeddingModelApiKey,
+  embeddingModelBaseUrl,
+  embeddingModelName,
   telegramBotToken: env.TELEGRAM_BOT_TOKEN || "",
   maxRecentEvents: Number(env.DIGEST_MAX_RECENT_EVENTS || 50),
   maxDaysLookback: Number(env.DIGEST_MAX_DAYS_LOOKBACK || 14),

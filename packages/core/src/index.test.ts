@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createChatModelClient, createModelProvider, LlmClient } from "./index";
+import { createChatModelClient, createEmbeddingModelClient, createModelProvider, EmbeddingClient, LlmClient } from "./index";
 
 describe("createChatModelClient", () => {
   it("returns null when config is missing", () => {
@@ -89,6 +89,28 @@ describe("createModelProvider", () => {
       Authorization: "Bearer structured-secret"
     });
   });
+
+  it("creates an embedding client when configured", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ embedding: [0.1, 0.2] }] })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = createModelProvider({
+      provider: "openai-compatible",
+      baseUrl: "http://localhost:11434/v1",
+      model: "fallback-model",
+      apiKey: "",
+      embeddingBaseUrl: "http://embed.local/v1",
+      embeddingModel: "embed-model"
+    });
+
+    expect(provider?.embedding).toBeInstanceOf(EmbeddingClient);
+    await provider?.embedding?.embed(["hello"]);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://embed.local/v1/embeddings");
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toContain("\"model\":\"embed-model\"");
+  });
 });
 
 describe("LlmClient", () => {
@@ -135,5 +157,26 @@ describe("LlmClient", () => {
       "Content-Type": "application/json",
       Authorization: "Bearer secret"
     });
+  });
+});
+
+describe("createEmbeddingModelClient", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns null when config is missing", () => {
+    expect(createEmbeddingModelClient(null)).toBeNull();
+  });
+
+  it("creates an embedding client from provider config", () => {
+    const client = createEmbeddingModelClient({
+      provider: "openai-compatible",
+      baseUrl: "http://localhost:11434/v1",
+      model: "embed-model",
+      apiKey: ""
+    });
+
+    expect(client).toBeInstanceOf(EmbeddingClient);
   });
 });

@@ -229,6 +229,18 @@ Optional override for the structured-output endpoint. If omitted, the system fal
 
 Optional override for the structured-output credential. If omitted, the system falls back to `MODEL_API_KEY`.
 
+### `MODEL_EMBEDDING_NAME`
+
+Optional embedding-model identifier. If omitted, embedding remains disabled and the provider bundle keeps `embedding=null`.
+
+### `MODEL_EMBEDDING_BASE_URL`
+
+Optional override for the embedding endpoint. If omitted, the system falls back to `MODEL_BASE_URL`.
+
+### `MODEL_EMBEDDING_API_KEY`
+
+Optional override for the embedding credential. If omitted, the system falls back to `MODEL_API_KEY`.
+
 ### `MODEL_API_KEY`
 
 The credential used for providers that require bearer auth.

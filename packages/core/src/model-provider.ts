@@ -16,6 +16,8 @@ export interface ModelProviderConfig {
   structuredOutputApiKey?: string;
   structuredOutputBaseUrl?: string;
   structuredOutputModel?: string;
+  embeddingApiKey?: string;
+  embeddingBaseUrl?: string;
   embeddingModel?: string;
   timeoutMs?: number;
 }
@@ -96,9 +98,78 @@ export class LlmClient {
   }
 }
 
+export class EmbeddingClient {
+  private apiKey: string;
+  private baseUrl: string;
+  private model: string;
+  private timeoutMs: number;
+
+  constructor(options: LlmClientOptions) {
+    this.apiKey = options.apiKey ?? "";
+    this.baseUrl = options.baseUrl.replace(/\/$/, "");
+    this.model = options.model;
+    this.timeoutMs = options.timeoutMs ?? 20000;
+  }
+
+  async embed(input: string[]) {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+      try {
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json"
+        };
+        if (this.apiKey) {
+          headers.Authorization = `Bearer ${this.apiKey}`;
+        }
+        const response = await fetch(`${this.baseUrl}/embeddings`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            model: this.model,
+            input
+          }),
+          signal: controller.signal
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Embedding error ${response.status}: ${text}`);
+        }
+
+        const data: any = await response.json();
+        const vectors = Array.isArray(data?.data)
+          ? data.data.map((item: any) => item?.embedding).filter((value: unknown) => Array.isArray(value))
+          : [];
+        if (!vectors.length) {
+          throw new Error("Embedding response missing vectors");
+        }
+        return vectors as number[][];
+      } catch (err) {
+        lastError = err;
+        await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    throw lastError ?? new Error("Embedding call failed");
+  }
+}
+
 export function createChatModelClient(config: ModelProviderConfig | null | undefined) {
   if (!config) return null;
   return new LlmClient({
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl,
+    model: config.model,
+    timeoutMs: config.timeoutMs
+  });
+}
+
+export function createEmbeddingModelClient(config: ModelProviderConfig | null | undefined) {
+  if (!config || !config.model) return null;
+  return new EmbeddingClient({
     apiKey: config.apiKey,
     baseUrl: config.baseUrl,
     model: config.model,
@@ -120,11 +191,19 @@ export function createModelProvider(config: ModelProviderConfig | null | undefin
     baseUrl: config.structuredOutputBaseUrl || config.baseUrl,
     model: config.structuredOutputModel || config.model
   });
+  const embedding = config.embeddingModel
+    ? createEmbeddingModelClient({
+        ...config,
+        apiKey: config.embeddingApiKey ?? config.apiKey,
+        baseUrl: config.embeddingBaseUrl || config.baseUrl,
+        model: config.embeddingModel
+      })
+    : null;
   if (!chat || !structuredOutput) return null;
   return {
     provider: config.provider || "openai-compatible",
     chat,
     structuredOutput,
-    embedding: null
+    embedding
   };
 }

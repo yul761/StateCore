@@ -39,6 +39,9 @@ export class MemoryController {
         structuredOutputApiKey: apiEnv.structuredOutputModelApiKey,
         structuredOutputBaseUrl: apiEnv.structuredOutputModelBaseUrl,
         structuredOutputModel: apiEnv.structuredOutputModelName,
+        embeddingApiKey: apiEnv.embeddingModelApiKey,
+        embeddingBaseUrl: apiEnv.embeddingModelBaseUrl,
+        embeddingModel: apiEnv.embeddingModelName || undefined,
         timeoutMs: 20000
       })?.chat ?? null;
     }
