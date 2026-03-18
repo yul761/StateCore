@@ -14,7 +14,7 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
 ## Digest
 - **POST /memory/digest**
   - body: `{ scopeId }` (enqueue job)
-- requires `FEATURE_LLM=true` and `OPENAI_API_KEY`
+- requires `FEATURE_LLM=true` and model provider configuration via `MODEL_*` or legacy `OPENAI_*`
 - returns actionable error when disabled
 - **POST /memory/digest/rebuild**
   - body: `{ scopeId, from?, to?, strategy?: 'full'|'since_last_good' }`

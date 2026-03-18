@@ -107,6 +107,10 @@ function factRecall(text, facts) {
   return hits / facts.length;
 }
 
+function driftRateFromRecall(recall) {
+  return Number((1 - recall).toFixed(3));
+}
+
 function linearSlope(values) {
   const n = values.length;
   if (!n) return 0;
@@ -170,6 +174,34 @@ async function run() {
       runs: report.metrics.length,
       success: report.metrics.filter((m) => m.ok).length,
       avgRecall: Number((recalls.reduce((a, b) => a + b, 0) / Math.max(1, recalls.length)).toFixed(3)),
+      goalDriftRate: Number(
+        (
+          report.metrics
+            .filter((m) => m.ok)
+            .reduce((sum, m) => sum + (m.goalDriftRate ?? 0), 0) / Math.max(1, report.metrics.filter((m) => m.ok).length)
+        ).toFixed(3)
+      ),
+      constraintDriftRate: Number(
+        (
+          report.metrics
+            .filter((m) => m.ok)
+            .reduce((sum, m) => sum + (m.constraintDriftRate ?? 0), 0) / Math.max(1, report.metrics.filter((m) => m.ok).length)
+        ).toFixed(3)
+      ),
+      decisionDriftRate: Number(
+        (
+          report.metrics
+            .filter((m) => m.ok)
+            .reduce((sum, m) => sum + (m.decisionDriftRate ?? 0), 0) / Math.max(1, report.metrics.filter((m) => m.ok).length)
+        ).toFixed(3)
+      ),
+      todoDriftRate: Number(
+        (
+          report.metrics
+            .filter((m) => m.ok)
+            .reduce((sum, m) => sum + (m.todoDriftRate ?? 0), 0) / Math.max(1, report.metrics.filter((m) => m.ok).length)
+        ).toFixed(3)
+      ),
       recallSlope: Number(linearSlope(recalls).toFixed(6)),
       repeatedChangeRate: Number(
         (report.metrics.filter((m) => m.ok && m.repeatedChanges).length / Math.max(1, report.metrics.length)).toFixed(3)
@@ -192,6 +224,10 @@ async function run() {
       `- Status: ${report.summary.status}`,
       `- Success runs: ${report.summary.success}/${report.summary.runs}`,
       `- Avg recall: ${report.summary.avgRecall}`,
+      `- Goal drift rate: ${report.summary.goalDriftRate}`,
+      `- Constraint drift rate: ${report.summary.constraintDriftRate}`,
+      `- Decision drift rate: ${report.summary.decisionDriftRate}`,
+      `- Todo drift rate: ${report.summary.todoDriftRate}`,
       `- Recall slope: ${report.summary.recallSlope}`,
       `- Repeated change rate: ${report.summary.repeatedChangeRate}`,
       "",
@@ -225,6 +261,10 @@ async function run() {
     const recallConstraints = factRecall(combined, gold.constraints);
     const recallDecisions = factRecall(combined, gold.decisions);
     const recallTodos = factRecall(combined, gold.todos);
+    const goalDriftRate = driftRateFromRecall(recallGoal);
+    const constraintDriftRate = driftRateFromRecall(recallConstraints);
+    const decisionDriftRate = driftRateFromRecall(recallDecisions);
+    const todoDriftRate = driftRateFromRecall(recallTodos);
     const avgRecall = (recallGoal + recallConstraints + recallDecisions + recallTodos) / 4;
     recalls.push(avgRecall);
 
@@ -238,6 +278,10 @@ async function run() {
       recallConstraints,
       recallDecisions,
       recallTodos,
+      goalDriftRate,
+      constraintDriftRate,
+      decisionDriftRate,
+      todoDriftRate,
       avgRecall,
       repeatedChanges
     });

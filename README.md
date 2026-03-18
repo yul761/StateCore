@@ -56,7 +56,7 @@ No-LLM smoke test:
 
 LLM smoke test:
 ```bash
-FEATURE_LLM=true OPENAI_API_KEY=... ./scripts/smoke-llm.sh
+FEATURE_LLM=true MODEL_API_KEY=... ./scripts/smoke-llm.sh
 ```
 
 Reminder smoke test:
@@ -86,10 +86,10 @@ Required for all:
 
 API (`apps/api`):
 - `PORT`, `LOCAL_USER_TOKEN` (dev)
-- Optional LLM: `FEATURE_LLM=true` + `OPENAI_*`
+- Optional LLM: `FEATURE_LLM=true` + `MODEL_*` (legacy `OPENAI_*` still supported)
 
 Worker (`apps/worker`):
-- `FEATURE_LLM=true` + `OPENAI_*` for digests
+- `FEATURE_LLM=true` + `MODEL_*` for digests
 - Optional Telegram reminder delivery: `FEATURE_TELEGRAM=true` + `TELEGRAM_BOT_TOKEN`
 - Digest control vars:
   - `DIGEST_EVENT_BUDGET_TOTAL`, `DIGEST_EVENT_BUDGET_DOCS`, `DIGEST_EVENT_BUDGET_STREAM`
@@ -117,7 +117,7 @@ curl -X POST "http://localhost:3001/telegram/webhook/set"
 ```
 
 ## FEATURE_LLM
-Set `FEATURE_LLM=true` and provide `OPENAI_API_KEY` to enable `/memory/answer` and digest jobs. If disabled, the API returns a clear error and worker jobs fail fast.
+Set `FEATURE_LLM=true` and configure `MODEL_PROVIDER`, `MODEL_BASE_URL`, `MODEL_NAME`, and `MODEL_API_KEY` to enable `/memory/answer` and digest jobs. Legacy `OPENAI_*` variables are still accepted. If disabled, the API returns a clear error and worker jobs fail fast.
 
 ## Digest Control Layer
 Digest is processed as a controlled pipeline (not a single LLM call):
