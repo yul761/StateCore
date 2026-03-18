@@ -59,6 +59,36 @@ describe("createModelProvider", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.body).toContain("\"model\":\"chat-model\"");
     expect(fetchMock.mock.calls[1]?.[1]?.body).toContain("\"model\":\"structured-model\"");
   });
+
+  it("supports separate chat and structured output endpoints and auth", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "ok" } }] })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = createModelProvider({
+      provider: "openai-compatible",
+      baseUrl: "http://fallback.example/v1",
+      model: "fallback-model",
+      apiKey: "fallback-secret",
+      chatBaseUrl: "http://chat.local/v1",
+      chatApiKey: "",
+      structuredOutputBaseUrl: "https://api.openai.com/v1",
+      structuredOutputApiKey: "structured-secret"
+    });
+
+    await provider?.chat.chat([{ role: "user", content: "chat" }]);
+    await provider?.structuredOutput.chat([{ role: "user", content: "structured" }]);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://chat.local/v1/chat/completions");
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({ "Content-Type": "application/json" });
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("https://api.openai.com/v1/chat/completions");
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).toEqual({
+      "Content-Type": "application/json",
+      Authorization: "Bearer structured-secret"
+    });
+  });
 });
 
 describe("LlmClient", () => {

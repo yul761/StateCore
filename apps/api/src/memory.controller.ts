@@ -33,7 +33,11 @@ export class MemoryController {
         apiKey: apiEnv.modelApiKey,
         baseUrl: apiEnv.modelBaseUrl,
         model: apiEnv.modelName,
+        chatApiKey: apiEnv.chatModelApiKey,
+        chatBaseUrl: apiEnv.chatModelBaseUrl,
         chatModel: apiEnv.chatModelName,
+        structuredOutputApiKey: apiEnv.structuredOutputModelApiKey,
+        structuredOutputBaseUrl: apiEnv.structuredOutputModelBaseUrl,
         structuredOutputModel: apiEnv.structuredOutputModelName,
         timeoutMs: 20000
       })?.chat ?? null;

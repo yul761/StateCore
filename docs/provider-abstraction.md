@@ -209,9 +209,25 @@ The model identifier used for chat or structured output requests.
 
 Optional override for chat and runtime-answer workloads. If omitted, the system falls back to `MODEL_NAME`.
 
+### `MODEL_CHAT_BASE_URL`
+
+Optional override for the chat/runtime endpoint. If omitted, the system falls back to `MODEL_BASE_URL`.
+
+### `MODEL_CHAT_API_KEY`
+
+Optional override for the chat/runtime credential. If omitted, the system falls back to `MODEL_API_KEY`.
+
 ### `MODEL_STRUCTURED_OUTPUT_NAME`
 
 Optional override for digest and other structured-output style workloads. If omitted, the system falls back to `MODEL_NAME`.
+
+### `MODEL_STRUCTURED_OUTPUT_BASE_URL`
+
+Optional override for the structured-output endpoint. If omitted, the system falls back to `MODEL_BASE_URL`.
+
+### `MODEL_STRUCTURED_OUTPUT_API_KEY`
+
+Optional override for the structured-output credential. If omitted, the system falls back to `MODEL_API_KEY`.
 
 ### `MODEL_API_KEY`
 

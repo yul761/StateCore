@@ -10,7 +10,11 @@ export interface ModelProviderConfig {
   apiKey?: string;
   baseUrl: string;
   model: string;
+  chatApiKey?: string;
+  chatBaseUrl?: string;
   chatModel?: string;
+  structuredOutputApiKey?: string;
+  structuredOutputBaseUrl?: string;
   structuredOutputModel?: string;
   embeddingModel?: string;
   timeoutMs?: number;
@@ -106,10 +110,14 @@ export function createModelProvider(config: ModelProviderConfig | null | undefin
   if (!config) return null;
   const chat = createChatModelClient({
     ...config,
+    apiKey: config.chatApiKey ?? config.apiKey,
+    baseUrl: config.chatBaseUrl || config.baseUrl,
     model: config.chatModel || config.model
   });
   const structuredOutput = createChatModelClient({
     ...config,
+    apiKey: config.structuredOutputApiKey ?? config.apiKey,
+    baseUrl: config.structuredOutputBaseUrl || config.baseUrl,
     model: config.structuredOutputModel || config.model
   });
   if (!chat || !structuredOutput) return null;

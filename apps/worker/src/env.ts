@@ -29,7 +29,11 @@ const envSchema = z.object({
   MODEL_API_KEY: z.string().optional(),
   MODEL_BASE_URL: z.string().optional(),
   MODEL_NAME: z.string().optional(),
+  MODEL_CHAT_API_KEY: z.string().optional(),
+  MODEL_CHAT_BASE_URL: z.string().optional(),
   MODEL_CHAT_NAME: z.string().optional(),
+  MODEL_STRUCTURED_OUTPUT_API_KEY: z.string().optional(),
+  MODEL_STRUCTURED_OUTPUT_BASE_URL: z.string().optional(),
   MODEL_STRUCTURED_OUTPUT_NAME: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
@@ -60,17 +64,34 @@ if (!parsed.success) {
 
 const env = parsed.data;
 const toBool = (value?: string) => value === "true";
+const requiresApiKeyForBaseUrl = (baseUrl: string) => /(^https?:\/\/)?api\.openai\.com\/?/i.test(baseUrl);
 const modelBaseUrl = env.MODEL_BASE_URL || env.OPENAI_BASE_URL || "https://api.openai.com/v1";
 const modelName = env.MODEL_NAME || env.OPENAI_MODEL || "gpt-4o-mini";
+const chatModelBaseUrl = env.MODEL_CHAT_BASE_URL || modelBaseUrl;
+const structuredOutputModelBaseUrl = env.MODEL_STRUCTURED_OUTPUT_BASE_URL || modelBaseUrl;
+const chatModelApiKey = env.MODEL_CHAT_API_KEY ?? env.MODEL_API_KEY ?? env.OPENAI_API_KEY ?? "";
+const structuredOutputModelApiKey = env.MODEL_STRUCTURED_OUTPUT_API_KEY ?? env.MODEL_API_KEY ?? env.OPENAI_API_KEY ?? "";
 const chatModelName = env.MODEL_CHAT_NAME || modelName;
 const structuredOutputModelName = env.MODEL_STRUCTURED_OUTPUT_NAME || modelName;
 const modelApiKey = env.MODEL_API_KEY || env.OPENAI_API_KEY || "";
 const modelProvider = env.MODEL_PROVIDER || "openai-compatible";
-const requiresApiKey = /(^https?:\/\/)?api\.openai\.com\/?/i.test(modelBaseUrl);
+const requiresApiKey = requiresApiKeyForBaseUrl(modelBaseUrl);
 
 if (toBool(env.FEATURE_LLM) && requiresApiKey && !modelApiKey) {
   // eslint-disable-next-line no-console
   console.error("Invalid environment variables", { MODEL_API_KEY: ["MODEL_API_KEY or OPENAI_API_KEY required for the configured provider when FEATURE_LLM=true"] });
+  process.exit(1);
+}
+
+if (toBool(env.FEATURE_LLM) && requiresApiKeyForBaseUrl(chatModelBaseUrl) && !chatModelApiKey) {
+  // eslint-disable-next-line no-console
+  console.error("Invalid environment variables", { MODEL_CHAT_API_KEY: ["MODEL_CHAT_API_KEY, MODEL_API_KEY, or OPENAI_API_KEY required for chat model configuration when FEATURE_LLM=true"] });
+  process.exit(1);
+}
+
+if (toBool(env.FEATURE_LLM) && requiresApiKeyForBaseUrl(structuredOutputModelBaseUrl) && !structuredOutputModelApiKey) {
+  // eslint-disable-next-line no-console
+  console.error("Invalid environment variables", { MODEL_STRUCTURED_OUTPUT_API_KEY: ["MODEL_STRUCTURED_OUTPUT_API_KEY, MODEL_API_KEY, or OPENAI_API_KEY required for structured-output model configuration when FEATURE_LLM=true"] });
   process.exit(1);
 }
 
@@ -83,7 +104,11 @@ export const workerEnv = {
   modelApiKey,
   modelBaseUrl,
   modelName,
+  chatModelApiKey,
+  chatModelBaseUrl,
   chatModelName,
+  structuredOutputModelApiKey,
+  structuredOutputModelBaseUrl,
   structuredOutputModelName,
   telegramBotToken: env.TELEGRAM_BOT_TOKEN || "",
   maxRecentEvents: Number(env.DIGEST_MAX_RECENT_EVENTS || 50),
