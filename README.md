@@ -184,6 +184,11 @@ Reproducible run example:
 BENCH_SEED=42 BENCH_FIXTURE=benchmark-fixtures/basic.json pnpm benchmark
 ```
 
+Runtime-profile comparison example:
+```bash
+BENCH_FIXTURE=benchmark-fixtures/document-heavy.json BENCH_RUNTIME_POLICY_PROFILE=document-heavy pnpm benchmark
+```
+
 Controlled ablations can now compare both digest-control settings and assistant runtime policy profiles:
 ```bash
 node scripts/benchmark/run-ablations.mjs

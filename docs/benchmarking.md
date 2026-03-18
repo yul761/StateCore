@@ -55,6 +55,11 @@ Goal-evolution drift test:
 DRIFT_RUNS=25 DRIFT_FIXTURE=benchmark-fixtures/goal-evolution.json node scripts/benchmark/run-drift.mjs
 ```
 
+Document-heavy runtime benchmark:
+```bash
+BENCH_FIXTURE=benchmark-fixtures/document-heavy.json BENCH_RUNTIME_POLICY_PROFILE=document-heavy pnpm benchmark
+```
+
 Replay consistency check:
 ```bash
 REPLAY_FIXTURE=benchmark-fixtures/basic.json node scripts/benchmark/run-replay-check.mjs

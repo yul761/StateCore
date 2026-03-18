@@ -1,0 +1,50 @@
+{
+  "gold": {
+    "goal": ["ship a self-hosted long-term memory runtime with low drift"],
+    "constraints": [
+      "self-hosted first",
+      "keep api stable",
+      "make memory decisions auditable"
+    ],
+    "decisions": [
+      "We decide to expose assistant runtime policy profiles",
+      "We decide to measure replay consistency separately from throughput"
+    ],
+    "todos": [
+      "benchmark runtime profiles",
+      "add evidence-backed runtime reports"
+    ],
+    "contradictions": {
+      "goal": [
+        "goal: build a generic hosted ai platform"
+      ],
+      "constraints": [
+        "constraint: prioritize hosted deployment over self-hosted setups"
+      ],
+      "decisions": [
+        "We decide to remove auditability requirements from runtime decisions"
+      ],
+      "todos": [
+        "TODO: delete runtime profile benchmarks"
+      ]
+    }
+  },
+  "events": [
+    { "type": "document", "key": "doc:goal", "content": "goal: ship a self-hosted long-term memory runtime with low drift" },
+    { "type": "document", "key": "doc:constraints", "content": "constraint: self-hosted first\nconstraint: keep api stable\nconstraint: make memory decisions auditable" },
+    { "type": "document", "key": "doc:architecture", "content": "Architecture update:\nProject Memory now treats the assistant runtime as a first-class product boundary. Runtime sessions should preserve evidence-backed answers, explicit write tiers, and digest trigger policy notes. This long-form spec is intentionally document-heavy so memory profiles can choose whether to preserve it as documented memory or reduce it to candidate context." },
+    { "type": "stream", "content": "We decide to expose assistant runtime policy profiles" },
+    { "type": "stream", "content": "TODO: benchmark runtime profiles" },
+    { "type": "document", "key": "doc:evaluation", "content": "Evaluation protocol update:\nReplay consistency, contradiction tracking, and runtime evidence coverage should be reported together. The benchmark should also surface which runtime policy profile was used, so developers can compare conservative and document-heavy behavior under the same fixture." },
+    { "type": "stream", "content": "We decide to measure replay consistency separately from throughput" },
+    { "type": "stream", "content": "TODO: add evidence-backed runtime reports" },
+    { "type": "stream", "content": "Status update: long-form notes are now common in runtime integrations" },
+    { "type": "stream", "content": "Noise: quick aside about optional UI demos later" }
+  ],
+  "retrieveCases": [
+    { "query": "What is the current goal?", "expected": "long-term memory runtime", "aliases": ["self-hosted", "low drift", "goal"] },
+    { "query": "What constraints exist?", "expected": "auditable", "aliases": ["api stable", "self-hosted", "constraint"] },
+    { "query": "What decisions were made?", "expected": "policy profiles", "aliases": ["replay consistency", "we decide", "decision"] },
+    { "query": "What should be done next?", "expected": "benchmark runtime profiles", "aliases": ["evidence-backed runtime reports", "todo", "next"] }
+  ]
+}
