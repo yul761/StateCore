@@ -71,6 +71,11 @@ export interface RuntimeStateSnapshot {
       risks?: string[];
       openQuestions?: string[];
     };
+    recentChanges?: Array<{
+      field?: "goal" | "constraints" | "decisions" | "todos" | "volatileContext" | "openQuestions" | "risks";
+      action?: "set" | "add" | "remove" | "reaffirm";
+      value?: string;
+    }>;
   } | null;
 }
 
@@ -434,11 +439,20 @@ export class AssistantSession {
     const constraints = snapshot.state?.stableFacts?.constraints ?? [];
     const todos = snapshot.state?.todos ?? [];
     const risks = snapshot.state?.workingNotes?.risks ?? [];
+    const recentChanges = snapshot.state?.recentChanges ?? [];
     const parts = [`digest:${snapshot.digestId}`];
     if (goal) parts.push(`goal:${goal}`);
     if (constraints.length) parts.push(`constraints:${constraints.slice(0, 2).join(" | ")}`);
     if (todos.length) parts.push(`todos:${todos.slice(0, 2).join(" | ")}`);
     if (risks.length) parts.push(`risks:${risks.slice(0, 2).join(" | ")}`);
+    if (recentChanges.length) {
+      parts.push(
+        `recent:${recentChanges
+          .slice(-2)
+          .map((change) => `${change.field}:${change.action}:${change.value}`)
+          .join(" | ")}`
+      );
+    }
     return parts.join("; ");
   }
 
