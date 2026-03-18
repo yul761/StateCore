@@ -202,6 +202,7 @@ describe("protectedStateMerge", () => {
     expect(merged.provenance?.goal).toEqual([
       { id: "doc-new", sourceType: "document", key: "doc:goal" }
     ]);
+    expect(merged.confidence?.goal).toBe(1);
     expect(merged.recentChanges).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -544,6 +545,13 @@ describe("protectedStateMerge", () => {
         action: "add",
         value: "ship runtime",
         evidence: { id: "e1", sourceType: "event" }
+      }
+    ]);
+    expect(normalized.confidence?.goal).toBe(1);
+    expect(normalized.confidence?.todos).toEqual([
+      {
+        value: "ship runtime",
+        score: 0.7
       }
     ]);
   });

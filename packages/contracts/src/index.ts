@@ -161,6 +161,12 @@ export const GroundingEvidenceOutput = z.object({
     constraints: z.array(z.string()).optional(),
     todos: z.array(z.string()).optional(),
     risks: z.array(z.string()).optional(),
+    confidence: z.object({
+      goal: z.number().min(0).max(1).optional(),
+      constraints: z.array(z.object({ value: z.string(), score: z.number().min(0).max(1) })).optional(),
+      decisions: z.array(z.object({ value: z.string(), score: z.number().min(0).max(1) })).optional(),
+      todos: z.array(z.object({ value: z.string(), score: z.number().min(0).max(1) })).optional()
+    }).optional(),
     provenanceFields: z.array(z.string()).optional(),
     transitionTaxonomy: z.record(z.string(), z.number()).optional(),
     recentChanges: z.array(z.object({
@@ -273,6 +279,15 @@ export const DigestState = z.object({
     key: z.string().optional(),
     kind: MemoryEventKind.optional()
   })).optional(),
+  confidence: z.object({
+    goal: z.number().min(0).max(1).optional(),
+    constraints: z.array(z.object({ value: z.string(), score: z.number().min(0).max(1) })).optional(),
+    decisions: z.array(z.object({ value: z.string(), score: z.number().min(0).max(1) })).optional(),
+    todos: z.array(z.object({ value: z.string(), score: z.number().min(0).max(1) })).optional(),
+    volatileContext: z.array(z.object({ value: z.string(), score: z.number().min(0).max(1) })).optional(),
+    openQuestions: z.array(z.object({ value: z.string(), score: z.number().min(0).max(1) })).optional(),
+    risks: z.array(z.object({ value: z.string(), score: z.number().min(0).max(1) })).optional()
+  }).optional(),
   provenance: z.object({
     goal: z.array(z.object({
       id: z.string(),

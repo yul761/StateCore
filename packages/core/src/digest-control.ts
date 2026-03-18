@@ -25,6 +25,15 @@ export interface DigestState {
   todos: string[];
   volatileContext?: string[];
   evidenceRefs?: DigestEvidenceRef[];
+  confidence?: {
+    goal?: number;
+    constraints?: DigestStateValueConfidence[];
+    decisions?: DigestStateValueConfidence[];
+    todos?: DigestStateValueConfidence[];
+    volatileContext?: DigestStateValueConfidence[];
+    openQuestions?: DigestStateValueConfidence[];
+    risks?: DigestStateValueConfidence[];
+  };
   provenance?: {
     goal?: DigestEvidenceRef[];
     constraints?: DigestStateValueProvenance[];
@@ -47,6 +56,11 @@ export interface DigestEvidenceRef {
 export interface DigestStateValueProvenance {
   value: string;
   refs: DigestEvidenceRef[];
+}
+
+export interface DigestStateValueConfidence {
+  value: string;
+  score: number;
 }
 
 export interface DigestStateChange {
@@ -109,6 +123,7 @@ const DEFAULT_DIGEST_STATE: DigestState = {
   todos: [],
   volatileContext: [],
   evidenceRefs: [],
+  confidence: {},
   provenance: {},
   recentChanges: []
 };
@@ -133,6 +148,7 @@ function deriveStateFromDigest(digest?: Digest | null): DigestState | null {
     todos: digest.nextSteps ?? [],
     volatileContext: [],
     evidenceRefs: [],
+    confidence: {},
     provenance: {},
     recentChanges: []
   };
@@ -157,6 +173,15 @@ function normalizeEvidenceRef(ref: string | DigestEvidenceRef): DigestEvidenceRe
 export function normalizeDigestState(state?: DigestState | null): DigestState {
   const base = JSON.parse(JSON.stringify(state ?? DEFAULT_DIGEST_STATE)) as DigestState & {
     evidenceRefs?: Array<string | DigestEvidenceRef>;
+    confidence?: {
+      goal?: number;
+      constraints?: Array<{ value?: string; score?: number }>;
+      decisions?: Array<{ value?: string; score?: number }>;
+      todos?: Array<{ value?: string; score?: number }>;
+      volatileContext?: Array<{ value?: string; score?: number }>;
+      openQuestions?: Array<{ value?: string; score?: number }>;
+      risks?: Array<{ value?: string; score?: number }>;
+    };
     provenance?: {
       goal?: Array<string | DigestEvidenceRef>;
       constraints?: Array<{ value?: string; refs?: Array<string | DigestEvidenceRef> }>;
@@ -185,6 +210,15 @@ export function normalizeDigestState(state?: DigestState | null): DigestState {
       const normalized = normalizeEvidenceRef(ref);
       return [`${normalized.sourceType}:${normalized.id}:${normalized.key ?? ""}:${normalized.kind ?? ""}`, normalized];
     })).values()].slice(-50),
+    confidence: {
+      goal: computeGoalConfidence(base.provenance?.goal),
+      constraints: buildConfidenceList(base.provenance?.constraints, base.confidence?.constraints),
+      decisions: buildConfidenceList(base.provenance?.decisions, base.confidence?.decisions),
+      todos: buildConfidenceList(base.provenance?.todos, base.confidence?.todos),
+      volatileContext: buildConfidenceList(base.provenance?.volatileContext, base.confidence?.volatileContext),
+      openQuestions: buildConfidenceList(base.provenance?.openQuestions, base.confidence?.openQuestions),
+      risks: buildConfidenceList(base.provenance?.risks, base.confidence?.risks)
+    },
     provenance: {
       goal: [...new Map(((base.provenance?.goal ?? []) as Array<string | DigestEvidenceRef>).map((ref) => {
         const normalized = normalizeEvidenceRef(ref);
@@ -235,6 +269,16 @@ function normalizeRecentChanges(entries?: Array<{
     .slice(-25);
 }
 
+function normalizeConfidenceList(entries?: Array<{ value?: string; score?: number }> | null) {
+  return (entries ?? [])
+    .map((entry) => ({
+      value: entry?.value?.trim() ?? "",
+      score: Number.isFinite(entry?.score) ? Math.max(0, Math.min(1, Number(entry?.score))) : 0
+    }))
+    .filter((entry) => entry.value)
+    .slice(-50);
+}
+
 function normalizeText(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9\s:]/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -257,6 +301,36 @@ function jaccardSimilarity(a: string, b: string) {
   const intersection = [...tokensA].filter((token) => tokensB.has(token)).length;
   const union = new Set([...tokensA, ...tokensB]).size;
   return union === 0 ? 0 : intersection / union;
+}
+
+function evidenceWeight(ref: DigestEvidenceRef) {
+  return ref.sourceType === "document" ? 1 : 0.7;
+}
+
+function scoreEvidenceConfidence(refs?: DigestEvidenceRef[] | null) {
+  const unique = [...new Map((refs ?? []).map((ref) => [`${ref.sourceType}:${ref.id}:${ref.key ?? ""}:${ref.kind ?? ""}`, ref])).values()];
+  if (!unique.length) return 0;
+  const residual = unique.reduce((product, ref) => product * (1 - evidenceWeight(ref)), 1);
+  return Number((1 - residual).toFixed(3));
+}
+
+function computeGoalConfidence(refs?: Array<string | DigestEvidenceRef> | null) {
+  if (!Array.isArray(refs) || refs.length === 0) return undefined;
+  return scoreEvidenceConfidence(refs.map((ref) => normalizeEvidenceRef(ref)));
+}
+
+function buildConfidenceList(
+  provenanceEntries?: Array<{ value?: string; refs?: Array<string | DigestEvidenceRef> }> | null,
+  fallbackEntries?: Array<{ value?: string; score?: number }> | null
+) {
+  const provenance = normalizeValueProvenanceList(provenanceEntries);
+  if (provenance.length) {
+    return provenance.map((entry) => ({
+      value: entry.value,
+      score: scoreEvidenceConfidence(entry.refs)
+    }));
+  }
+  return normalizeConfidenceList(fallbackEntries);
 }
 
 function sameDedupeGroup(a: MemoryEvent, b: MemoryEvent) {

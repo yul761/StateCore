@@ -91,6 +91,12 @@ export interface RuntimeStateSnapshot {
       decisions?: string[];
     };
     todos?: string[];
+    confidence?: {
+      goal?: number;
+      constraints?: Array<{ value?: string; score?: number }>;
+      decisions?: Array<{ value?: string; score?: number }>;
+      todos?: Array<{ value?: string; score?: number }>;
+    };
     workingNotes?: {
       risks?: string[];
       openQuestions?: string[];
@@ -138,7 +144,14 @@ export interface GroundingEvidence {
     constraints?: string[];
     todos?: string[];
     risks?: string[];
+    confidence?: {
+      goal?: number;
+      constraints?: Array<{ value?: string; score?: number }>;
+      decisions?: Array<{ value?: string; score?: number }>;
+      todos?: Array<{ value?: string; score?: number }>;
+    };
     provenanceFields?: string[];
+    transitionTaxonomy?: Record<string, number>;
     recentChanges?: Array<{
       field?: "goal" | "constraints" | "decisions" | "todos" | "volatileContext" | "openQuestions" | "risks";
       action?: "set" | "add" | "remove" | "reaffirm";
@@ -153,6 +166,55 @@ export interface GroundedAnswer {
   digestTriggered: boolean;
   notes?: string[];
   evidence: GroundingEvidence;
+}
+
+function normalizeSnapshotRef(ref?: {
+  id?: string;
+  sourceType?: "document" | "event";
+  key?: string;
+  kind?: "decision" | "constraint" | "todo" | "note" | "status" | "question" | "noise";
+}) {
+  if (!ref?.id || !ref?.sourceType) return null;
+  return {
+    id: ref.id,
+    sourceType: ref.sourceType,
+    key: ref.key,
+    kind: ref.kind
+  };
+}
+
+function scoreSnapshotConfidence(refs?: Array<{
+  id?: string;
+  sourceType?: "document" | "event";
+  key?: string;
+  kind?: "decision" | "constraint" | "todo" | "note" | "status" | "question" | "noise";
+}> | null) {
+  const unique = [...new Map((refs ?? []).map((ref) => {
+    const normalized = normalizeSnapshotRef(ref);
+    return normalized
+      ? [`${normalized.sourceType}:${normalized.id}:${normalized.key ?? ""}:${normalized.kind ?? ""}`, normalized]
+      : ["", null];
+  })).values()].filter(Boolean) as Array<{ sourceType: "document" | "event" }>;
+  if (!unique.length) return undefined;
+  const residual = unique.reduce((product, ref) => product * (1 - (ref.sourceType === "document" ? 1 : 0.7)), 1);
+  return Number((1 - residual).toFixed(3));
+}
+
+function buildSnapshotConfidenceList(entries?: Array<{
+  value?: string;
+  refs?: Array<{
+    id?: string;
+    sourceType?: "document" | "event";
+    key?: string;
+    kind?: "decision" | "constraint" | "todo" | "note" | "status" | "question" | "noise";
+  }>;
+}> | null) {
+  return (entries ?? [])
+    .map((entry) => ({
+      value: entry?.value?.trim() ?? "",
+      score: scoreSnapshotConfidence(entry?.refs)
+    }))
+    .filter((entry) => entry.value && typeof entry.score === "number");
 }
 
 export interface MemoryWriteDecision {
@@ -203,6 +265,7 @@ export function buildGroundingStateDetails(snapshot?: RuntimeStateSnapshot | nul
   if (!snapshot?.digestId) return null;
   const provenance = snapshot.state?.provenance;
   const recentChanges = snapshot.state?.recentChanges ?? [];
+  const confidence = snapshot.state?.confidence;
   const provenanceFields = [
     Array.isArray(provenance?.goal) && provenance.goal.length ? "goal" : null,
     Array.isArray(provenance?.constraints) && provenance.constraints.length ? "constraints" : null,
@@ -226,6 +289,12 @@ export function buildGroundingStateDetails(snapshot?: RuntimeStateSnapshot | nul
     constraints: snapshot.state?.stableFacts?.constraints ?? [],
     todos: snapshot.state?.todos ?? [],
     risks: snapshot.state?.workingNotes?.risks ?? [],
+    confidence: {
+      goal: confidence?.goal ?? scoreSnapshotConfidence(provenance?.goal),
+      constraints: confidence?.constraints ?? buildSnapshotConfidenceList(provenance?.constraints),
+      decisions: confidence?.decisions ?? buildSnapshotConfidenceList(provenance?.decisions),
+      todos: confidence?.todos ?? buildSnapshotConfidenceList(provenance?.todos)
+    },
     provenanceFields,
     transitionTaxonomy,
     recentChanges

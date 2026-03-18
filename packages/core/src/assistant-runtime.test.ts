@@ -214,6 +214,12 @@ describe("AssistantSession", () => {
       constraints: ["self-hosted first"],
       todos: ["Document replay checks"],
       risks: [],
+      confidence: {
+        goal: 1,
+        constraints: [],
+        decisions: [],
+        todos: [{ value: "Document replay checks", score: 0.7 }]
+      },
       provenanceFields: ["goal", "todos"],
       transitionTaxonomy: {
         "goal:set": 1,

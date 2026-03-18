@@ -996,6 +996,7 @@ async function run() {
     evidenceEventDocumentSourceRate: 0,
     evidenceStateSummaryRate: 0,
     evidenceStateProvenanceRate: 0,
+    evidenceStateConfidenceRate: 0,
     evidenceRecentStateChangesRate: 0,
     digestTriggerRate: 0,
     writeTierCounts: {},
@@ -1012,6 +1013,7 @@ async function run() {
     evidenceEventRankingReasonRate: 0,
     evidenceEventScoreRate: 0,
     evidenceStateSummaryRate: 0,
+    evidenceStateConfidenceRate: 0,
     evidenceStateTransitionTaxonomyRate: 0
   };
   let groundedResponseMetrics = {
@@ -1021,6 +1023,7 @@ async function run() {
     rankingReasonRate: 0,
     eventScoreRate: 0,
     stateSummaryRate: 0,
+    stateConfidenceRate: 0,
     avgLatencyMs: 0
   };
 
@@ -1258,6 +1261,7 @@ async function run() {
         hasEventRankingReasons: eventSnippets.length > 0 && snippetsWithRankingReason.length === eventSnippets.length,
         hasEventScores: eventSnippets.length > 0 && snippetsWithScores.length === eventSnippets.length,
         hasStateSummary: typeof evidence.stateSummary === "string" && evidence.stateSummary.length > 0,
+        hasStateConfidence: typeof evidence.stateDetails?.confidence === "object" && Object.values(evidence.stateDetails?.confidence || {}).some((value) => Array.isArray(value) ? value.length > 0 : typeof value === "number"),
         hasStateTransitionTaxonomy: typeof evidence.stateDetails?.transitionTaxonomy === "object" && Object.keys(evidence.stateDetails?.transitionTaxonomy || {}).length > 0
       });
     }
@@ -1272,6 +1276,7 @@ async function run() {
       evidenceEventRankingReasonRate: Number((answerResults.filter((result) => result.hasEventRankingReasons).length / Math.max(1, answerResults.length)).toFixed(3)),
       evidenceEventScoreRate: Number((answerResults.filter((result) => result.hasEventScores).length / Math.max(1, answerResults.length)).toFixed(3)),
       evidenceStateSummaryRate: Number((answerResults.filter((result) => result.hasStateSummary).length / Math.max(1, answerResults.length)).toFixed(3)),
+      evidenceStateConfidenceRate: Number((answerResults.filter((result) => result.hasStateConfidence).length / Math.max(1, answerResults.length)).toFixed(3)),
       evidenceStateTransitionTaxonomyRate: Number((answerResults.filter((result) => result.hasStateTransitionTaxonomy).length / Math.max(1, answerResults.length)).toFixed(3))
     };
 
@@ -1330,6 +1335,7 @@ async function run() {
         hasDocumentSourceSnippet: eventSnippets.some((snippet) => snippet?.sourceType === "document"),
         hasStateSummary: typeof evidence.stateSummary === "string" && evidence.stateSummary.length > 0,
         hasStateProvenance: Array.isArray(stateDetails?.provenanceFields) && stateDetails.provenanceFields.length > 0,
+        hasStateConfidence: typeof stateDetails?.confidence === "object" && Object.values(stateDetails?.confidence || {}).some((value) => Array.isArray(value) ? value.length > 0 : typeof value === "number"),
         hasStateTransitionTaxonomy: typeof stateDetails?.transitionTaxonomy === "object" && Object.keys(stateDetails?.transitionTaxonomy || {}).length > 0,
         hasRecentStateChanges: Array.isArray(stateDetails?.recentChanges) && stateDetails.recentChanges.length > 0,
         digestTriggered: Boolean(res.json?.digestTriggered),
@@ -1360,6 +1366,7 @@ async function run() {
       evidenceEventDocumentSourceRate: Number((runtimeResults.filter((result) => result.hasDocumentSourceSnippet).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceStateSummaryRate: Number((runtimeResults.filter((result) => result.hasStateSummary).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceStateProvenanceRate: Number((runtimeResults.filter((result) => result.hasStateProvenance).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      evidenceStateConfidenceRate: Number((runtimeResults.filter((result) => result.hasStateConfidence).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceStateTransitionTaxonomyRate: Number((runtimeResults.filter((result) => result.hasStateTransitionTaxonomy).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceRecentStateChangesRate: Number((runtimeResults.filter((result) => result.hasRecentStateChanges).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       digestTriggerRate: Number((runtimeResults.filter((result) => result.digestTriggered).length / Math.max(1, runtimeResults.length)).toFixed(3)),
@@ -1388,6 +1395,7 @@ async function run() {
         rankingReasonRate: Number((((runtimeMetrics.evidenceEventRankingReasonRate || 0) * 0.6) + ((answerMetrics.evidenceEventRankingReasonRate || 0) * 0.4)).toFixed(3)),
         eventScoreRate: Number((((runtimeMetrics.evidenceEventScoreRate || 0) * 0.6) + ((answerMetrics.evidenceEventScoreRate || 0) * 0.4)).toFixed(3)),
         stateSummaryRate: Number((((runtimeMetrics.evidenceStateSummaryRate || 0) * 0.6) + ((answerMetrics.evidenceStateSummaryRate || 0) * 0.4)).toFixed(3)),
+        stateConfidenceRate: Number((((runtimeMetrics.evidenceStateConfidenceRate || 0) * 0.6) + ((answerMetrics.evidenceStateConfidenceRate || 0) * 0.4)).toFixed(3)),
         stateTransitionTaxonomyRate: Number((((runtimeMetrics.evidenceStateTransitionTaxonomyRate || 0) * 0.6) + ((answerMetrics.evidenceStateTransitionTaxonomyRate || 0) * 0.4)).toFixed(3)),
         avgLatencyMs: Number((((runtimeMetrics.avgLatencyMs || 0) * 0.6) + ((answerMetrics.avgLatencyMs || 0) * 0.4)).toFixed(2))
       }
@@ -1480,8 +1488,8 @@ async function run() {
     `- Retrieve semantic hit rate: ${report.metrics.retrieve.hitRate}, strict hit rate: ${report.metrics.retrieve.strictHitRate} (p95 ${report.metrics.retrieve.p95Ms} ms)`,
     `- Retrieve mode: ${report.metrics.retrieve.mode}, retrieve limit ${report.metrics.retrieve.limit}, embedding requested ${report.metrics.retrieve.embeddingRequested ? "yes" : "no"}, embedding configured ${report.metrics.retrieve.embeddingConfigured ? "yes" : "no"}, candidate limit ${report.metrics.retrieve.embeddingCandidateLimit}, embedding model ${report.metrics.retrieve.embeddingModel || "none"}`,
     `- Retrieve explainability: ranking reasons ${report.metrics.retrieve.explainabilityRate}, reranked queries ${report.metrics.retrieve.rerankedRate}, embedding top-match ${report.metrics.retrieve.embeddingTopMatchRate}, document top-match ${report.metrics.retrieve.documentTopMatchRate}, source diversity ${report.metrics.retrieve.sourceDiversityRate}`,
-    `- Grounded response view: success ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.successRate : "n/a"}, evidence coverage ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.evidenceCoverageRate : "n/a"}, ranking reasons ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.rankingReasonRate : "n/a"}, event scores ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.eventScoreRate : "n/a"}, state summary ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.stateSummaryRate : "n/a"}, state transition taxonomy ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.stateTransitionTaxonomyRate : "n/a"}, avg latency ${report.metrics.groundedResponse.enabled ? `${report.metrics.groundedResponse.avgLatencyMs} ms` : "n/a"}`,
-    `- Answer grounding: success ${report.metrics.answer.enabled ? `${report.metrics.answer.success}/${report.metrics.answer.runs}` : "skipped"}, evidence coverage ${report.metrics.answer.enabled ? report.metrics.answer.evidenceCoverageRate : "n/a"}, ranking reasons ${report.metrics.answer.enabled ? report.metrics.answer.evidenceEventRankingReasonRate : "n/a"}, event scores ${report.metrics.answer.enabled ? report.metrics.answer.evidenceEventScoreRate : "n/a"}, state summary ${report.metrics.answer.enabled ? report.metrics.answer.evidenceStateSummaryRate : "n/a"}, avg latency ${report.metrics.answer.enabled ? `${report.metrics.answer.avgLatencyMs} ms` : "n/a"}`,
+    `- Grounded response view: success ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.successRate : "n/a"}, evidence coverage ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.evidenceCoverageRate : "n/a"}, ranking reasons ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.rankingReasonRate : "n/a"}, event scores ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.eventScoreRate : "n/a"}, state summary ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.stateSummaryRate : "n/a"}, state confidence ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.stateConfidenceRate : "n/a"}, state transition taxonomy ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.stateTransitionTaxonomyRate : "n/a"}, avg latency ${report.metrics.groundedResponse.enabled ? `${report.metrics.groundedResponse.avgLatencyMs} ms` : "n/a"}`,
+    `- Answer grounding: success ${report.metrics.answer.enabled ? `${report.metrics.answer.success}/${report.metrics.answer.runs}` : "skipped"}, evidence coverage ${report.metrics.answer.enabled ? report.metrics.answer.evidenceCoverageRate : "n/a"}, ranking reasons ${report.metrics.answer.enabled ? report.metrics.answer.evidenceEventRankingReasonRate : "n/a"}, event scores ${report.metrics.answer.enabled ? report.metrics.answer.evidenceEventScoreRate : "n/a"}, state summary ${report.metrics.answer.enabled ? report.metrics.answer.evidenceStateSummaryRate : "n/a"}, state confidence ${report.metrics.answer.enabled ? report.metrics.answer.evidenceStateConfidenceRate : "n/a"}, avg latency ${report.metrics.answer.enabled ? `${report.metrics.answer.avgLatencyMs} ms` : "n/a"}`,
     `- Digest success: ${report.metrics.digest.success}/${report.metrics.digest.runs}, consistency pass ${report.metrics.digest.consistencyPassRate}, omission warning rate ${report.metrics.digest.omissionWarningRate ?? 0}, avg latency ${report.metrics.digest.avgLatencyMs} ms`,
     `- Replay state match: ${report.metrics.replay.enabled ? (report.metrics.replay.successfulRuns ? (report.metrics.replay.stateMatch ? "yes" : "no") : `error (${report.metrics.replay.error})`) : "skipped"}${report.metrics.replay.enabled && report.metrics.replay.successfulRuns ? `, successful rebuilds ${report.metrics.replay.successfulRuns}/${report.metrics.replay.rebuildRuns}, snapshots ${report.metrics.replay.rebuildSnapshots}` : ""}`,
     `- Runtime turn success: ${report.metrics.runtime.enabled ? `${report.metrics.runtime.success}/${report.metrics.runtime.runs}` : "skipped"}, evidence coverage ${report.metrics.runtime.enabled ? report.metrics.runtime.evidenceCoverageRate : "n/a"}, avg latency ${report.metrics.runtime.enabled ? `${report.metrics.runtime.avgLatencyMs} ms` : "n/a"}`,
@@ -1541,6 +1549,7 @@ async function run() {
           `- Evidence event document-source rate: ${report.metrics.runtime.evidenceEventDocumentSourceRate ?? 0}`,
           `- Evidence state summary rate: ${report.metrics.runtime.evidenceStateSummaryRate}`,
           `- Evidence state provenance rate: ${report.metrics.runtime.evidenceStateProvenanceRate ?? 0}`,
+          `- Evidence state confidence rate: ${report.metrics.runtime.evidenceStateConfidenceRate ?? 0}`,
           `- Evidence state transition-taxonomy rate: ${report.metrics.runtime.evidenceStateTransitionTaxonomyRate ?? 0}`,
           `- Evidence recent state changes rate: ${report.metrics.runtime.evidenceRecentStateChangesRate ?? 0}`,
           `- Digest trigger rate: ${report.metrics.runtime.digestTriggerRate}`,
@@ -1558,6 +1567,7 @@ async function run() {
           `- Ranking-reason rate: ${report.metrics.groundedResponse.rankingReasonRate}`,
           `- Event score rate: ${report.metrics.groundedResponse.eventScoreRate}`,
           `- State summary rate: ${report.metrics.groundedResponse.stateSummaryRate}`,
+          `- State confidence rate: ${report.metrics.groundedResponse.stateConfidenceRate ?? 0}`,
           `- State transition-taxonomy rate: ${report.metrics.groundedResponse.stateTransitionTaxonomyRate ?? 0}`
         ]
       : ["- skipped"]),
@@ -1572,6 +1582,7 @@ async function run() {
           `- Evidence event ranking-reason rate: ${report.metrics.answer.evidenceEventRankingReasonRate}`,
           `- Evidence event score rate: ${report.metrics.answer.evidenceEventScoreRate}`,
           `- Evidence state summary rate: ${report.metrics.answer.evidenceStateSummaryRate}`,
+          `- Evidence state confidence rate: ${report.metrics.answer.evidenceStateConfidenceRate ?? 0}`,
           `- Evidence state transition-taxonomy rate: ${report.metrics.answer.evidenceStateTransitionTaxonomyRate ?? 0}`
         ]
       : ["- skipped"]),
