@@ -518,11 +518,46 @@ function diffScalar(before, after) {
   };
 }
 
+function flattenValueProvenance(entries) {
+  if (!Array.isArray(entries)) return [];
+  return entries
+    .flatMap((entry) => {
+      if (!entry || typeof entry !== "object") return [];
+      const value = typeof entry.value === "string" ? entry.value.trim() : "";
+      const refs = toStringList(entry.refs);
+      if (!value) return [];
+      return [`${value}<=${refs.sort().join("|")}`];
+    })
+    .filter(Boolean);
+}
+
+function flattenGoalProvenance(refs) {
+  const normalized = toStringList(refs);
+  return normalized.length ? [`goal<=${normalized.sort().join("|")}`] : [];
+}
+
+function flattenRecentChanges(changes) {
+  if (!Array.isArray(changes)) return [];
+  return changes
+    .map((change) => {
+      if (!change || typeof change !== "object") return "";
+      const evidence = toStringList(change.evidence ? [change.evidence] : []);
+      const field = typeof change.field === "string" ? change.field : "";
+      const action = typeof change.action === "string" ? change.action : "";
+      const value = typeof change.value === "string" ? change.value.trim() : "";
+      if (!field || !action || !value) return "";
+      return `${field}:${action}:${value}${evidence.length ? `<=${evidence.join("|")}` : ""}`;
+    })
+    .filter(Boolean);
+}
+
 function buildStateDiff(baselineState, rebuiltState) {
   const baselineStable = baselineState?.stableFacts ?? {};
   const rebuiltStable = rebuiltState?.stableFacts ?? {};
   const baselineWorking = baselineState?.workingNotes ?? {};
   const rebuiltWorking = rebuiltState?.workingNotes ?? {};
+  const baselineProvenance = baselineState?.provenance ?? {};
+  const rebuiltProvenance = rebuiltState?.provenance ?? {};
 
   return {
     goal: diffScalar(baselineStable.goal ?? null, rebuiltStable.goal ?? null),
@@ -531,6 +566,11 @@ function buildStateDiff(baselineState, rebuiltState) {
     todos: diffStringLists(baselineState?.todos, rebuiltState?.todos),
     volatileContext: diffStringLists(baselineState?.volatileContext, rebuiltState?.volatileContext),
     evidenceRefs: diffStringLists(baselineState?.evidenceRefs, rebuiltState?.evidenceRefs),
+    goalProvenance: diffStringLists(flattenGoalProvenance(baselineProvenance.goal), flattenGoalProvenance(rebuiltProvenance.goal)),
+    constraintProvenance: diffStringLists(flattenValueProvenance(baselineProvenance.constraints), flattenValueProvenance(rebuiltProvenance.constraints)),
+    decisionProvenance: diffStringLists(flattenValueProvenance(baselineProvenance.decisions), flattenValueProvenance(rebuiltProvenance.decisions)),
+    todoProvenance: diffStringLists(flattenValueProvenance(baselineProvenance.todos), flattenValueProvenance(rebuiltProvenance.todos)),
+    recentChanges: diffStringLists(flattenRecentChanges(baselineState?.recentChanges), flattenRecentChanges(rebuiltState?.recentChanges)),
     openQuestions: diffStringLists(baselineWorking.openQuestions, rebuiltWorking.openQuestions),
     risks: diffStringLists(baselineWorking.risks, rebuiltWorking.risks),
     workingContext: diffScalar(baselineWorking.context ?? null, rebuiltWorking.context ?? null)
@@ -808,6 +848,7 @@ async function run() {
     evidenceDigestSummaryRate: 0,
     evidenceEventSnippetRate: 0,
     evidenceStateSummaryRate: 0,
+    evidenceRecentStateChangesRate: 0,
     digestTriggerRate: 0,
     writeTierCounts: {},
     noteTaxonomy: {},
@@ -1056,6 +1097,7 @@ async function run() {
         hasDigestSummary: typeof evidence.digestSummary === "string" && evidence.digestSummary.length > 0,
         hasEventSnippets: Array.isArray(evidence.eventSnippets) && evidence.eventSnippets.length > 0,
         hasStateSummary: typeof evidence.stateSummary === "string" && evidence.stateSummary.length > 0,
+        hasRecentStateChanges: typeof evidence.stateSummary === "string" && evidence.stateSummary.includes("recent:"),
         digestTriggered: Boolean(res.json?.digestTriggered),
         writeTier: typeof res.json?.writeTier === "string" ? res.json.writeTier : "unknown",
         notes: Array.isArray(res.json?.notes) ? res.json.notes : []
@@ -1079,6 +1121,7 @@ async function run() {
       evidenceDigestSummaryRate: Number((runtimeResults.filter((result) => result.hasDigestSummary).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceEventSnippetRate: Number((runtimeResults.filter((result) => result.hasEventSnippets).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceStateSummaryRate: Number((runtimeResults.filter((result) => result.hasStateSummary).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      evidenceRecentStateChangesRate: Number((runtimeResults.filter((result) => result.hasRecentStateChanges).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       digestTriggerRate: Number((runtimeResults.filter((result) => result.digestTriggered).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       writeTierCounts,
       noteTaxonomy,
@@ -1229,6 +1272,7 @@ async function run() {
           `- Evidence digest summary rate: ${report.metrics.runtime.evidenceDigestSummaryRate}`,
           `- Evidence event snippet rate: ${report.metrics.runtime.evidenceEventSnippetRate}`,
           `- Evidence state summary rate: ${report.metrics.runtime.evidenceStateSummaryRate}`,
+          `- Evidence recent state changes rate: ${report.metrics.runtime.evidenceRecentStateChangesRate ?? 0}`,
           `- Digest trigger rate: ${report.metrics.runtime.digestTriggerRate}`,
           `- Write tiers: ${Object.keys(report.metrics.runtime.writeTierCounts || {}).length ? Object.entries(report.metrics.runtime.writeTierCounts).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`,
           `- Note taxonomy: ${Object.keys(report.metrics.runtime.noteTaxonomy || {}).length ? Object.entries(report.metrics.runtime.noteTaxonomy).sort((a, b) => b[1] - a[1]).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`

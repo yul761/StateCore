@@ -115,6 +115,11 @@ Replay reports include category-level state diffs for:
 - `todos`
 - `volatileContext`
 - `evidenceRefs`
+- `goalProvenance`
+- `constraintProvenance`
+- `decisionProvenance`
+- `todoProvenance`
+- `recentChanges`
 - `openQuestions`
 - `risks`
 - `workingContext`

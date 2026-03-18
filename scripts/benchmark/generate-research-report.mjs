@@ -105,7 +105,7 @@ const lines = [
   `- Latest document retention: digest ${benchmark.metrics?.digest?.goldRetention?.latestDocumentRetentionRate ?? 0}, state ${benchmark.metrics?.digest?.goldRetention?.stateLatestDocumentRetentionRate ?? 0}`,
   `- Replay metrics: state match ${benchmark.metrics?.replay?.stateMatch ? "yes" : "no"}, rebuild consistency ${benchmark.metrics?.replay?.rebuildConsistencyRate ?? 0}, cross-run divergence ${benchmark.metrics?.replay?.crossRunStateDivergenceRate ?? 0}, successful rebuilds ${benchmark.metrics?.replay?.successfulRuns ?? 0}/${benchmark.metrics?.replay?.rebuildRuns ?? 0}, rebuild snapshots ${benchmark.metrics?.replay?.rebuildSnapshots ?? 0}`,
   `- Intrusion metrics: temporary todos digest ${benchmark.metrics?.digest?.goldRetention?.temporaryTodoIntrusionRate ?? 0}, temporary todos state ${benchmark.metrics?.digest?.goldRetention?.stateTemporaryTodoIntrusionRate ?? 0}, superseded docs digest ${benchmark.metrics?.digest?.goldRetention?.supersededDocumentIntrusionRate ?? 0}, superseded docs state ${benchmark.metrics?.digest?.goldRetention?.stateSupersededDocumentIntrusionRate ?? 0}`,
-  `- Runtime metrics: success ${benchmark.metrics?.runtime?.success ?? 0}/${benchmark.metrics?.runtime?.runs ?? 0}, evidence coverage ${benchmark.metrics?.runtime?.evidenceCoverageRate ?? 0}, digest-summary ${benchmark.metrics?.runtime?.evidenceDigestSummaryRate ?? 0}, event-snippet ${benchmark.metrics?.runtime?.evidenceEventSnippetRate ?? 0}, state-summary ${benchmark.metrics?.runtime?.evidenceStateSummaryRate ?? 0}, digest trigger ${benchmark.metrics?.runtime?.digestTriggerRate ?? 0}`,
+  `- Runtime metrics: success ${benchmark.metrics?.runtime?.success ?? 0}/${benchmark.metrics?.runtime?.runs ?? 0}, evidence coverage ${benchmark.metrics?.runtime?.evidenceCoverageRate ?? 0}, digest-summary ${benchmark.metrics?.runtime?.evidenceDigestSummaryRate ?? 0}, event-snippet ${benchmark.metrics?.runtime?.evidenceEventSnippetRate ?? 0}, state-summary ${benchmark.metrics?.runtime?.evidenceStateSummaryRate ?? 0}, recent-state-changes ${benchmark.metrics?.runtime?.evidenceRecentStateChangesRate ?? 0}, digest trigger ${benchmark.metrics?.runtime?.digestTriggerRate ?? 0}`,
   `- Runtime write tiers: ${Object.entries(benchmark.metrics?.runtime?.writeTierCounts || {}).map(([name, count]) => `${name}=${count}`).join(", ") || "none"}`,
   `- Runtime note taxonomy: ${Object.entries(benchmark.metrics?.runtime?.noteTaxonomy || {}).map(([name, count]) => `${name}=${count}`).join(", ") || "none"}`,
   "",
@@ -148,6 +148,7 @@ const lines = [
         `- Superseded document intrusion delta: ${formatDelta(trend.deltaSummary?.supersededDocumentIntrusionRate ?? 0)}`,
         `- State fact retention delta: ${formatDelta(trend.deltaSummary?.stateFactRetentionRate ?? 0)}`,
         `- Runtime evidence coverage delta: ${formatDelta(trend.deltaSummary?.runtimeEvidenceCoverage ?? 0)}`,
+        `- Runtime recent-state-changes delta: ${formatDelta(trend.deltaSummary?.runtimeRecentStateChangesRate ?? 0)}`,
         `- Replay rebuild consistency delta: ${formatDelta(trend.deltaSummary?.replayRebuildConsistencyRate ?? 0)}`,
         `- Replay cross-run divergence delta: ${formatDelta(trend.deltaSummary?.replayCrossRunStateDivergenceRate ?? 0)}`,
         ""
