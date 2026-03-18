@@ -83,6 +83,7 @@ Prefer comparing:
 - runtime digest trigger rate
 - runtime write-tier distribution
 - runtime decision-note taxonomy
+- runtime override settings used in each run
 - digest contradiction and omission indicators
 - replay consistency
 

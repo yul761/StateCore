@@ -65,6 +65,7 @@ function latestBenchmarkJson() {
 function collectSummary(jsonPath) {
   const raw = readFileSync(jsonPath, "utf8");
   const data = JSON.parse(raw);
+  const runtimeOverrides = data.metrics?.runtime?.overrides ?? {};
   return {
     name: data.config?.ablationName || "unknown",
     overall: data.scores?.overall ?? 0,
@@ -78,6 +79,11 @@ function collectSummary(jsonPath) {
     runtimeEvidenceCoverageRate: data.metrics?.runtime?.evidenceCoverageRate ?? 0,
     runtimeDigestTriggerRate: data.metrics?.runtime?.digestTriggerRate ?? 0,
     runtimePolicyProfile: data.metrics?.runtime?.policyProfile ?? data.config?.runtimePolicyProfile ?? "default",
+    runtimeOverrides: {
+      recallLimit: runtimeOverrides.recallLimit ?? null,
+      promoteLongFormToDocumented: Boolean(runtimeOverrides.promoteLongFormToDocumented),
+      digestOnCandidate: Boolean(runtimeOverrides.digestOnCandidate)
+    },
     file: path.basename(jsonPath)
   };
 }
@@ -130,6 +136,7 @@ const lines = [
       `- Component scores: ingest ${s.ingest}, retrieve ${s.retrieve}, digest ${s.digest}, reminder ${s.reminder}`,
       `- Runtime: ${s.runtimeSuccess}/${s.runtimeRuns} success, evidence ${s.runtimeEvidenceCoverageRate}, digest-trigger ${s.runtimeDigestTriggerRate}`,
       `- Runtime policy profile: ${s.runtimePolicyProfile}`,
+      `- Runtime overrides: recallLimit=${s.runtimeOverrides.recallLimit ?? "default"}, promoteLongForm=${s.runtimeOverrides.promoteLongFormToDocumented ? "yes" : "no"}, digestOnCandidate=${s.runtimeOverrides.digestOnCandidate ? "yes" : "no"}`,
       `- Report: ${s.file}`,
       ""
     ].join("\n")

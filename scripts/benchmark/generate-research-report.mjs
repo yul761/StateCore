@@ -23,8 +23,12 @@ function formatTopAblations(cases = []) {
   return [...cases]
     .sort((a, b) => (b.reliability ?? 0) - (a.reliability ?? 0))
     .slice(0, 3)
-    .map((item) => `- ${item.name}: reliability ${item.reliability}, overall ${item.overall}, runtime profile ${item.runtimePolicyProfile}`)
+    .map((item) => `- ${item.name}: reliability ${item.reliability}, overall ${item.overall}, runtime profile ${item.runtimePolicyProfile}, overrides ${formatOverrideSummary(item.runtimeOverrides)}`)
     .join("\n");
+}
+
+function formatOverrideSummary(overrides = {}) {
+  return `recallLimit=${overrides.recallLimit ?? "default"}, promoteLongForm=${overrides.promoteLongFormToDocumented ? "yes" : "no"}, digestOnCandidate=${overrides.digestOnCandidate ? "yes" : "no"}`;
 }
 
 function formatRuntimeComparisons(cases = []) {
@@ -32,7 +36,7 @@ function formatRuntimeComparisons(cases = []) {
   if (!runtimeCases.length) return "- none";
   return runtimeCases
     .map((item) =>
-      `- ${item.name}: success ${item.runtimeSuccess}/${item.runtimeRuns}, evidence ${item.runtimeEvidenceCoverageRate}, digest-trigger ${item.runtimeDigestTriggerRate}, reliability ${item.reliability}`
+      `- ${item.name}: success ${item.runtimeSuccess}/${item.runtimeRuns}, evidence ${item.runtimeEvidenceCoverageRate}, digest-trigger ${item.runtimeDigestTriggerRate}, reliability ${item.reliability}, profile ${item.runtimePolicyProfile}, overrides ${formatOverrideSummary(item.runtimeOverrides)}`
     )
     .join("\n");
 }
@@ -73,6 +77,7 @@ const lines = [
   `- Environment: Node ${benchmark.environment?.node || "unknown"}, ${benchmark.environment?.platform || "unknown"}/${benchmark.environment?.arch || "unknown"}`,
   `- Benchmark config: seed ${benchmark.config?.seed ?? "unknown"}, fixture \`${benchmark.config?.fixture || "(none)"}\`, profile \`${benchmark.config?.profile || "unknown"}\``,
   `- Runtime policy profile: \`${benchmark.metrics?.runtime?.policyProfile || benchmark.config?.runtimePolicyProfile || "default"}\``,
+  `- Runtime overrides: ${formatOverrideSummary(benchmark.metrics?.runtime?.overrides || {})}`,
   ...(ablation ? [`- Ablation JSON: \`${path.basename(ablationPath)}\``] : []),
   "",
   "## Results",
