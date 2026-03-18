@@ -194,6 +194,11 @@ Controlled ablations can now compare both digest-control settings and assistant 
 node scripts/benchmark/run-ablations.mjs
 ```
 
+Generate a draft research report from recent benchmark artifacts:
+```bash
+node scripts/benchmark/generate-research-report.mjs
+```
+
 ## Research Artifacts
 - Vision and roadmap: `docs/vision-and-roadmap.md`
 - Drift definition: `docs/drift-definition.md`

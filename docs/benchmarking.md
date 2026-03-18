@@ -63,6 +63,11 @@ Document-heavy runtime benchmark:
 BENCH_FIXTURE=benchmark-fixtures/document-heavy.json BENCH_RUNTIME_POLICY_PROFILE=document-heavy pnpm benchmark
 ```
 
+Generate a research-report draft from the latest benchmark and ablation outputs:
+```bash
+node scripts/benchmark/generate-research-report.mjs
+```
+
 Replay consistency check:
 ```bash
 REPLAY_FIXTURE=benchmark-fixtures/basic.json node scripts/benchmark/run-replay-check.mjs

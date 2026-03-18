@@ -29,3 +29,5 @@ Short descriptive title of the experiment.
 - Commit hash
 - JSON report file
 - Fixture file used
+
+The repository also includes `scripts/benchmark/generate-research-report.mjs`, which generates a draft report in this general structure from recent benchmark artifacts.

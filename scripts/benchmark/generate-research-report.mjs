@@ -1,0 +1,110 @@
+#!/usr/bin/env node
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const outDir = path.join(root, process.env.BENCH_OUTPUT_DIR || "benchmark-results");
+mkdirSync(outDir, { recursive: true });
+
+function latestFile(prefix, suffix) {
+  const files = readdirSync(outDir)
+    .filter((name) => name.startsWith(prefix) && name.endsWith(suffix))
+    .map((name) => ({ name, mtime: statSync(path.join(outDir, name)).mtimeMs }))
+    .sort((a, b) => a.mtime - b.mtime);
+  return files[files.length - 1]?.name ?? null;
+}
+
+function readJsonFile(filePath) {
+  return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
+function formatTopAblations(cases = []) {
+  return [...cases]
+    .sort((a, b) => (b.reliability ?? 0) - (a.reliability ?? 0))
+    .slice(0, 3)
+    .map((item) => `- ${item.name}: reliability ${item.reliability}, overall ${item.overall}, runtime profile ${item.runtimePolicyProfile}`)
+    .join("\n");
+}
+
+function formatRuntimeComparisons(cases = []) {
+  const runtimeCases = cases.filter((item) => item.name.startsWith("runtime_"));
+  if (!runtimeCases.length) return "- none";
+  return runtimeCases
+    .map((item) =>
+      `- ${item.name}: success ${item.runtimeSuccess}/${item.runtimeRuns}, evidence ${item.runtimeEvidenceCoverageRate}, digest-trigger ${item.runtimeDigestTriggerRate}, reliability ${item.reliability}`
+    )
+    .join("\n");
+}
+
+const benchmarkName = process.env.RESEARCH_BENCHMARK_JSON || latestFile("benchmark-", ".json");
+if (!benchmarkName) {
+  throw new Error("missing_benchmark_json");
+}
+const benchmarkPath = path.isAbsolute(benchmarkName) ? benchmarkName : path.join(outDir, benchmarkName);
+if (!existsSync(benchmarkPath)) {
+  throw new Error(`benchmark_not_found:${benchmarkPath}`);
+}
+
+const ablationName = process.env.RESEARCH_ABLATION_JSON || latestFile("ablation-", ".json");
+const ablationPath = ablationName ? (path.isAbsolute(ablationName) ? ablationName : path.join(outDir, ablationName)) : null;
+
+const benchmark = readJsonFile(benchmarkPath);
+const ablation = ablationPath && existsSync(ablationPath) ? readJsonFile(ablationPath) : null;
+
+const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+const reportPath = path.join(outDir, `research-report-${stamp}.md`);
+
+const lines = [
+  "# Research Report Draft",
+  "",
+  "## Title",
+  `${benchmark.config?.ablationName ? `Ablation analysis for ${benchmark.config.ablationName}` : "Long-term memory benchmark analysis"}`,
+  "",
+  "## Abstract",
+  `This draft summarizes a benchmark run using fixture \`${benchmark.config?.fixture || "(none)"}\` under profile \`${benchmark.config?.profile || "unknown"}\`. The run produced an overall score of **${benchmark.scores?.overall ?? 0}** and a long-term memory reliability score of **${benchmark.scores?.reliability ?? 0}**.`,
+  ablation
+    ? `An accompanying ablation sweep is available and highlights the strongest variants by reliability, with runtime policy profile comparisons included.`
+    : "No ablation summary was provided for this draft.",
+  "",
+  "## Methods",
+  `- Commit: \`${benchmark.commit || "unknown"}\``,
+  `- Benchmark JSON: \`${path.basename(benchmarkPath)}\``,
+  `- Environment: Node ${benchmark.environment?.node || "unknown"}, ${benchmark.environment?.platform || "unknown"}/${benchmark.environment?.arch || "unknown"}`,
+  `- Benchmark config: seed ${benchmark.config?.seed ?? "unknown"}, fixture \`${benchmark.config?.fixture || "(none)"}\`, profile \`${benchmark.config?.profile || "unknown"}\``,
+  `- Runtime policy profile: \`${benchmark.metrics?.runtime?.policyProfile || benchmark.config?.runtimePolicyProfile || "default"}\``,
+  ...(ablation ? [`- Ablation JSON: \`${path.basename(ablationPath)}\``] : []),
+  "",
+  "## Results",
+  `- Scores: overall ${benchmark.scores?.overall ?? 0}, reliability ${benchmark.scores?.reliability ?? 0}, ingest ${benchmark.scores?.ingest ?? 0}, retrieve ${benchmark.scores?.retrieve ?? 0}, digest ${benchmark.scores?.digest ?? 0}, reminder ${benchmark.scores?.reminder ?? 0}`,
+  `- Digest metrics: success ${benchmark.metrics?.digest?.success ?? 0}/${benchmark.metrics?.digest?.runs ?? 0}, consistency ${benchmark.metrics?.digest?.consistencyPassRate ?? 0}, avg latency ${benchmark.metrics?.digest?.avgLatencyMs ?? 0} ms`,
+  `- Replay metrics: state match ${benchmark.metrics?.replay?.stateMatch ? "yes" : "no"}, rebuild snapshots ${benchmark.metrics?.replay?.rebuildSnapshots ?? 0}`,
+  `- Runtime metrics: success ${benchmark.metrics?.runtime?.success ?? 0}/${benchmark.metrics?.runtime?.runs ?? 0}, evidence coverage ${benchmark.metrics?.runtime?.evidenceCoverageRate ?? 0}, digest trigger ${benchmark.metrics?.runtime?.digestTriggerRate ?? 0}`,
+  `- Runtime write tiers: ${Object.entries(benchmark.metrics?.runtime?.writeTierCounts || {}).map(([name, count]) => `${name}=${count}`).join(", ") || "none"}`,
+  `- Runtime note taxonomy: ${Object.entries(benchmark.metrics?.runtime?.noteTaxonomy || {}).map(([name, count]) => `${name}=${count}`).join(", ") || "none"}`,
+  "",
+  ...(ablation
+    ? [
+        "## Ablation Highlights",
+        formatTopAblations(ablation.cases),
+        "",
+        "## Runtime Profile Comparison",
+        formatRuntimeComparisons(ablation.cases),
+        ""
+      ]
+    : []),
+  "## Discussion",
+  "- Interpret whether reliability moved in the same direction as overall score.",
+  "- Note whether runtime evidence coverage improved or regressed.",
+  "- Compare replay stability against digest contradiction and omission signals.",
+  ...(ablation ? ["- Explain whether runtime profile differences were larger or smaller than digest-control differences."] : []),
+  "",
+  "## Reproducibility Artifacts",
+  `- Benchmark JSON: \`${path.basename(benchmarkPath)}\``,
+  ...(ablation ? [`- Ablation JSON: \`${path.basename(ablationPath)}\``] : []),
+  `- Fixture: \`${benchmark.config?.fixture || "(none)"}\``
+];
+
+writeFileSync(reportPath, lines.join("\n"));
+// eslint-disable-next-line no-console
+console.log(`Research report draft: ${reportPath}`);

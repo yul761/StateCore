@@ -87,6 +87,16 @@ for (const entry of matrix) {
 
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const outPath = path.join(outDir, `ablation-${stamp}.md`);
+const jsonPath = path.join(outDir, `ablation-${stamp}.json`);
+const report = {
+  generatedAt: new Date().toISOString(),
+  config: {
+    seed: baseEnv.BENCH_SEED,
+    fixture: baseEnv.BENCH_FIXTURE,
+    profile: baseEnv.BENCH_PROFILE
+  },
+  cases: summaries
+};
 const lines = [
   "# Ablation Summary",
   "",
@@ -110,6 +120,9 @@ const lines = [
     ].join("\n")
   )
 ];
+writeFileSync(jsonPath, JSON.stringify(report, null, 2));
 writeFileSync(outPath, lines.join("\n"));
+// eslint-disable-next-line no-console
+console.log(`Ablation data: ${jsonPath}`);
 // eslint-disable-next-line no-console
 console.log(`Ablation summary: ${outPath}`);
