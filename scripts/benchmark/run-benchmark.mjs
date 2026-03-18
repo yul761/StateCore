@@ -29,6 +29,7 @@ const cfg = {
   events: Number(process.env.BENCH_EVENTS || 300),
   concurrency: Number(process.env.BENCH_INGEST_CONCURRENCY || 20),
   retrieveQueries: Number(process.env.BENCH_RETRIEVE_QUERIES || 12),
+  retrieveLimit: Number(process.env.BENCH_RETRIEVE_LIMIT || 20),
   runtimeRuns: Number(process.env.BENCH_RUNTIME_RUNS || 4),
   runtimePolicyProfile: process.env.BENCH_RUNTIME_POLICY_PROFILE || "default",
   runtimeRecallLimit: process.env.BENCH_RUNTIME_RECALL_LIMIT ? Number(process.env.BENCH_RUNTIME_RECALL_LIMIT) : null,
@@ -189,6 +190,7 @@ function loadFixture(fixturePath) {
     events: parsed.events,
     gold: parsed.gold ?? null,
     retrieveCases: Array.isArray(parsed.retrieveCases) ? parsed.retrieveCases : null,
+    retrieveLimit: typeof parsed.retrieveLimit === "number" ? parsed.retrieveLimit : null,
     source: fullPath
   };
 }
@@ -841,11 +843,12 @@ async function run() {
     { query: "Any blockers?", expected: "blocked", aliases: ["blocker", "constraint", "risk"] },
     { query: "What todos are pending?", expected: "todo", aliases: ["next step", "action item", "pending", "follow up"] }
   ];
+  const retrieveLimit = fixture?.retrieveLimit ?? cfg.retrieveLimit;
   const retrieveRuns = Array.from({ length: cfg.retrieveQueries }).map((_, i) => retrieveCases[i % retrieveCases.length]);
   const retrieveMode = health.ok ? deriveRetrieveModeFromHealth(health.json) : buildRetrieveModeConfig();
   const retrieveResults = [];
   for (const item of retrieveRuns) {
-    const res = await apiFetch("POST", "/memory/retrieve", { scopeId, query: item.query, limit: 20 });
+    const res = await apiFetch("POST", "/memory/retrieve", { scopeId, query: item.query, limit: retrieveLimit });
     const combined = `${res.json.digest || ""}\n${(res.json.events || []).map((e) => e.content).join("\n")}`.toLowerCase();
     retrieveResults.push({
       ok: res.ok,
@@ -863,6 +866,7 @@ async function run() {
     embeddingConfigured: retrieveMode.embeddingConfigured,
     embeddingCandidateLimit: retrieveMode.embeddingCandidateLimit,
     embeddingModel: retrieveMode.embeddingModel,
+    limit: retrieveLimit,
     total: retrieveResults.length,
     success: retrieveResults.filter((r) => r.ok).length,
     strictHitRate: Number(retrieveStrictHitRate.toFixed(3)),
@@ -1282,7 +1286,7 @@ async function run() {
     "",
     `- Ingest throughput: ${report.metrics.ingest.throughputEventsPerSec} events/s (p95 ${report.metrics.ingest.p95Ms} ms)`,
     `- Retrieve semantic hit rate: ${report.metrics.retrieve.hitRate}, strict hit rate: ${report.metrics.retrieve.strictHitRate} (p95 ${report.metrics.retrieve.p95Ms} ms)`,
-    `- Retrieve mode: ${report.metrics.retrieve.mode}, embedding requested ${report.metrics.retrieve.embeddingRequested ? "yes" : "no"}, embedding configured ${report.metrics.retrieve.embeddingConfigured ? "yes" : "no"}, candidate limit ${report.metrics.retrieve.embeddingCandidateLimit}, embedding model ${report.metrics.retrieve.embeddingModel || "none"}`,
+    `- Retrieve mode: ${report.metrics.retrieve.mode}, retrieve limit ${report.metrics.retrieve.limit}, embedding requested ${report.metrics.retrieve.embeddingRequested ? "yes" : "no"}, embedding configured ${report.metrics.retrieve.embeddingConfigured ? "yes" : "no"}, candidate limit ${report.metrics.retrieve.embeddingCandidateLimit}, embedding model ${report.metrics.retrieve.embeddingModel || "none"}`,
     `- Digest success: ${report.metrics.digest.success}/${report.metrics.digest.runs}, consistency pass ${report.metrics.digest.consistencyPassRate}, omission warning rate ${report.metrics.digest.omissionWarningRate ?? 0}, avg latency ${report.metrics.digest.avgLatencyMs} ms`,
     `- Replay state match: ${report.metrics.replay.enabled ? (report.metrics.replay.successfulRuns ? (report.metrics.replay.stateMatch ? "yes" : "no") : `error (${report.metrics.replay.error})`) : "skipped"}${report.metrics.replay.enabled && report.metrics.replay.successfulRuns ? `, successful rebuilds ${report.metrics.replay.successfulRuns}/${report.metrics.replay.rebuildRuns}, snapshots ${report.metrics.replay.rebuildSnapshots}` : ""}`,
     `- Runtime turn success: ${report.metrics.runtime.enabled ? `${report.metrics.runtime.success}/${report.metrics.runtime.runs}` : "skipped"}, evidence coverage ${report.metrics.runtime.enabled ? report.metrics.runtime.evidenceCoverageRate : "n/a"}, avg latency ${report.metrics.runtime.enabled ? `${report.metrics.runtime.avgLatencyMs} ms` : "n/a"}`,

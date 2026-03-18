@@ -73,6 +73,11 @@ Document-version drift test:
 DRIFT_RUNS=25 DRIFT_FIXTURE=benchmark-fixtures/document-version-updates.json node scripts/benchmark/run-drift.mjs
 ```
 
+Retrieval-semantic benchmark:
+```bash
+BENCH_FIXTURE=benchmark-fixtures/retrieval-semantic.json BENCH_RETRIEVE_USE_EMBEDDINGS=true pnpm benchmark
+```
+
 Document-heavy runtime benchmark:
 ```bash
 BENCH_FIXTURE=benchmark-fixtures/document-heavy.json BENCH_RUNTIME_POLICY_PROFILE=document-heavy pnpm benchmark
@@ -144,6 +149,7 @@ Outputs are written to `benchmark-results/`:
 - semantic hit rate (concept + alias grounded check)
 - strict hit rate (exact keyword check)
 - retrieval mode (`heuristic` or `hybrid`)
+- retrieve limit used for each query batch
 - whether embedding rerank was requested and whether an embedding role was configured
 - embedding candidate-limit metadata for reproducibility
 
@@ -241,6 +247,7 @@ Env values still override profile defaults.
 - `BENCH_EVENTS` (profile default)
 - `BENCH_INGEST_CONCURRENCY` (profile default)
 - `BENCH_RETRIEVE_QUERIES` (profile default)
+- `BENCH_RETRIEVE_LIMIT` (default `20`; fixture `retrieveLimit` overrides it)
 - `BENCH_RETRIEVE_USE_EMBEDDINGS` (records the intended retrieval mode in benchmark outputs; start the API with matching `RETRIEVE_USE_EMBEDDINGS`)
 - `BENCH_RETRIEVE_EMBEDDING_CANDIDATE_LIMIT` (records the intended hybrid rerank candidate limit; start the API with matching `RETRIEVE_EMBEDDING_CANDIDATE_LIMIT`)
 

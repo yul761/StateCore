@@ -1,0 +1,87 @@
+{
+  "retrieveLimit": 4,
+  "gold": {
+    "goal": [
+      "improve semantic recall without replacing heuristic retrieval"
+    ],
+    "constraints": [
+      "keep heuristic retrieval as the first-stage candidate selector",
+      "preserve evidence ids and ranking reasons"
+    ],
+    "decisions": [
+      "We decide to use embedding rerank only after heuristic candidate selection",
+      "We decide to compare retrieval modes with low result limits so ranking quality matters"
+    ],
+    "todos": [
+      "benchmark heuristic versus hybrid retrieval on semantic paraphrases",
+      "report retrieval mode metadata in benchmark outputs"
+    ]
+  },
+  "events": [
+    {
+      "type": "document",
+      "key": "doc:goal",
+      "content": "goal: improve semantic recall without replacing heuristic retrieval"
+    },
+    {
+      "type": "document",
+      "key": "doc:constraints",
+      "content": "constraint: keep heuristic retrieval as the first-stage candidate selector\nconstraint: preserve evidence ids and ranking reasons"
+    },
+    {
+      "type": "stream",
+      "content": "We decide to use embedding rerank only after heuristic candidate selection"
+    },
+    {
+      "type": "stream",
+      "content": "We decide to compare retrieval modes with low result limits so ranking quality matters"
+    },
+    {
+      "type": "stream",
+      "content": "TODO: benchmark heuristic versus hybrid retrieval on semantic paraphrases"
+    },
+    {
+      "type": "stream",
+      "content": "TODO: report retrieval mode metadata in benchmark outputs"
+    },
+    {
+      "type": "document",
+      "key": "doc:retrieval-notes",
+      "content": "Retrieval note:\nWhen someone asks about the search stack, the answer should mention that lexical recall stays in front while semantic rerank only reorders the shortlist."
+    },
+    {
+      "type": "stream",
+      "content": "Status update: similarity-based rerank should help with paraphrased lookup requests"
+    },
+    {
+      "type": "stream",
+      "content": "Noise: someone mentioned frontend polish for a future demo"
+    },
+    {
+      "type": "stream",
+      "content": "Noise: random chat about server fans and cables"
+    }
+  ],
+  "retrieveCases": [
+    {
+      "query": "How are vector-style signals used in search right now?",
+      "expected": "embedding rerank",
+      "aliases": ["semantic rerank", "heuristic candidate selection", "shortlist"]
+    },
+    {
+      "query": "What rules still constrain the retrieval stack?",
+      "expected": "heuristic retrieval",
+      "aliases": ["candidate selector", "evidence ids", "ranking reasons"]
+    },
+    {
+      "query": "What did we settle on for comparing search modes?",
+      "expected": "low result limits",
+      "aliases": ["ranking quality", "compare retrieval modes", "we decide"]
+    },
+    {
+      "query": "What work remains for semantic search benchmarking?",
+      "expected": "semantic paraphrases",
+      "aliases": ["retrieval mode metadata", "todo", "benchmark heuristic versus hybrid"]
+    }
+  ]
+}

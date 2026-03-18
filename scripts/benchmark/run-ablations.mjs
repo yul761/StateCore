@@ -83,6 +83,7 @@ function collectSummary(jsonPath) {
     retrieveEmbeddingRequested: Boolean(data.metrics?.retrieve?.embeddingRequested),
     retrieveEmbeddingConfigured: Boolean(data.metrics?.retrieve?.embeddingConfigured),
     retrieveEmbeddingCandidateLimit: data.metrics?.retrieve?.embeddingCandidateLimit ?? null,
+    retrieveLimit: data.metrics?.retrieve?.limit ?? 20,
     retrieveHitRate: data.metrics?.retrieve?.hitRate ?? 0,
     retrieveStrictHitRate: data.metrics?.retrieve?.strictHitRate ?? 0,
     digest: data.scores?.digest ?? 0,
@@ -273,7 +274,7 @@ const lines = [
           ]
         : []),
       `- Component scores: ingest ${s.ingest}, retrieve ${s.retrieve}, digest ${s.digest}, reminder ${s.reminder}`,
-      `- Retrieve detail: mode ${s.retrieveMode}, hit ${s.retrieveHitRate}, strict ${s.retrieveStrictHitRate}, embedding requested ${s.retrieveEmbeddingRequested ? "yes" : "no"}, configured ${s.retrieveEmbeddingConfigured ? "yes" : "no"}, candidate limit ${s.retrieveEmbeddingCandidateLimit ?? "default"}`,
+      `- Retrieve detail: mode ${s.retrieveMode}, retrieve limit ${s.retrieveLimit}, hit ${s.retrieveHitRate}, strict ${s.retrieveStrictHitRate}, embedding requested ${s.retrieveEmbeddingRequested ? "yes" : "no"}, configured ${s.retrieveEmbeddingConfigured ? "yes" : "no"}, candidate limit ${s.retrieveEmbeddingCandidateLimit ?? "default"}`,
       `- Digest quality: consistency ${s.digestConsistencyPassRate}, omission-warning ${s.digestOmissionWarningRate}, temporary-todo-intrusion ${s.temporaryTodoIntrusionRate}, superseded-doc-intrusion ${s.supersededDocumentIntrusionRate}`,
       `- Retention: latest-document digest ${s.latestDocumentRetentionRate}, latest-document state ${s.stateLatestDocumentRetentionRate}, state fact ${s.stateFactRetentionRate}, goal ${s.stateGoalRetentionRate}, constraints ${s.stateConstraintPreservationRate}, decisions ${s.stateDecisionContinuityRate}, todos ${s.stateTodoContinuityRate}`,
       `- Runtime: ${s.runtimeSuccess}/${s.runtimeRuns} success, evidence ${s.runtimeEvidenceCoverageRate}, digest-trigger ${s.runtimeDigestTriggerRate}`,
