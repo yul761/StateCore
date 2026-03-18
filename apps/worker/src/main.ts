@@ -23,6 +23,8 @@ const llm = workerEnv.featureLlm
       apiKey: workerEnv.modelApiKey,
       baseUrl: workerEnv.modelBaseUrl,
       model: workerEnv.modelName,
+      chatModel: workerEnv.chatModelName,
+      structuredOutputModel: workerEnv.structuredOutputModelName,
       timeoutMs: 20000
     })?.structuredOutput ?? null
   : null;

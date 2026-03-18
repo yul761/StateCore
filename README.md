@@ -123,7 +123,7 @@ curl -X POST "http://localhost:3001/telegram/webhook/set"
 ```
 
 ## FEATURE_LLM
-Set `FEATURE_LLM=true` and configure `MODEL_PROVIDER`, `MODEL_BASE_URL`, `MODEL_NAME`, and `MODEL_API_KEY` to enable `/memory/answer` and digest jobs. Legacy `OPENAI_*` variables are still accepted. If disabled, the API returns a clear error and worker jobs fail fast.
+Set `FEATURE_LLM=true` and configure `MODEL_PROVIDER`, `MODEL_BASE_URL`, `MODEL_NAME`, and `MODEL_API_KEY` to enable `/memory/answer` and digest jobs. If needed, `MODEL_CHAT_NAME` and `MODEL_STRUCTURED_OUTPUT_NAME` can override the shared default for answer/runtime vs digest workloads. Legacy `OPENAI_*` variables are still accepted. If disabled, the API returns a clear error and worker jobs fail fast.
 
 ## Digest Control Layer
 Digest is processed as a controlled pipeline (not a single LLM call):

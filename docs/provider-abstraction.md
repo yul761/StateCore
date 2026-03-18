@@ -205,6 +205,14 @@ This should support both remote and local endpoints.
 
 The model identifier used for chat or structured output requests.
 
+### `MODEL_CHAT_NAME`
+
+Optional override for chat and runtime-answer workloads. If omitted, the system falls back to `MODEL_NAME`.
+
+### `MODEL_STRUCTURED_OUTPUT_NAME`
+
+Optional override for digest and other structured-output style workloads. If omitted, the system falls back to `MODEL_NAME`.
+
 ### `MODEL_API_KEY`
 
 The credential used for providers that require bearer auth.

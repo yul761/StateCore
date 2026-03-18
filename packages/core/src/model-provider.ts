@@ -10,6 +10,9 @@ export interface ModelProviderConfig {
   apiKey?: string;
   baseUrl: string;
   model: string;
+  chatModel?: string;
+  structuredOutputModel?: string;
+  embeddingModel?: string;
   timeoutMs?: number;
 }
 
@@ -100,12 +103,20 @@ export function createChatModelClient(config: ModelProviderConfig | null | undef
 }
 
 export function createModelProvider(config: ModelProviderConfig | null | undefined): ModelProviderFactory | null {
-  const chat = createChatModelClient(config);
-  if (!chat) return null;
+  if (!config) return null;
+  const chat = createChatModelClient({
+    ...config,
+    model: config.chatModel || config.model
+  });
+  const structuredOutput = createChatModelClient({
+    ...config,
+    model: config.structuredOutputModel || config.model
+  });
+  if (!chat || !structuredOutput) return null;
   return {
-    provider: config?.provider || "openai-compatible",
+    provider: config.provider || "openai-compatible",
     chat,
-    structuredOutput: chat,
+    structuredOutput,
     embedding: null
   };
 }

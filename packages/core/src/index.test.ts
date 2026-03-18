@@ -36,6 +36,29 @@ describe("createModelProvider", () => {
     expect(provider?.structuredOutput).toBeInstanceOf(LlmClient);
     expect(provider?.embedding).toBeNull();
   });
+
+  it("supports separate chat and structured output model names", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "ok" } }] })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = createModelProvider({
+      provider: "openai-compatible",
+      baseUrl: "http://localhost:11434/v1",
+      model: "fallback-model",
+      chatModel: "chat-model",
+      structuredOutputModel: "structured-model",
+      apiKey: ""
+    });
+
+    await provider?.chat.chat([{ role: "user", content: "chat" }]);
+    await provider?.structuredOutput.chat([{ role: "user", content: "structured" }]);
+
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toContain("\"model\":\"chat-model\"");
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toContain("\"model\":\"structured-model\"");
+  });
 });
 
 describe("LlmClient", () => {

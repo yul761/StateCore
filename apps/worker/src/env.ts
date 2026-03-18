@@ -29,6 +29,8 @@ const envSchema = z.object({
   MODEL_API_KEY: z.string().optional(),
   MODEL_BASE_URL: z.string().optional(),
   MODEL_NAME: z.string().optional(),
+  MODEL_CHAT_NAME: z.string().optional(),
+  MODEL_STRUCTURED_OUTPUT_NAME: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
   OPENAI_MODEL: z.string().optional(),
@@ -60,6 +62,8 @@ const env = parsed.data;
 const toBool = (value?: string) => value === "true";
 const modelBaseUrl = env.MODEL_BASE_URL || env.OPENAI_BASE_URL || "https://api.openai.com/v1";
 const modelName = env.MODEL_NAME || env.OPENAI_MODEL || "gpt-4o-mini";
+const chatModelName = env.MODEL_CHAT_NAME || modelName;
+const structuredOutputModelName = env.MODEL_STRUCTURED_OUTPUT_NAME || modelName;
 const modelApiKey = env.MODEL_API_KEY || env.OPENAI_API_KEY || "";
 const modelProvider = env.MODEL_PROVIDER || "openai-compatible";
 const requiresApiKey = /(^https?:\/\/)?api\.openai\.com\/?/i.test(modelBaseUrl);
@@ -79,6 +83,8 @@ export const workerEnv = {
   modelApiKey,
   modelBaseUrl,
   modelName,
+  chatModelName,
+  structuredOutputModelName,
   telegramBotToken: env.TELEGRAM_BOT_TOKEN || "",
   maxRecentEvents: Number(env.DIGEST_MAX_RECENT_EVENTS || 50),
   maxDaysLookback: Number(env.DIGEST_MAX_DAYS_LOOKBACK || 14),
