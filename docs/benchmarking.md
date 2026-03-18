@@ -126,6 +126,9 @@ Outputs are written to `benchmark-results/`:
 - turn success rate
 - average turn latency
 - evidence coverage rate
+- digest-summary evidence rate
+- event-snippet evidence rate
+- state-summary evidence rate
 - digest trigger rate
 - observed write-tier distribution
 - policy profile used by the run
