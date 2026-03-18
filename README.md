@@ -172,6 +172,7 @@ BENCH_PROFILE=stress pnpm benchmark
 ```
 
 Reports are generated in `benchmark-results/` as JSON + Markdown.
+They include both the existing overall performance score and a separate long-term memory reliability score.
 
 Reproducible run example:
 ```bash

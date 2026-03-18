@@ -257,6 +257,45 @@ function scoreReminder(successRate, avgDelayMs) {
   return clamp(successScore + delayScore);
 }
 
+function scoreLongTermMemoryReliability(digestMetrics, replayMetrics) {
+  if (!digestMetrics?.enabled) return 0;
+
+  const consistencyScore = clamp((digestMetrics.consistencyPassRate || 0) * 30);
+  const retention = digestMetrics.goldRetention
+    ? (
+        (digestMetrics.goldRetention.recallGoal || 0) +
+        (digestMetrics.goldRetention.recallConstraints || 0) +
+        (digestMetrics.goldRetention.recallDecisions || 0) +
+        (digestMetrics.goldRetention.recallTodos || 0)
+      ) / 4
+    : digestMetrics.consistencyPassRate || 0;
+  const contradiction = digestMetrics.goldRetention
+    ? (
+        (digestMetrics.goldRetention.goalContradictionRate || 0) +
+        (digestMetrics.goldRetention.constraintContradictionRate || 0) +
+        (digestMetrics.goldRetention.decisionContradictionRate || 0) +
+        (digestMetrics.goldRetention.todoContradictionRate || 0)
+      ) / 4
+    : 0;
+  const retentionScore = clamp(retention * 35);
+  const contradictionScore = clamp((1 - contradiction) * 20);
+
+  let replayScore = 15;
+  if (replayMetrics?.enabled) {
+    if (!replayMetrics.success) {
+      replayScore = 0;
+    } else if (replayMetrics.stateMatch) {
+      replayScore = 15;
+    } else {
+      const totalCategories = (replayMetrics.matchedCategories?.length || 0) + (replayMetrics.mismatchedCategories?.length || 0);
+      const matchedRatio = totalCategories > 0 ? (replayMetrics.matchedCategories?.length || 0) / totalCategories : 0;
+      replayScore = clamp(matchedRatio * 15);
+    }
+  }
+
+  return clamp(consistencyScore + retentionScore + contradictionScore + replayScore);
+}
+
 function computeOverallScore(parts, featureLlm) {
   if (featureLlm) {
     return clamp(parts.ingest * 0.3 + parts.retrieve * 0.2 + parts.digest * 0.3 + parts.reminder * 0.2);
@@ -718,6 +757,7 @@ async function run() {
     ingest: Number(ingestScore.toFixed(2)),
     retrieve: Number(retrieveScore.toFixed(2)),
     digest: Number(digestScore.toFixed(2)),
+    reliability: Number(scoreLongTermMemoryReliability(report.metrics.digest, report.metrics.replay).toFixed(2)),
     reminder: Number(reminderScore.toFixed(2)),
     overall: Number(computeOverallScore({ ingest: ingestScore, retrieve: retrieveScore, digest: digestScore, reminder: reminderScore }, cfg.featureLlm).toFixed(2))
   };
@@ -752,6 +792,7 @@ async function run() {
     `- Ingest: ${report.scores.ingest}`,
     `- Retrieve: ${report.scores.retrieve}`,
     `- Digest: ${report.scores.digest}${cfg.featureLlm ? "" : " (skipped)"}`,
+    `- Long-term Memory Reliability: ${report.scores.reliability}${cfg.featureLlm ? "" : " (skipped)"}`,
     `- Reminder: ${report.scores.reminder}`,
     "",
     "## Metrics",

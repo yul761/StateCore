@@ -110,6 +110,14 @@ Weighted score:
 
 Each component score is derived from thresholds on latency/success/hit-rate.
 
+The benchmark also emits a separate `Long-term Memory Reliability` score.
+This memory-first score is distinct from the overall performance score and combines:
+
+- digest consistency
+- gold-backed retention
+- contradiction penalties
+- replay consistency
+
 ## Profiles And Tuning
 
 `BENCH_PROFILE` presets:
