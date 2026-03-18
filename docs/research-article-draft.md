@@ -177,6 +177,10 @@ Project Memory is best viewed as a research testbed: a controlled, reproducible 
 
 Retrieval‑augmented approaches (RAG, REALM, RETRO) demonstrate that an external memory can improve accuracy on knowledge‑intensive tasks, effectively trading off parametric storage for retrieval quality. Memory hierarchy strategies (e.g., MemGPT) focus on managing limited context windows by paging and prioritizing relevant fragments. Project Memory complements these lines by providing a digest‑centric pipeline with explicit constraints and reproducible evaluation, enabling controlled tests of how summarization and selection policies affect stability over time.
 
+## 9.1 Positioning and Differentiation
+
+While related work emphasizes retrieval quality or memory paging strategies, Project Memory is framed as a **reproducible systems baseline** for digest stability. The primary contribution is not a new retrieval algorithm, but an explicit control pipeline with measurable constraints (budgets, novelty thresholds, consistency checks) and a fixed evaluation protocol. This makes it possible to isolate *which* design levers most strongly affect drift and stability, and to report results that can be replicated across environments.
+
 ## 10. Practical Implications for Market Products
 
 Although Project Memory is positioned as a research artifact rather than a commercial product, its results have implications for existing memory‑enabled systems in the market. Many production assistants and enterprise copilots rely on a mixture of retrieval and summarization. The ablation findings suggest that **how much evidence is admitted** and **how aggressively novelty is filtered** can have a larger impact on stability than additional classification or reranking layers.
