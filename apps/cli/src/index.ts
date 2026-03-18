@@ -239,6 +239,36 @@ program
   });
 
 program
+  .command("turn")
+  .argument("<message>")
+  .description("Run the assistant runtime turn flow against the active scope")
+  .action(async (message: string) => {
+    const state = await apiFetch("/state");
+    if (!state.activeScopeId) {
+      // eslint-disable-next-line no-console
+      console.log("No active scope.");
+      return;
+    }
+    const result = await apiFetch("/memory/runtime/turn", {
+      method: "POST",
+      body: JSON.stringify({ scopeId: state.activeScopeId, message, source: "cli" })
+    });
+    if (result.error) {
+      // eslint-disable-next-line no-console
+      console.log(result.error);
+      return;
+    }
+    // eslint-disable-next-line no-console
+    console.log(result.answer);
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify({
+      writeTier: result.writeTier,
+      digestTriggered: result.digestTriggered,
+      evidence: result.evidence
+    }, null, 2));
+  });
+
+program
   .command("remind")
   .argument("<minutes>")
   .argument("<text>")

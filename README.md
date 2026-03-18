@@ -49,6 +49,7 @@ Optional CLI:
 pnpm dev:cli -- scopes
 pnpm dev:cli -- state
 pnpm dev:cli -- state-history
+pnpm dev:cli -- turn "What changed in the project plan?"
 ```
 
 No-LLM smoke test:
