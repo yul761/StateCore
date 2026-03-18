@@ -388,16 +388,18 @@ function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, r
   if (runtimeMetrics?.enabled) {
     const groundingQuality =
       (
-        (runtimeMetrics.evidenceCoverageRate || 0) * 0.35 +
-        (runtimeMetrics.evidenceEventRankingReasonRate || 0) * 0.3 +
+        (runtimeMetrics.evidenceCoverageRate || 0) * 0.3 +
+        (runtimeMetrics.evidenceEventRankingReasonRate || 0) * 0.25 +
         (runtimeMetrics.evidenceEventScoreRate || 0) * 0.2 +
+        (runtimeMetrics.evidenceStateConfidenceRate || 0) * 0.1 +
         (runtimeMetrics.evidenceStateTransitionTaxonomyRate || 0) * 0.15
       );
     const answerGroundingQuality = answerMetrics?.enabled
       ? (
-          (answerMetrics.evidenceCoverageRate || 0) * 0.35 +
-          (answerMetrics.evidenceEventRankingReasonRate || 0) * 0.3 +
+          (answerMetrics.evidenceCoverageRate || 0) * 0.3 +
+          (answerMetrics.evidenceEventRankingReasonRate || 0) * 0.25 +
           (answerMetrics.evidenceEventScoreRate || 0) * 0.2 +
+          (answerMetrics.evidenceStateConfidenceRate || 0) * 0.1 +
           (answerMetrics.evidenceStateTransitionTaxonomyRate || 0) * 0.15
         )
       : 1;

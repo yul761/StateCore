@@ -218,6 +218,8 @@ The benchmark now also emits state-backed counterparts for the latest protected 
 - event embedding-reason evidence rate
 - event document-source evidence rate
 - state-summary evidence rate
+- state-confidence evidence rate
+- state-transition-taxonomy evidence rate
 - digest trigger rate
 - observed write-tier distribution
 - policy profile used by the run
@@ -229,10 +231,12 @@ The benchmark now also emits state-backed counterparts for the latest protected 
 - answer event ranking-reason evidence rate
 - answer event score evidence rate
 - answer state-summary evidence rate
+- answer state-confidence evidence rate
+- answer state-transition-taxonomy evidence rate
 
 8. Grounded response view
 - combined success rate across runtime turns and answer calls
-- combined evidence coverage / ranking-reason / event-score / state-summary rates
+- combined evidence coverage / ranking-reason / event-score / state-summary / state-confidence / state-transition-taxonomy rates
 - intended as the top-level grounding view, with runtime and answer metrics as drill-downs
 - ablation and trend reports now surface this view directly in highlights so grounding regressions are easier to spot
 
@@ -254,7 +258,7 @@ This memory-first score is distinct from the overall performance score and combi
 - replay consistency
 - rebuild consistency across repeated replay runs
 - cross-run replay divergence penalties
-- runtime evidence coverage and runtime turn success
+- runtime and answer grounding quality, including state-confidence and state-transition evidence
 
 Benchmark JSON and Markdown reports also emit a reliability breakdown so changes can be attributed to:
 
