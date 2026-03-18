@@ -1,0 +1,332 @@
+# Digest State Specification
+
+This document defines the role, structure, and evolution rules for `DigestState`.
+
+`DigestState` is the protected memory state that sits between raw events and generated digests. It exists to reduce drift by giving the system a stable, structured memory representation that does not depend entirely on free-form summary text.
+
+## Purpose
+
+`DigestState` should be treated as a first-class memory artifact.
+
+Its job is to:
+
+- preserve stable facts across long-running interaction
+- separate durable memory from temporary context
+- provide deterministic input to digest generation
+- support contradiction checks
+- support replay, rebuild, and auditing
+
+Without a protected state layer, the system must repeatedly infer memory from previous digest text, which increases ambiguity and drift risk.
+
+## Current State in the Repository
+
+The current implementation stores `DigestState` with three top-level sections:
+
+- `stableFacts`
+- `workingNotes`
+- `todos`
+
+Current shape:
+
+```ts
+interface DigestState {
+  stableFacts: {
+    goal?: string;
+    constraints?: string[];
+    decisions: string[];
+  };
+  workingNotes: {
+    openQuestions?: string[];
+    risks?: string[];
+    context?: string;
+  };
+  todos: string[];
+}
+```
+
+This exists in:
+
+- `packages/core/src/digest-control.ts`
+- `packages/contracts/src/index.ts`
+
+This is already useful, but it is still an early protected-state model rather than the final intended state design.
+
+## Design Goals
+
+The long-term `DigestState` design should optimize for:
+
+- stability under repeated digesting
+- explicit separation of durable vs temporary information
+- evidence-aware updates
+- conservative overwrite behavior
+- replay and rebuild consistency
+- benchmark-friendly inspection
+
+## State Layers
+
+`DigestState` should distinguish information by durability.
+
+### 1. Stable Facts
+
+Stable facts are project-level facts that should persist until explicitly changed or superseded.
+
+Examples:
+
+- project goal
+- hard constraints
+- accepted decisions
+- durable operating assumptions
+
+Stable facts should be the hardest part of state to overwrite.
+
+### 2. Working Notes
+
+Working notes are useful but less durable than stable facts.
+
+Examples:
+
+- current risks
+- open questions
+- intermediate reasoning
+- recent project context
+
+Working notes may decay, roll forward, or be pruned more aggressively.
+
+### 3. Volatile Context
+
+Volatile context is short-lived information that helps the next few turns but should not silently become permanent memory.
+
+Examples:
+
+- temporary blockers
+- short-term priorities
+- conversational noise worth keeping briefly
+- near-term execution focus
+
+The current implementation does not yet have a formal `volatileContext` field, but the roadmap should treat it as a missing layer to add.
+
+### 4. Todos
+
+Todos are operational commitments and should remain separate from prose notes.
+
+They should not be mixed into `workingNotes.context`, because task continuity is one of the core dimensions of drift measurement.
+
+## Recommended Target Shape
+
+The roadmap target should move toward a richer state model like:
+
+```ts
+interface DigestStateV2 {
+  stableFacts: {
+    goal?: FactRecord;
+    constraints: FactRecord[];
+    decisions: DecisionRecord[];
+  };
+  workingNotes: {
+    openQuestions: NoteRecord[];
+    risks: NoteRecord[];
+  };
+  volatileContext: ContextRecord[];
+  todos: TodoRecord[];
+  evidenceRefs: EvidenceRef[];
+}
+```
+
+This document does not require that exact schema yet, but it defines the intended semantics behind it.
+
+## Why the Current Shape Is Not Enough
+
+The current shape has three practical limitations:
+
+1. It stores strings without explicit provenance.
+2. It does not clearly separate temporary context from longer-lived notes.
+3. It does not encode update policy such as confidence, superseded state, or overwrite rules.
+
+That makes it harder to answer:
+
+- why a fact was added
+- whether a fact can be replaced
+- what evidence justified a state transition
+- whether replay produced the same state for the same reasons
+
+## State Record Semantics
+
+Future state elements should carry more than text.
+
+### Fact Records
+
+A stable fact should eventually support fields such as:
+
+- canonical text
+- source evidence ids
+- confidence
+- first seen timestamp
+- last reaffirmed timestamp
+- superseded or active status
+
+### Decision Records
+
+Decisions should eventually support:
+
+- decision text
+- source evidence ids
+- decision status such as active or superseded
+- optional supersedes pointer
+- timestamp metadata
+
+### Todo Records
+
+Todos should eventually support:
+
+- todo text
+- status such as open, completed, canceled, blocked, duplicate
+- source evidence ids
+- optional owner or scope tags
+- created and updated timestamps
+
+### Note Records
+
+Working notes should eventually support:
+
+- note text
+- note kind such as risk or question
+- source evidence ids
+- recency metadata
+
+## Evolution Rules
+
+The state should evolve conservatively.
+
+### Rule 1: Prefer append over overwrite
+
+For stable facts and decisions, new evidence should usually append, reaffirm, supersede, or explicitly revoke. Silent replacement should be avoided.
+
+### Rule 2: Require stronger evidence to change stable facts
+
+A weak conversational note should not override a stable goal or hard constraint. Updates to stable facts should require explicit and stronger evidence.
+
+### Rule 3: Treat removal as a first-class operation
+
+Removing a constraint, decision, or todo should require explicit evidence rather than passive disappearance.
+
+### Rule 4: Separate durable truth from temporary context
+
+If a piece of information is only relevant for a short time, it should land in volatile context or a note layer, not in stable facts.
+
+### Rule 5: Preserve evidence linkage
+
+Every important state transition should be explainable in terms of source documents, stream events, or prior accepted state.
+
+### Rule 6: Preserve replay determinism
+
+Running the same event sequence through the same merge logic should produce the same protected state unless configuration changes.
+
+## Merge Semantics
+
+The current `protectedStateMerge()` already applies conservative behavior:
+
+- documents can set goals and contribute constraints or todos
+- decisions append rather than replace
+- constraints append when strong enough
+- todos append uniquely
+- questions and risks accumulate in capped note lists
+
+That is a solid baseline, but the next evolution should formalize four merge outcomes:
+
+1. `append`
+2. `reaffirm`
+3. `supersede`
+4. `reject`
+
+Each important incoming candidate should resolve to one of these outcomes.
+
+## Snapshot Semantics
+
+Each accepted digest should persist a snapshot of protected state.
+
+Snapshot persistence matters because it allows the system to:
+
+- avoid reconstructing state from free-form text
+- compare state transitions over time
+- audit why drift occurred
+- replay from a known state boundary
+
+The current schema already stores `DigestStateSnapshot` as JSON linked to a digest. That is the correct direction and should remain central to the architecture.
+
+## Relationship to Drift
+
+`DigestState` is one of the main mechanisms for reducing:
+
+- goal drift
+- constraint drift
+- decision drift
+- todo drift
+
+If `DigestState` is weak, digest text becomes the de facto memory source, and drift becomes harder to prevent and harder to measure.
+
+## Relationship to Consistency Checks
+
+Consistency checks should treat protected state as a guardrail.
+
+Examples:
+
+- summaries should not contradict `stableFacts.goal`
+- changes should not violate preserved constraints
+- next steps should not invent unsupported todos
+- answer generation should not override protected state without evidence
+
+As the state model becomes richer, consistency checks should use more than plain string inclusion and move toward evidence-aware comparisons.
+
+## Implementation Guidance
+
+The next implementation steps should follow this order:
+
+1. Keep the current `DigestState` shape stable enough for existing code paths.
+2. Define a versioned successor shape before expanding runtime behavior.
+3. Add provenance fields before adding more semantic categories.
+4. Add `volatileContext` and richer todo status handling.
+5. Introduce explicit supersede and rejection semantics in merge logic.
+6. Add replay tests that compare state snapshots, not just digest text.
+
+## Migration Strategy
+
+The safest migration path is incremental.
+
+### Stage 1
+
+Document the semantics of the current fields and use them consistently.
+
+### Stage 2
+
+Add optional metadata fields compatible with the current snapshot JSON format.
+
+### Stage 3
+
+Introduce richer record types and migrate merge logic to produce them.
+
+### Stage 4
+
+Update benchmarks and drift analysis to score state continuity using richer fields.
+
+## Immediate Practical Standard
+
+Until a richer schema is implemented, contributors should treat the current state fields like this:
+
+- `stableFacts.goal`: the best current project goal, changed only by explicit evidence
+- `stableFacts.constraints`: hard or durable constraints that should persist
+- `stableFacts.decisions`: decisions that should remain continuous across digests
+- `workingNotes.openQuestions`: unresolved questions worth carrying forward briefly
+- `workingNotes.risks`: active risks or blockers
+- `workingNotes.context`: limited free-form context, not a dumping ground for stable facts
+- `todos`: active action items that should remain visible until resolved
+
+## Success Criteria
+
+`DigestState` is doing its job when:
+
+- core goals remain stable across long interaction
+- constraints are not silently lost
+- decisions remain continuous or are explicitly superseded
+- todos are preserved without multiplying into noise
+- rebuilds reproduce compatible state snapshots
+- contradictions can be detected against structured state rather than loose digest text

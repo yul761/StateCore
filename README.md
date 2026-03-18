@@ -175,6 +175,7 @@ BENCH_SEED=42 BENCH_FIXTURE=benchmark-fixtures/basic.json pnpm benchmark
 ## Research Artifacts
 - Vision and roadmap: `docs/vision-and-roadmap.md`
 - Drift definition: `docs/drift-definition.md`
+- Digest state specification: `docs/digest-state.md`
 - Research overview: `docs/research-overview.md`
 - Evaluation protocol: `docs/evaluation-protocol.md`
 - Research questions: `docs/research-questions.md`
