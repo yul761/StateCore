@@ -1,29 +1,20 @@
-# Roadmap (Research Focus)
+# Roadmap
 
-## Near Term (0-2 months)
+The canonical product direction now lives in [`docs/vision-and-roadmap.md`](docs/vision-and-roadmap.md).
 
-- Define core research questions and evaluation protocol.
-- Stabilize benchmark fixtures + deterministic seeds.
-- Improve digest consistency pass rate with fixed test suites.
-- Publish baseline benchmark report with methods section.
+## Current Priority Order
 
-## Mid Term (2-4 months)
-
-- Expand benchmark suite with scenario packs and ablations.
-- Add retrieval plugin interface for vector backends (optional, BYO).
-- Add drift/audit analysis for digest state snapshots.
-- Produce a public reproducibility checklist.
-
-## Long Term (4+ months)
-
-- Memory graph primitives (entity + relation extraction as optional pipeline).
-- Formalize dataset release and licensing.
-- Multi-model evaluation harness (LLM providers, temperature, budgets).
-- Ecosystem adapters (Slack/Discord/Notion) as reference integrations.
+1. Stabilize the low-drift digest core.
+2. Make retention, drift, grounding, and replay measurable.
+3. Expose the system as a developer-friendly assistant memory runtime.
+4. Add provider abstraction and local model friendliness.
+5. Improve retrieval without sacrificing evidence and stability.
 
 ## Contribution Priorities
 
-If you want to contribute today, start with:
-1. Benchmark fixtures and deterministic evaluation.
-2. Digest consistency tests and failure analysis.
-3. Documentation for research reproducibility.
+If you want to contribute today, the highest-leverage areas are:
+
+1. Drift definitions, consistency checks, and digest failure analysis.
+2. Protected state evolution and `DigestState` structure.
+3. Benchmark fixtures, ablations, and reproducible evaluation.
+4. Assistant runtime boundaries and reference integrations.

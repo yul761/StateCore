@@ -5,9 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Latest Release](https://img.shields.io/github/v/release/yul761/ProjectMemory)](https://github.com/yul761/ProjectMemory/releases)
 
-An open-source **research-grade long-term memory engine**. It provides primitives to ingest events, produce layered digests, retrieve memory, and (optionally) answer questions grounded in that memory.
+An open-source **self-hosted long-term memory runtime**. It provides primitives to ingest events, produce layered digests, retrieve memory, and optionally answer questions grounded in that memory.
 
-This is **not** a consumer assistant app. You bring your own infrastructure and secrets via environment variables. The primary goal is reproducible evaluation of memory systems and digest reliability.
+This is **not** a consumer assistant app, model hosting platform, or generic chat shell. You bring your own infrastructure and model endpoints. The primary goal is low-drift, reproducible long-term memory for developer-built assistants.
 
 ## Quickstart in 5 minutes
 
@@ -173,6 +173,7 @@ BENCH_SEED=42 BENCH_FIXTURE=benchmark-fixtures/basic.json pnpm benchmark
 ```
 
 ## Research Artifacts
+- Vision and roadmap: `docs/vision-and-roadmap.md`
 - Research overview: `docs/research-overview.md`
 - Evaluation protocol: `docs/evaluation-protocol.md`
 - Research questions: `docs/research-questions.md`
