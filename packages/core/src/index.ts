@@ -118,6 +118,34 @@ export interface ReminderRepo {
   markSent: (reminderId: string) => Promise<void>;
 }
 
+export interface RetrieveMatch {
+  id: string;
+  sourceType: MemoryType;
+  key?: string | null;
+  heuristicScore: number;
+  recencyScore: number;
+  embeddingScore?: number;
+  finalScore: number;
+  rankingReason: string;
+}
+
+export interface RetrieveMetadata {
+  mode: "heuristic" | "hybrid";
+  embeddingRequested: boolean;
+  embeddingConfigured: boolean;
+  reranked: boolean;
+  candidateCount: number;
+  returnedCount: number;
+  embeddingCandidateLimit?: number;
+  matches: RetrieveMatch[];
+}
+
+export interface RetrieveResult {
+  digest: Digest | null;
+  events: MemoryEvent[];
+  retrieval: RetrieveMetadata;
+}
+
 export class ProjectService {
   constructor(private projects: ProjectRepo, private userState: UserStateRepo) {}
 
@@ -228,19 +256,39 @@ export class RetrieveService {
   }
 
   private scoreByQuery(query: string, content: string) {
+    return this.explainQueryScore(query, content).score;
+  }
+
+  private explainQueryScore(query: string, content: string) {
     const queryTokens = new Set(this.tokenize(query));
+    const matchedConcepts = new Set<string>();
     for (const [concept, aliases] of Object.entries(this.queryAliases)) {
       if (!aliases.some((alias) => query.toLowerCase().includes(alias))) continue;
       queryTokens.add(concept);
+      matchedConcepts.add(concept);
       for (const alias of aliases) {
         for (const token of this.tokenize(alias)) queryTokens.add(token);
       }
     }
-    if (!queryTokens.size) return 0;
+    if (!queryTokens.size) {
+      return {
+        score: 0,
+        matchedTerms: [],
+        matchedConcepts: [...matchedConcepts],
+        phraseBoostApplied: false
+      };
+    }
     const contentTokens = this.tokenize(content);
-    const overlap = contentTokens.filter((token) => queryTokens.has(token)).length;
-    const phraseBoost = [...queryTokens].some((token) => content.toLowerCase().includes(token)) ? 0.15 : 0;
-    return Math.min(1, overlap / queryTokens.size + phraseBoost);
+    const matchedTerms = [...new Set(contentTokens.filter((token) => queryTokens.has(token)))];
+    const overlap = matchedTerms.length;
+    const phraseBoostApplied = [...queryTokens].some((token) => content.toLowerCase().includes(token));
+    const phraseBoost = phraseBoostApplied ? 0.15 : 0;
+    return {
+      score: Math.min(1, overlap / queryTokens.size + phraseBoost),
+      matchedTerms,
+      matchedConcepts: [...matchedConcepts],
+      phraseBoostApplied
+    };
   }
 
   private cosineSimilarity(a: number[], b: number[]) {
@@ -259,7 +307,17 @@ export class RetrieveService {
 
   private async rerankWithEmbeddings(
     query: string,
-    ranked: Array<{ event: MemoryEvent; score: number; recency: number }>
+    ranked: Array<{
+      event: MemoryEvent;
+      score: number;
+      recency: number;
+      matchedTerms: string[];
+      matchedConcepts: string[];
+      phraseBoostApplied: boolean;
+      embeddingScore?: number;
+      finalScore?: number;
+      reranked?: boolean;
+    }>
   ) {
     if (!this.options?.useEmbeddingRerank || !this.options.embeddingModel || !ranked.length) {
       return ranked;
@@ -275,21 +333,27 @@ export class RetrieveService {
         return ranked;
       }
 
+      const originalOrder = new Map(topCandidates.map((item, index) => [item.event.id, index]));
       const rerankedTop = topCandidates
         .map((item, index) => {
           const embeddingScore = this.cosineSimilarity(queryVector, contentVectors[index]);
+          const finalScore = embeddingScore * 0.55 + item.score * 0.25 + item.recency * 0.2;
           return {
             ...item,
-            embeddingScore
+            embeddingScore,
+            finalScore
           };
         })
         .sort((a, b) => {
-          const combinedA = a.embeddingScore * 0.55 + a.score * 0.25 + a.recency * 0.2;
-          const combinedB = b.embeddingScore * 0.55 + b.score * 0.25 + b.recency * 0.2;
+          const combinedA = a.finalScore ?? 0;
+          const combinedB = b.finalScore ?? 0;
           if (combinedB !== combinedA) return combinedB - combinedA;
           return b.event.createdAt.getTime() - a.event.createdAt.getTime();
         })
-        .map(({ embeddingScore: _, ...item }) => item);
+        .map((item, index) => ({
+          ...item,
+          reranked: (originalOrder.get(item.event.id) ?? index) !== index
+        }));
 
       return [...rerankedTop, ...ranked.slice(candidateLimit)];
     } catch {
@@ -310,11 +374,17 @@ export class RetrieveService {
     const timeRange = Math.max(1, newestTs - oldestTs);
 
     const ranked = events.items
-      .map((event) => ({
-        event,
-        score: this.scoreByQuery(query, event.content),
-        recency: (event.createdAt.getTime() - oldestTs) / timeRange
-      }))
+      .map((event) => {
+        const heuristic = this.explainQueryScore(query, event.content);
+        return {
+          event,
+          score: heuristic.score,
+          recency: (event.createdAt.getTime() - oldestTs) / timeRange,
+          matchedTerms: heuristic.matchedTerms,
+          matchedConcepts: heuristic.matchedConcepts,
+          phraseBoostApplied: heuristic.phraseBoostApplied
+        };
+      })
       .sort((a, b) => {
         const combinedA = a.score * 0.8 + a.recency * 0.2;
         const combinedB = b.score * 0.8 + b.recency * 0.2;
@@ -323,12 +393,44 @@ export class RetrieveService {
       });
 
     const reranked = await this.rerankWithEmbeddings(query, ranked);
+    const matches = reranked.slice(0, limit).map((item) => {
+      const reasonParts = [
+        item.embeddingScore !== undefined ? "embedding_rerank" : "heuristic_rank",
+        item.matchedConcepts.length ? `concepts=${item.matchedConcepts.join("|")}` : null,
+        item.matchedTerms.length ? `terms=${item.matchedTerms.slice(0, 5).join("|")}` : null,
+        item.phraseBoostApplied ? "phrase_boost" : null,
+        item.reranked ? "position_changed" : null
+      ].filter(Boolean);
+      const finalScore = item.embeddingScore !== undefined
+        ? item.finalScore ?? (item.embeddingScore * 0.55 + item.score * 0.25 + item.recency * 0.2)
+        : item.score * 0.8 + item.recency * 0.2;
+      return {
+        id: item.event.id,
+        sourceType: item.event.type ?? "stream",
+        key: item.event.key ?? null,
+        heuristicScore: Number(item.score.toFixed(3)),
+        recencyScore: Number(item.recency.toFixed(3)),
+        ...(item.embeddingScore !== undefined ? { embeddingScore: Number(item.embeddingScore.toFixed(3)) } : {}),
+        finalScore: Number(finalScore.toFixed(3)),
+        rankingReason: reasonParts.join(", ")
+      };
+    });
 
     return {
       digest,
       events: reranked
         .map((item) => item.event)
-        .slice(0, limit)
+        .slice(0, limit),
+      retrieval: {
+        mode: this.options?.useEmbeddingRerank && this.options?.embeddingModel ? "hybrid" : "heuristic",
+        embeddingRequested: Boolean(this.options?.useEmbeddingRerank),
+        embeddingConfigured: Boolean(this.options?.embeddingModel),
+        reranked: matches.some((item) => item.rankingReason.includes("embedding_rerank")),
+        candidateCount: ranked.length,
+        returnedCount: matches.length,
+        embeddingCandidateLimit: this.options?.embeddingModel ? Math.min(this.options.embeddingCandidateLimit ?? 24, ranked.length) : undefined,
+        matches
+      }
     };
   }
 }

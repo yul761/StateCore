@@ -31,7 +31,13 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
 ## Retrieve
 - **POST /memory/retrieve**
   - body: `{ scopeId, query, limit? }`
-  - returns last digest + recent events (simple baseline, query currently not used for ranking)
+  - returns last digest + recent events
+  - `retrieval` metadata now includes:
+    - `mode`: `heuristic` or `hybrid`
+    - `embeddingRequested` / `embeddingConfigured`
+    - `candidateCount` / `returnedCount`
+    - `matches[]` with `sourceType`, scores, and `rankingReason`
+  - hybrid mode keeps heuristic candidate selection and only reranks the shortlist when an embedding provider role is configured
 
 ## Answer (LLM optional)
 - **POST /memory/answer**
@@ -61,6 +67,8 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
 
 ## Health
 - **GET /health**
+  - returns `status`
+  - also exposes active retrieval config and model-role names for benchmark/reproducibility tooling
 
 ## Example (curl)
 ```bash

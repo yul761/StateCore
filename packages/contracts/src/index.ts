@@ -110,7 +110,26 @@ export const RetrieveOutput = z.object({
       content: z.string(),
       createdAt: z.string()
     })
-  )
+  ),
+  retrieval: z.object({
+    mode: z.enum(["heuristic", "hybrid"]),
+    embeddingRequested: z.boolean(),
+    embeddingConfigured: z.boolean(),
+    reranked: z.boolean(),
+    candidateCount: z.number().int().min(0),
+    returnedCount: z.number().int().min(0),
+    embeddingCandidateLimit: z.number().int().min(1).optional(),
+    matches: z.array(z.object({
+      id: z.string().uuid(),
+      sourceType: MemoryType,
+      key: z.string().nullable().optional(),
+      heuristicScore: z.number(),
+      recencyScore: z.number(),
+      embeddingScore: z.number().optional(),
+      finalScore: z.number(),
+      rankingReason: z.string()
+    }))
+  }).optional()
 });
 
 export const AnswerInput = z.object({
@@ -195,7 +214,20 @@ export const ReminderCancelOutput = z.object({
 });
 
 export const HealthOutput = z.object({
-  status: z.literal("ok")
+  status: z.literal("ok"),
+  featureLlm: z.boolean().optional(),
+  retrieve: z.object({
+    useEmbeddings: z.boolean(),
+    embeddingCandidateLimit: z.number().int().min(1)
+  }).optional(),
+  model: z.object({
+    provider: z.string(),
+    model: z.string(),
+    baseUrl: z.string(),
+    chatModel: z.string(),
+    structuredOutputModel: z.string(),
+    embeddingModel: z.string().nullable()
+  }).optional()
 });
 
 // Internal digest control layer models (not API payloads)

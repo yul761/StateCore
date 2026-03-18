@@ -236,7 +236,8 @@ export class MemoryController {
         id: event.id,
         content: event.content,
         createdAt: event.createdAt.toISOString()
-      }))
+      })),
+      retrieval: result.retrieval
     };
   }
 

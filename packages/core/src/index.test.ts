@@ -210,5 +210,8 @@ describe("RetrieveService", () => {
 
     const result = await service.retrieve("scope-1", 2, "replay stability");
     expect(result.events[0]?.id).toBe("evt-2");
+    expect(result.retrieval.mode).toBe("hybrid");
+    expect(result.retrieval.reranked).toBe(true);
+    expect(result.retrieval.matches[0]?.rankingReason).toContain("embedding_rerank");
   });
 });
