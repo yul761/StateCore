@@ -94,11 +94,20 @@ const lines = [
   `Fixture: ${baseEnv.BENCH_FIXTURE}`,
   `Profile: ${baseEnv.BENCH_PROFILE}`,
   "",
-  "## Scores",
+  "## Summary",
   "",
   ...summaries.map(
-    (s) =>
-      `- ${s.name}: overall ${s.overall}, reliability ${s.reliability} (ingest ${s.ingest}, retrieve ${s.retrieve}, digest ${s.digest}, reminder ${s.reminder}; runtime ${s.runtimeSuccess}/${s.runtimeRuns}, evidence ${s.runtimeEvidenceCoverageRate}, digest-trigger ${s.runtimeDigestTriggerRate}, profile ${s.runtimePolicyProfile}) → ${s.file}`
+    (s) => [
+      `### ${s.name}`,
+      "",
+      `- Overall: ${s.overall}`,
+      `- Reliability: ${s.reliability}`,
+      `- Component scores: ingest ${s.ingest}, retrieve ${s.retrieve}, digest ${s.digest}, reminder ${s.reminder}`,
+      `- Runtime: ${s.runtimeSuccess}/${s.runtimeRuns} success, evidence ${s.runtimeEvidenceCoverageRate}, digest-trigger ${s.runtimeDigestTriggerRate}`,
+      `- Runtime policy profile: ${s.runtimePolicyProfile}`,
+      `- Report: ${s.file}`,
+      ""
+    ].join("\n")
   )
 ];
 writeFileSync(outPath, lines.join("\n"));
