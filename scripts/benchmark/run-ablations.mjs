@@ -20,7 +20,9 @@ const matrix = [
   { name: "high_novelty", env: { DIGEST_NOVELTY_THRESHOLD: "0.3" } },
   { name: "low_novelty", env: { DIGEST_NOVELTY_THRESHOLD: "0.05" } },
   { name: "small_budget", env: { DIGEST_EVENT_BUDGET_TOTAL: "20", DIGEST_EVENT_BUDGET_STREAM: "15", DIGEST_EVENT_BUDGET_DOCS: "5" } },
-  { name: "large_budget", env: { DIGEST_EVENT_BUDGET_TOTAL: "60", DIGEST_EVENT_BUDGET_STREAM: "45", DIGEST_EVENT_BUDGET_DOCS: "15" } }
+  { name: "large_budget", env: { DIGEST_EVENT_BUDGET_TOTAL: "60", DIGEST_EVENT_BUDGET_STREAM: "45", DIGEST_EVENT_BUDGET_DOCS: "15" } },
+  { name: "runtime_conservative", env: { BENCH_RUNTIME_POLICY_PROFILE: "conservative" } },
+  { name: "runtime_document_heavy", env: { BENCH_RUNTIME_POLICY_PROFILE: "document-heavy" } }
 ];
 
 function runCase(entry) {
@@ -51,10 +53,16 @@ function collectSummary(jsonPath) {
   return {
     name: data.config?.ablationName || "unknown",
     overall: data.scores?.overall ?? 0,
+    reliability: data.scores?.reliability ?? 0,
     ingest: data.scores?.ingest ?? 0,
     retrieve: data.scores?.retrieve ?? 0,
     digest: data.scores?.digest ?? 0,
     reminder: data.scores?.reminder ?? 0,
+    runtimeSuccess: data.metrics?.runtime?.success ?? 0,
+    runtimeRuns: data.metrics?.runtime?.runs ?? 0,
+    runtimeEvidenceCoverageRate: data.metrics?.runtime?.evidenceCoverageRate ?? 0,
+    runtimeDigestTriggerRate: data.metrics?.runtime?.digestTriggerRate ?? 0,
+    runtimePolicyProfile: data.metrics?.runtime?.policyProfile ?? data.config?.runtimePolicyProfile ?? "default",
     file: path.basename(jsonPath)
   };
 }
@@ -90,7 +98,7 @@ const lines = [
   "",
   ...summaries.map(
     (s) =>
-      `- ${s.name}: overall ${s.overall} (ingest ${s.ingest}, retrieve ${s.retrieve}, digest ${s.digest}, reminder ${s.reminder}) → ${s.file}`
+      `- ${s.name}: overall ${s.overall}, reliability ${s.reliability} (ingest ${s.ingest}, retrieve ${s.retrieve}, digest ${s.digest}, reminder ${s.reminder}; runtime ${s.runtimeSuccess}/${s.runtimeRuns}, evidence ${s.runtimeEvidenceCoverageRate}, digest-trigger ${s.runtimeDigestTriggerRate}, profile ${s.runtimePolicyProfile}) → ${s.file}`
   )
 ];
 writeFileSync(outPath, lines.join("\n"));

@@ -184,6 +184,11 @@ Reproducible run example:
 BENCH_SEED=42 BENCH_FIXTURE=benchmark-fixtures/basic.json pnpm benchmark
 ```
 
+Controlled ablations can now compare both digest-control settings and assistant runtime policy profiles:
+```bash
+node scripts/benchmark/run-ablations.mjs
+```
+
 ## Research Artifacts
 - Vision and roadmap: `docs/vision-and-roadmap.md`
 - Drift definition: `docs/drift-definition.md`
