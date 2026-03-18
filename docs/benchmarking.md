@@ -29,6 +29,11 @@ Run ablations (controlled variable sweeps):
 node scripts/benchmark/run-ablations.mjs
 ```
 
+Run drift test (50 rounds default):
+```bash
+DRIFT_RUNS=50 DRIFT_FIXTURE=benchmark-fixtures/decision-heavy.json node scripts/benchmark/run-drift.mjs
+```
+
 Outputs are written to `benchmark-results/`:
 - `benchmark-*.json`
 - `benchmark-*.md`
