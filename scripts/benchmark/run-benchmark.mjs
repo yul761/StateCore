@@ -142,9 +142,60 @@ function loadFixture(fixturePath) {
   }
   return {
     events: parsed.events,
+    gold: parsed.gold ?? null,
     retrieveCases: Array.isArray(parsed.retrieveCases) ? parsed.retrieveCases : null,
     source: fullPath
   };
+}
+
+function parseGoldFacts(events) {
+  const goal = [];
+  const constraints = [];
+  const decisions = [];
+  const todos = [];
+
+  for (const event of events) {
+    const text = String(event.content || "");
+    const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+    for (const line of lines) {
+      if (/^goal\s*:/i.test(line)) goal.push(line.replace(/^goal\s*:\s*/i, "").trim());
+      if (/^constraint\s*:/i.test(line)) constraints.push(line.replace(/^constraint\s*:\s*/i, "").trim());
+      if (/^todo\s*:/i.test(line)) todos.push(line.replace(/^todo\s*:\s*/i, "").trim());
+    }
+    if (/\b(decide|decision|we will|agreed)\b/i.test(text)) {
+      decisions.push(text.trim());
+    }
+  }
+
+  const uniq = (items) => [...new Set(items.filter(Boolean))];
+  return {
+    goal: uniq(goal),
+    constraints: uniq(constraints),
+    decisions: uniq(decisions),
+    todos: uniq(todos),
+    contradictions: { goal: [], constraints: [], decisions: [], todos: [] }
+  };
+}
+
+function loadGoldFacts(fixture) {
+  if (!fixture) return null;
+  if (fixture.gold && typeof fixture.gold === "object") {
+    return {
+      goal: Array.isArray(fixture.gold.goal) ? fixture.gold.goal : [],
+      constraints: Array.isArray(fixture.gold.constraints) ? fixture.gold.constraints : [],
+      decisions: Array.isArray(fixture.gold.decisions) ? fixture.gold.decisions : [],
+      todos: Array.isArray(fixture.gold.todos) ? fixture.gold.todos : [],
+      contradictions: fixture.gold.contradictions && typeof fixture.gold.contradictions === "object"
+        ? {
+            goal: Array.isArray(fixture.gold.contradictions.goal) ? fixture.gold.contradictions.goal : [],
+            constraints: Array.isArray(fixture.gold.contradictions.constraints) ? fixture.gold.contradictions.constraints : [],
+            decisions: Array.isArray(fixture.gold.contradictions.decisions) ? fixture.gold.contradictions.decisions : [],
+            todos: Array.isArray(fixture.gold.contradictions.todos) ? fixture.gold.contradictions.todos : []
+          }
+        : { goal: [], constraints: [], decisions: [], todos: [] }
+    };
+  }
+  return parseGoldFacts(fixture.events);
 }
 
 function generateEvents(total, rng) {
@@ -252,6 +303,20 @@ function classifyDigestIssues(digest) {
   };
 }
 
+function factRecall(text, facts) {
+  if (!facts.length) return 1;
+  const normalized = normalizeText(text);
+  const hits = facts.filter((item) => normalized.includes(normalizeText(item))).length;
+  return hits / facts.length;
+}
+
+function contradictionRate(text, contradictions) {
+  if (!contradictions.length) return 0;
+  const normalized = normalizeText(text);
+  const hits = contradictions.filter((item) => normalized.includes(normalizeText(item))).length;
+  return hits / contradictions.length;
+}
+
 function containsAny(text, terms) {
   const normalized = normalizeText(text);
   return terms.some((term) => normalized.includes(normalizeText(term).trim()));
@@ -322,8 +387,10 @@ async function run() {
 
   const rng = mulberry32(cfg.seed);
   const fixture = loadFixture(cfg.fixture);
+  const goldFacts = loadGoldFacts(fixture);
   if (fixture?.source) {
     report.notes.push(`Using fixture: ${fixture.source}`);
+    if (fixture.gold) report.notes.push("Fixture includes explicit gold labels.");
   }
   const events = fixture?.events ?? generateEvents(cfg.events, rng);
   const ingestStart = performance.now();
@@ -380,13 +447,15 @@ async function run() {
     success: 0,
     consistencyPassRate: 0,
     avgLatencyMs: 0,
-    failureTaxonomy: {}
+    failureTaxonomy: {},
+    goldRetention: null
   };
 
   if (cfg.featureLlm) {
     const durations = [];
     const consistencyPass = [];
     const failureTaxonomy = {};
+    const goldRetentionRuns = [];
     for (let i = 0; i < cfg.digestRuns; i += 1) {
       const before = await apiFetch("GET", `/memory/digests?scopeId=${scopeId}&limit=5`);
       const beforeCount = (before.json.items || []).length;
@@ -408,14 +477,45 @@ async function run() {
       if (!classified.valid) {
         for (const issue of classified.issues) incrementCounter(failureTaxonomy, issue);
       }
+
+      if (goldFacts) {
+        const combined = [
+          String(digest.summary || ""),
+          String(digest.changes || ""),
+          ...(Array.isArray(digest.nextSteps) ? digest.nextSteps : [])
+        ].join("\n");
+        goldRetentionRuns.push({
+          recallGoal: factRecall(combined, goldFacts.goal),
+          recallConstraints: factRecall(combined, goldFacts.constraints),
+          recallDecisions: factRecall(combined, goldFacts.decisions),
+          recallTodos: factRecall(combined, goldFacts.todos),
+          goalContradictionRate: contradictionRate(combined, goldFacts.contradictions.goal),
+          constraintContradictionRate: contradictionRate(combined, goldFacts.contradictions.constraints),
+          decisionContradictionRate: contradictionRate(combined, goldFacts.contradictions.decisions),
+          todoContradictionRate: contradictionRate(combined, goldFacts.contradictions.todos)
+        });
+      }
     }
+    const goldRetention = goldRetentionRuns.length
+      ? {
+          recallGoal: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallGoal, 0) / goldRetentionRuns.length).toFixed(3)),
+          recallConstraints: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallConstraints, 0) / goldRetentionRuns.length).toFixed(3)),
+          recallDecisions: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallDecisions, 0) / goldRetentionRuns.length).toFixed(3)),
+          recallTodos: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallTodos, 0) / goldRetentionRuns.length).toFixed(3)),
+          goalContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.goalContradictionRate, 0) / goldRetentionRuns.length).toFixed(3)),
+          constraintContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.constraintContradictionRate, 0) / goldRetentionRuns.length).toFixed(3)),
+          decisionContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.decisionContradictionRate, 0) / goldRetentionRuns.length).toFixed(3)),
+          todoContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.todoContradictionRate, 0) / goldRetentionRuns.length).toFixed(3))
+        }
+      : null;
     digestMetrics = {
       enabled: true,
       runs: cfg.digestRuns,
       success: durations.length,
       consistencyPassRate: Number((consistencyPass.filter(Boolean).length / Math.max(1, consistencyPass.length)).toFixed(3)),
       avgLatencyMs: Number((durations.reduce((a, b) => a + b, 0) / Math.max(1, durations.length)).toFixed(2)),
-      failureTaxonomy
+      failureTaxonomy,
+      goldRetention
     };
   } else {
     report.notes.push("FEATURE_LLM=false; digest/answer benchmarking skipped.");
@@ -494,6 +594,12 @@ async function run() {
     `- Retrieve semantic hit rate: ${report.metrics.retrieve.hitRate}, strict hit rate: ${report.metrics.retrieve.strictHitRate} (p95 ${report.metrics.retrieve.p95Ms} ms)`,
     `- Digest success: ${report.metrics.digest.success}/${report.metrics.digest.runs}, consistency pass ${report.metrics.digest.consistencyPassRate}, avg latency ${report.metrics.digest.avgLatencyMs} ms`,
     `- Reminder sent: ${report.metrics.reminder.success === 1 ? "yes" : "no"}, delay ${report.metrics.reminder.delayMs} ms`,
+    ...(report.metrics.digest.goldRetention
+      ? [
+          `- Digest gold recall: goal ${report.metrics.digest.goldRetention.recallGoal}, constraints ${report.metrics.digest.goldRetention.recallConstraints}, decisions ${report.metrics.digest.goldRetention.recallDecisions}, todos ${report.metrics.digest.goldRetention.recallTodos}`,
+          `- Digest contradiction rates: goal ${report.metrics.digest.goldRetention.goalContradictionRate}, constraints ${report.metrics.digest.goldRetention.constraintContradictionRate}, decisions ${report.metrics.digest.goldRetention.decisionContradictionRate}, todos ${report.metrics.digest.goldRetention.todoContradictionRate}`
+        ]
+      : []),
     "",
     "## Digest Failure Taxonomy",
     ...(cfg.featureLlm
