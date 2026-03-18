@@ -103,6 +103,10 @@ Definition:
 
 The fraction of active todos that remain represented correctly until they are completed, canceled, or superseded.
 
+Recommended stress fixture:
+
+- `benchmark-fixtures/todo-pileup.json` for distinguishing durable roadmap todos from short-lived execution cleanup tasks
+
 ## 3. Drift Metrics
 
 Drift metrics measure whether the memory system changes content in unsupported or harmful ways.
@@ -132,6 +136,14 @@ The rate at which accepted decisions are contradicted, silently replaced, or los
 Definition:
 
 The rate at which todos disappear incorrectly, duplicate, or become detached from supported state.
+
+### Temporary Todo Intrusion Rate
+
+Definition:
+
+The rate at which short-lived execution todos appear in digest output or drift summaries as if they were durable roadmap tasks.
+
+This is especially useful for fixtures such as `benchmark-fixtures/todo-pileup.json`.
 
 ### Digest Contradiction Rate
 

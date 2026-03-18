@@ -32,6 +32,8 @@ Fixture files may include explicit `gold` labels for:
 
 Drift benchmarks will prefer these labels when present and fall back to parsing event text otherwise.
 Drift reports include per-category omission and contradiction taxonomy summaries when gold labels are available.
+`todo-pileup.json` is intended to stress todo continuity when durable roadmap tasks are mixed with many short-lived cleanup tasks.
+When a fixture provides `gold.transientTodos`, drift reports also emit a `temporaryTodoIntrusionRate`.
 
 Run ablations (controlled variable sweeps):
 ```bash
@@ -56,6 +58,11 @@ DRIFT_RUNS=25 DRIFT_FIXTURE=benchmark-fixtures/contradiction-injected.json node 
 Goal-evolution drift test:
 ```bash
 DRIFT_RUNS=25 DRIFT_FIXTURE=benchmark-fixtures/goal-evolution.json node scripts/benchmark/run-drift.mjs
+```
+
+Todo-pileup drift test:
+```bash
+DRIFT_RUNS=25 DRIFT_FIXTURE=benchmark-fixtures/todo-pileup.json node scripts/benchmark/run-drift.mjs
 ```
 
 Document-heavy runtime benchmark:

@@ -81,6 +81,7 @@ function parseGoldFacts(events) {
   const constraints = [];
   const decisions = [];
   const todos = [];
+  const allTodos = [];
 
   for (const event of events) {
     const text = String(event.content || "");
@@ -88,10 +89,17 @@ function parseGoldFacts(events) {
     for (const line of lines) {
       if (/^goal\s*:/i.test(line)) goal.push(line.replace(/^goal\s*:\s*/i, "").trim());
       if (/^constraint\s*:/i.test(line)) constraints.push(line.replace(/^constraint\s*:\s*/i, "").trim());
-      if (/^todo\s*:/i.test(line)) todos.push(line.replace(/^todo\s*:\s*/i, "").trim());
+      if (/^todo\s*:/i.test(line)) {
+        const todo = line.replace(/^todo\s*:\s*/i, "").trim();
+        todos.push(todo);
+        allTodos.push(todo);
+      }
     }
     if (/\b(decide|decision|we will|agreed)\b/i.test(text)) {
       decisions.push(text.trim());
+    }
+    if (/^todo\s*:/i.test(text.trim())) {
+      allTodos.push(text.replace(/^todo\s*:\s*/i, "").trim());
     }
   }
 
@@ -100,7 +108,8 @@ function parseGoldFacts(events) {
     goal: uniq(goal),
     constraints: uniq(constraints),
     decisions: uniq(decisions),
-    todos: uniq(todos)
+    todos: uniq(todos),
+    transientTodos: uniq(allTodos.filter((item) => !todos.includes(item)))
   };
 }
 
@@ -111,6 +120,7 @@ function loadGoldFacts(fixture) {
       constraints: Array.isArray(fixture.gold.constraints) ? fixture.gold.constraints : [],
       decisions: Array.isArray(fixture.gold.decisions) ? fixture.gold.decisions : [],
       todos: Array.isArray(fixture.gold.todos) ? fixture.gold.todos : [],
+      transientTodos: Array.isArray(fixture.gold.transientTodos) ? fixture.gold.transientTodos : [],
       contradictions: fixture.gold.contradictions && typeof fixture.gold.contradictions === "object"
         ? {
             goal: Array.isArray(fixture.gold.contradictions.goal) ? fixture.gold.contradictions.goal : [],
@@ -281,6 +291,12 @@ async function run() {
             .reduce((sum, m) => sum + (m.todoContradictionRate ?? 0), 0) / Math.max(1, successful.length)
         ).toFixed(3)
       ),
+      temporaryTodoIntrusionRate: Number(
+        (
+          successful
+            .reduce((sum, m) => sum + (m.temporaryTodoIntrusionRate ?? 0), 0) / Math.max(1, successful.length)
+        ).toFixed(3)
+      ),
       recallSlope: Number(linearSlope(recalls).toFixed(6)),
       repeatedChangeRate: Number(
         (report.metrics.filter((m) => m.ok && m.repeatedChanges).length / Math.max(1, report.metrics.length)).toFixed(3)
@@ -312,6 +328,7 @@ async function run() {
       `- Constraint contradiction rate: ${report.summary.constraintContradictionRate}`,
       `- Decision contradiction rate: ${report.summary.decisionContradictionRate}`,
       `- Todo contradiction rate: ${report.summary.todoContradictionRate}`,
+      `- Temporary todo intrusion rate: ${report.summary.temporaryTodoIntrusionRate}`,
       `- Recall slope: ${report.summary.recallSlope}`,
       `- Repeated change rate: ${report.summary.repeatedChangeRate}`,
       "",
@@ -365,6 +382,9 @@ async function run() {
     const decisionContradictionRate = contradictionRate(combined, gold.contradictions.decisions);
     const todoContradictionRate = contradictionRate(combined, gold.contradictions.todos);
     const avgRecall = (recallGoal + recallConstraints + recallDecisions + recallTodos) / 4;
+    const temporaryTodoIntrusionRate = gold.transientTodos.length
+      ? Number((countMatches(combined, gold.transientTodos) / gold.transientTodos.length).toFixed(3))
+      : 0;
     recalls.push(avgRecall);
 
     const repeatedChanges = prevChanges && normalizeText(prevChanges) === normalizeText(changes);
@@ -385,6 +405,7 @@ async function run() {
       constraintContradictionRate,
       decisionContradictionRate,
       todoContradictionRate,
+      temporaryTodoIntrusionRate,
       goalMatches: countMatches(combined, gold.goal),
       constraintMatches: countMatches(combined, gold.constraints),
       decisionMatches: countMatches(combined, gold.decisions),

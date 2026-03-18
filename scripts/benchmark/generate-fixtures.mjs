@@ -95,3 +95,59 @@ makeFixture("noise-heavy", {
   goal: "goal: evaluate retrieval robustness under noise",
   constraints: ["constraint: no vector index", "constraint: deterministic scoring"]
 });
+
+{
+  const payload = {
+    gold: {
+      goal: ["preserve durable todos under temporary task pileups"],
+      constraints: ["self-hosted first", "keep api stable"],
+      decisions: [
+        "We decide to keep durable todos separate from short-lived execution noise",
+        "We decide to preserve project roadmap todos across cleanup chatter"
+      ],
+      todos: [
+        "define drift metrics",
+        "document replay checks",
+        "ship assistant runtime reference flow"
+      ],
+      transientTodos: [
+        "temporary queue cleanup pass 1",
+        "temporary benchmark markdown polish 2",
+        "temporary retry log cleanup 3",
+        "temporary fixture review 4",
+        "temporary report formatting 5"
+      ]
+    },
+    events: [
+      { type: "document", key: "doc:goal", content: "goal: preserve durable todos under temporary task pileups" },
+      { type: "document", key: "doc:constraints", content: "constraint: self-hosted first\nconstraint: keep api stable" },
+      { type: "document", key: "doc:plan", content: "todo: define drift metrics\ntodo: document replay checks\ntodo: ship assistant runtime reference flow" },
+      { type: "stream", content: "We decide to keep durable todos separate from short-lived execution noise" },
+      { type: "stream", content: "We decide to preserve project roadmap todos across cleanup chatter" },
+      { type: "stream", content: "TODO: temporary queue cleanup pass 1" },
+      { type: "stream", content: "Status update: completed temporary queue cleanup pass 1" },
+      { type: "stream", content: "TODO: temporary benchmark markdown polish 2" },
+      { type: "stream", content: "Status update: completed temporary benchmark markdown polish 2" },
+      { type: "stream", content: "TODO: temporary retry log cleanup 3" },
+      { type: "stream", content: "Status update: completed temporary retry log cleanup 3" },
+      { type: "stream", content: "TODO: temporary fixture review 4" },
+      { type: "stream", content: "Status update: completed temporary fixture review 4" },
+      { type: "stream", content: "TODO: temporary report formatting 5" },
+      { type: "stream", content: "Status update: completed temporary report formatting 5" },
+      { type: "stream", content: "Blocked by local runtime churn during temporary cleanup rotation" },
+      { type: "stream", content: "Status update: durable roadmap todos should remain unchanged despite cleanup chatter" },
+      { type: "stream", content: "noise ping 101" },
+      { type: "stream", content: "noise ping 202" },
+      { type: "stream", content: "noise ping 303" }
+    ],
+    retrieveCases: [
+      { query: "What durable todos are still pending?", expected: "todo", aliases: ["pending", "durable todos", "next step"] },
+      { query: "What did we decide about temporary tasks?", expected: "decide", aliases: ["decision", "separate", "execution noise"] },
+      { query: "What constraints still apply?", expected: "constraint", aliases: ["must", "cannot", "keep api stable"] }
+    ]
+  };
+  const outPath = path.join(outDir, "todo-pileup.json");
+  writeFileSync(outPath, JSON.stringify(payload, null, 2));
+  // eslint-disable-next-line no-console
+  console.log(`Wrote ${outPath}`);
+}
