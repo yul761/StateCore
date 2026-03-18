@@ -135,6 +135,13 @@ Outputs are written to `benchmark-results/`:
 - persisted consistency taxonomy histogram from accepted digest snapshots
 - gold-backed retention and contradiction summary when fixture labels are available
 
+When gold labels are available, benchmark JSON also emits retention-oriented aliases:
+- `factRetentionRate`
+- `goalRetentionRate`
+- `constraintPreservationRate`
+- `decisionContinuityRate`
+- `todoContinuityRate`
+
 4. Reminder
 - due-to-sent latency
 - delivery success

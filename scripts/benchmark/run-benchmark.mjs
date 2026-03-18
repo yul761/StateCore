@@ -302,10 +302,10 @@ function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, r
   const consistencyScore = clamp((digestMetrics.consistencyPassRate || 0) * 30);
   const retention = digestMetrics.goldRetention
     ? (
-        (digestMetrics.goldRetention.recallGoal || 0) +
-        (digestMetrics.goldRetention.recallConstraints || 0) +
-        (digestMetrics.goldRetention.recallDecisions || 0) +
-        (digestMetrics.goldRetention.recallTodos || 0)
+        (digestMetrics.goldRetention.goalRetentionRate || digestMetrics.goldRetention.recallGoal || 0) +
+        (digestMetrics.goldRetention.constraintPreservationRate || digestMetrics.goldRetention.recallConstraints || 0) +
+        (digestMetrics.goldRetention.decisionContinuityRate || digestMetrics.goldRetention.recallDecisions || 0) +
+        (digestMetrics.goldRetention.todoContinuityRate || digestMetrics.goldRetention.recallTodos || 0)
       ) / 4
     : digestMetrics.consistencyPassRate || 0;
   const contradiction = digestMetrics.goldRetention
@@ -761,6 +761,13 @@ async function run() {
           recallConstraints: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallConstraints, 0) / goldRetentionRuns.length).toFixed(3)),
           recallDecisions: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallDecisions, 0) / goldRetentionRuns.length).toFixed(3)),
           recallTodos: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallTodos, 0) / goldRetentionRuns.length).toFixed(3)),
+          goalRetentionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallGoal, 0) / goldRetentionRuns.length).toFixed(3)),
+          constraintPreservationRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallConstraints, 0) / goldRetentionRuns.length).toFixed(3)),
+          decisionContinuityRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallDecisions, 0) / goldRetentionRuns.length).toFixed(3)),
+          todoContinuityRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallTodos, 0) / goldRetentionRuns.length).toFixed(3)),
+          factRetentionRate: Number((
+            goldRetentionRuns.reduce((sum, run) => sum + ((run.recallGoal + run.recallConstraints + run.recallDecisions + run.recallTodos) / 4), 0) / goldRetentionRuns.length
+          ).toFixed(3)),
           temporaryTodoIntrusionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.temporaryTodoIntrusionRate, 0) / goldRetentionRuns.length).toFixed(3)),
           goalContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.goalContradictionRate, 0) / goldRetentionRuns.length).toFixed(3)),
           constraintContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.constraintContradictionRate, 0) / goldRetentionRuns.length).toFixed(3)),
@@ -988,6 +995,7 @@ async function run() {
     ...(report.metrics.digest.goldRetention
       ? [
           `- Digest gold recall: goal ${report.metrics.digest.goldRetention.recallGoal}, constraints ${report.metrics.digest.goldRetention.recallConstraints}, decisions ${report.metrics.digest.goldRetention.recallDecisions}, todos ${report.metrics.digest.goldRetention.recallTodos}`,
+          `- Retention metrics: fact ${report.metrics.digest.goldRetention.factRetentionRate}, goal ${report.metrics.digest.goldRetention.goalRetentionRate}, constraints ${report.metrics.digest.goldRetention.constraintPreservationRate}, decisions ${report.metrics.digest.goldRetention.decisionContinuityRate}, todos ${report.metrics.digest.goldRetention.todoContinuityRate}`,
           `- Digest contradiction rates: goal ${report.metrics.digest.goldRetention.goalContradictionRate}, constraints ${report.metrics.digest.goldRetention.constraintContradictionRate}, decisions ${report.metrics.digest.goldRetention.decisionContradictionRate}, todos ${report.metrics.digest.goldRetention.todoContradictionRate}`,
           `- Temporary todo intrusion rate: ${report.metrics.digest.goldRetention.temporaryTodoIntrusionRate ?? 0}`
         ]
