@@ -34,10 +34,17 @@ export interface RuntimeRetrieveService {
 export type MemoryWriteTier = "ephemeral" | "candidate" | "stable" | "documented";
 export type RuntimePolicyProfile = "default" | "conservative" | "document-heavy";
 
+export interface RuntimePolicyOverrides {
+  recallLimit?: number;
+  promoteLongFormToDocumented?: boolean;
+  digestOnCandidate?: boolean;
+}
+
 export interface RuntimeTurnInput {
   message: string;
   source?: MemorySource;
   policyProfile?: RuntimePolicyProfile;
+  policyOverrides?: RuntimePolicyOverrides;
   writeTier?: MemoryWriteTier;
   documentKey?: string;
   digestMode?: "auto" | "force" | "skip";
@@ -106,6 +113,10 @@ export interface AssistantSessionOptions {
   assistantReplySource?: MemorySource;
 }
 
+function shouldPromoteLongForm(text: string, overrides?: RuntimePolicyOverrides) {
+  return overrides?.promoteLongFormToDocumented === true && (text.includes("\n") || text.length > 280);
+}
+
 export class DefaultMemoryWritePolicy implements MemoryWritePolicy {
   classifyTurn(input: RuntimeTurnInput): MemoryWriteDecision {
     if (input.writeTier) return { tier: input.writeTier, reason: "explicit_write_tier" };
@@ -140,6 +151,9 @@ export class ProfiledMemoryWritePolicy implements MemoryWritePolicy {
     }
     if (/^(goal|constraint|decision|todo)\s*:/i.test(text)) {
       return { tier: "stable", reason: `profile_${this.profile}_explicit_structured_memory` };
+    }
+    if (shouldPromoteLongForm(input.message, input.policyOverrides)) {
+      return { tier: "documented", reason: "override_promote_long_form" };
     }
 
     if (this.profile === "conservative") {
@@ -210,7 +224,13 @@ export class ThresholdDigestPolicy implements DigestPolicy {
 export class ProfiledDigestPolicy implements DigestPolicy {
   constructor(private profile: RuntimePolicyProfile = "default") {}
 
-  async shouldDigest(input: { writeTier: MemoryWriteTier }): Promise<{ shouldDigest: boolean; reason?: string }> {
+  async shouldDigest(input: { turn: RuntimeTurnInput; writeTier: MemoryWriteTier }): Promise<{ shouldDigest: boolean; reason?: string }> {
+    if (input.turn.policyOverrides?.digestOnCandidate && input.writeTier === "candidate") {
+      return {
+        shouldDigest: true,
+        reason: "override_digest_on_candidate"
+      };
+    }
     if (this.profile === "conservative") {
       return {
         shouldDigest: input.writeTier === "documented",
@@ -236,6 +256,22 @@ export function createRuntimePolicyBundle(profile: RuntimePolicyProfile = "defau
     memoryWritePolicy: new ProfiledMemoryWritePolicy(profile),
     digestPolicy: new ProfiledDigestPolicy(profile)
   };
+}
+
+export function createRuntimeRecallPolicy(
+  retrieveService: RuntimeRetrieveService,
+  options?: {
+    profile?: RuntimePolicyProfile;
+    overrides?: RuntimePolicyOverrides;
+    scopeStateLoader?: (scopeId: string) => Promise<{ digestId: string | null } | null>;
+  }
+) {
+  const profile = options?.profile ?? "default";
+  const profileLimit = profile === "conservative" ? 8 : profile === "document-heavy" ? 16 : 12;
+  return new DefaultRecallPolicy(retrieveService, {
+    scopeStateLoader: options?.scopeStateLoader,
+    limit: options?.overrides?.recallLimit ?? profileLimit
+  });
 }
 
 export class AssistantSession {

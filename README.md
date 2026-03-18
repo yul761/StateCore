@@ -52,6 +52,7 @@ pnpm dev:cli -- state-history
 pnpm dev:cli -- turn "What changed in the project plan?"
 pnpm dev:cli -- turn "goal: ship a self-hosted memory runtime" --write-tier stable --digest-mode force
 pnpm dev:cli -- turn "spec update for retrieval" --policy-profile document-heavy --digest-mode force
+pnpm dev:cli -- turn "long form update" --policy-profile conservative --promote-long-form --recall-limit 8
 ```
 
 No-LLM smoke test:

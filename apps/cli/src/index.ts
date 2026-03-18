@@ -246,7 +246,10 @@ program
   .option("--write-tier <tier>", "Override runtime write tier: ephemeral|candidate|stable|documented")
   .option("--digest-mode <mode>", "Override digest mode: auto|force|skip")
   .option("--document-key <key>", "Explicit document key when write tier is documented")
-  .action(async (message: string, options: { policyProfile?: string; writeTier?: string; digestMode?: string; documentKey?: string }) => {
+  .option("--recall-limit <n>", "Override recall limit for this runtime turn")
+  .option("--promote-long-form", "Promote long-form input to documented memory")
+  .option("--digest-on-candidate", "Allow digest triggering for candidate turns")
+  .action(async (message: string, options: { policyProfile?: string; writeTier?: string; digestMode?: string; documentKey?: string; recallLimit?: string; promoteLongForm?: boolean; digestOnCandidate?: boolean }) => {
     const state = await apiFetch("/state");
     if (!state.activeScopeId) {
       // eslint-disable-next-line no-console
@@ -260,6 +263,15 @@ program
         message,
         source: "cli",
         ...(options.policyProfile ? { policyProfile: options.policyProfile } : {}),
+        ...((options.recallLimit || options.promoteLongForm || options.digestOnCandidate)
+          ? {
+              policyOverrides: {
+                ...(options.recallLimit ? { recallLimit: Number(options.recallLimit) } : {}),
+                ...(options.promoteLongForm ? { promoteLongFormToDocumented: true } : {}),
+                ...(options.digestOnCandidate ? { digestOnCandidate: true } : {})
+              }
+            }
+          : {}),
         ...(options.writeTier ? { writeTier: options.writeTier } : {}),
         ...(options.digestMode ? { digestMode: options.digestMode } : {}),
         ...(options.documentKey ? { documentKey: options.documentKey } : {})

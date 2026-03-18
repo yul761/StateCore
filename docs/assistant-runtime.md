@@ -219,6 +219,7 @@ The current implementation is intentionally small:
 The current runtime turn input also supports explicit policy hints:
 
 - `policyProfile`
+- `policyOverrides`
 - `writeTier`
 - `documentKey`
 - `digestMode`
@@ -228,6 +229,12 @@ Current built-in profiles:
 - `default`
 - `conservative`
 - `document-heavy`
+
+Current per-turn overrides:
+
+- `recallLimit`
+- `promoteLongFormToDocumented`
+- `digestOnCandidate`
 
 The current runtime output also carries lightweight audit notes so policy decisions are inspectable, for example:
 

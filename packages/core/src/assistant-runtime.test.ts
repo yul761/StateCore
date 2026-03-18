@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   AssistantSession,
+  createRuntimeRecallPolicy,
   DefaultMemoryWritePolicy,
   DefaultRecallPolicy,
   ProfiledDigestPolicy,
@@ -56,10 +57,53 @@ describe("Profiled policies", () => {
 
   it("uses conservative digest policy to require documented turns", async () => {
     const policy = new ProfiledDigestPolicy("conservative");
-    await expect(policy.shouldDigest({ writeTier: "stable" } as any)).resolves.toEqual({
+    await expect(policy.shouldDigest({ writeTier: "stable", turn: { message: "stable" } } as any)).resolves.toEqual({
       shouldDigest: false,
       reason: "profile_conservative_skip_non_documented"
     });
+  });
+
+  it("allows long-form promotion override", () => {
+    const policy = new ProfiledMemoryWritePolicy("conservative");
+    expect(
+      policy.classifyTurn({
+        message: "This is a long runtime update\nwith multiple lines\nthat should be documented.",
+        policyOverrides: { promoteLongFormToDocumented: true }
+      })
+    ).toEqual({
+      tier: "documented",
+      reason: "override_promote_long_form"
+    });
+  });
+
+  it("allows candidate digest override", async () => {
+    const policy = new ProfiledDigestPolicy("default");
+    await expect(
+      policy.shouldDigest({
+        writeTier: "candidate",
+        turn: { message: "candidate", policyOverrides: { digestOnCandidate: true } }
+      } as any)
+    ).resolves.toEqual({
+      shouldDigest: true,
+      reason: "override_digest_on_candidate"
+    });
+  });
+
+  it("derives recall limit from profile and override", async () => {
+    const retrieve = vi.fn(async () => ({ digest: null, events: [] }));
+    const conservativeRecall = createRuntimeRecallPolicy(
+      { retrieve } as unknown as RuntimeRetrieveService,
+      { profile: "conservative" }
+    );
+    await conservativeRecall.resolve({ scopeId: "scope-1", message: "test" });
+    expect(retrieve).toHaveBeenCalledWith("scope-1", 8, "test");
+
+    const overrideRecall = createRuntimeRecallPolicy(
+      { retrieve } as unknown as RuntimeRetrieveService,
+      { profile: "conservative", overrides: { recallLimit: 21 } }
+    );
+    await overrideRecall.resolve({ scopeId: "scope-1", message: "override" });
+    expect(retrieve).toHaveBeenCalledWith("scope-1", 21, "override");
   });
 });
 

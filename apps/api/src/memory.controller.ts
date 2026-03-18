@@ -11,8 +11,8 @@ import {
 import {
   AssistantSession,
   createRuntimePolicyBundle,
+  createRuntimeRecallPolicy,
   createChatModelClient,
-  DefaultRecallPolicy,
   generateAnswer,
   LlmClient
 } from "@project-memory/core";
@@ -268,12 +268,15 @@ export class MemoryController {
       return { error: "Scope not found" };
     }
 
-    const policies = createRuntimePolicyBundle(input.policyProfile ?? "default");
+    const policyProfile = input.policyProfile ?? "default";
+    const policies = createRuntimePolicyBundle(policyProfile);
     const session = new AssistantSession({
       userId: req.userId,
       scopeId: input.scopeId,
       memoryService: this.domain.memoryService,
-      recallPolicy: new DefaultRecallPolicy(this.domain.retrieveService, {
+      recallPolicy: createRuntimeRecallPolicy(this.domain.retrieveService, {
+        profile: policyProfile,
+        overrides: input.policyOverrides,
         scopeStateLoader: async (scopeId) => this.domain.getLatestDigestState(scopeId)
       }),
       llm: this.llm,
@@ -294,7 +297,8 @@ export class MemoryController {
     return session.handleTurn({
       message: input.message,
       source: input.source ?? "api",
-      policyProfile: input.policyProfile ?? "default",
+      policyProfile,
+      policyOverrides: input.policyOverrides,
       writeTier: input.writeTier,
       documentKey: input.documentKey,
       digestMode: input.digestMode ?? "auto",

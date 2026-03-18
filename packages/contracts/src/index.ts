@@ -127,6 +127,11 @@ export const RuntimeTurnInput = z.object({
   message: z.string().min(1),
   source: MemorySource.optional(),
   policyProfile: z.enum(["default", "conservative", "document-heavy"]).optional(),
+  policyOverrides: z.object({
+    recallLimit: z.number().int().min(1).max(100).optional(),
+    promoteLongFormToDocumented: z.boolean().optional(),
+    digestOnCandidate: z.boolean().optional()
+  }).optional(),
   writeTier: z.enum(["ephemeral", "candidate", "stable", "documented"]).optional(),
   documentKey: z.string().min(1).optional(),
   digestMode: z.enum(["auto", "force", "skip"]).optional(),
