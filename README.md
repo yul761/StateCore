@@ -47,6 +47,7 @@ pnpm dev:telegram
 Optional CLI:
 ```bash
 pnpm dev:cli -- scopes
+pnpm dev:cli -- state
 ```
 
 No-LLM smoke test:
