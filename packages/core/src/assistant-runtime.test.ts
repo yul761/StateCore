@@ -215,6 +215,10 @@ describe("AssistantSession", () => {
       todos: ["Document replay checks"],
       risks: [],
       provenanceFields: ["goal", "todos"],
+      transitionTaxonomy: {
+        "goal:set": 1,
+        "todos:add": 1
+      },
       recentChanges: [
         { field: "goal", action: "set", value: "keep api stable" },
         { field: "todos", action: "add", value: "Document replay checks" }

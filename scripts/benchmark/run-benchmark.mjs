@@ -1009,7 +1009,8 @@ async function run() {
     evidenceEventSnippetRate: 0,
     evidenceEventRankingReasonRate: 0,
     evidenceEventScoreRate: 0,
-    evidenceStateSummaryRate: 0
+    evidenceStateSummaryRate: 0,
+    evidenceStateTransitionTaxonomyRate: 0
   };
   let groundedResponseMetrics = {
     enabled: cfg.featureLlm,
@@ -1254,7 +1255,8 @@ async function run() {
         hasEventSnippets: eventSnippets.length > 0,
         hasEventRankingReasons: eventSnippets.length > 0 && snippetsWithRankingReason.length === eventSnippets.length,
         hasEventScores: eventSnippets.length > 0 && snippetsWithScores.length === eventSnippets.length,
-        hasStateSummary: typeof evidence.stateSummary === "string" && evidence.stateSummary.length > 0
+        hasStateSummary: typeof evidence.stateSummary === "string" && evidence.stateSummary.length > 0,
+        hasStateTransitionTaxonomy: typeof evidence.stateDetails?.transitionTaxonomy === "object" && Object.keys(evidence.stateDetails?.transitionTaxonomy || {}).length > 0
       });
     }
     const answerLatencies = answerResults.map((result) => result.latencyMs);
@@ -1267,7 +1269,8 @@ async function run() {
       evidenceEventSnippetRate: Number((answerResults.filter((result) => result.hasEventSnippets).length / Math.max(1, answerResults.length)).toFixed(3)),
       evidenceEventRankingReasonRate: Number((answerResults.filter((result) => result.hasEventRankingReasons).length / Math.max(1, answerResults.length)).toFixed(3)),
       evidenceEventScoreRate: Number((answerResults.filter((result) => result.hasEventScores).length / Math.max(1, answerResults.length)).toFixed(3)),
-      evidenceStateSummaryRate: Number((answerResults.filter((result) => result.hasStateSummary).length / Math.max(1, answerResults.length)).toFixed(3))
+      evidenceStateSummaryRate: Number((answerResults.filter((result) => result.hasStateSummary).length / Math.max(1, answerResults.length)).toFixed(3)),
+      evidenceStateTransitionTaxonomyRate: Number((answerResults.filter((result) => result.hasStateTransitionTaxonomy).length / Math.max(1, answerResults.length)).toFixed(3))
     };
 
     const runtimeCases = (fixture?.retrieveCases ?? retrieveCases)
@@ -1325,6 +1328,7 @@ async function run() {
         hasDocumentSourceSnippet: eventSnippets.some((snippet) => snippet?.sourceType === "document"),
         hasStateSummary: typeof evidence.stateSummary === "string" && evidence.stateSummary.length > 0,
         hasStateProvenance: Array.isArray(stateDetails?.provenanceFields) && stateDetails.provenanceFields.length > 0,
+        hasStateTransitionTaxonomy: typeof stateDetails?.transitionTaxonomy === "object" && Object.keys(stateDetails?.transitionTaxonomy || {}).length > 0,
         hasRecentStateChanges: Array.isArray(stateDetails?.recentChanges) && stateDetails.recentChanges.length > 0,
         digestTriggered: Boolean(res.json?.digestTriggered),
         writeTier: typeof res.json?.writeTier === "string" ? res.json.writeTier : "unknown",
@@ -1354,6 +1358,7 @@ async function run() {
       evidenceEventDocumentSourceRate: Number((runtimeResults.filter((result) => result.hasDocumentSourceSnippet).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceStateSummaryRate: Number((runtimeResults.filter((result) => result.hasStateSummary).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceStateProvenanceRate: Number((runtimeResults.filter((result) => result.hasStateProvenance).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      evidenceStateTransitionTaxonomyRate: Number((runtimeResults.filter((result) => result.hasStateTransitionTaxonomy).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceRecentStateChangesRate: Number((runtimeResults.filter((result) => result.hasRecentStateChanges).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       digestTriggerRate: Number((runtimeResults.filter((result) => result.digestTriggered).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       writeTierCounts,
@@ -1533,6 +1538,7 @@ async function run() {
           `- Evidence event document-source rate: ${report.metrics.runtime.evidenceEventDocumentSourceRate ?? 0}`,
           `- Evidence state summary rate: ${report.metrics.runtime.evidenceStateSummaryRate}`,
           `- Evidence state provenance rate: ${report.metrics.runtime.evidenceStateProvenanceRate ?? 0}`,
+          `- Evidence state transition-taxonomy rate: ${report.metrics.runtime.evidenceStateTransitionTaxonomyRate ?? 0}`,
           `- Evidence recent state changes rate: ${report.metrics.runtime.evidenceRecentStateChangesRate ?? 0}`,
           `- Digest trigger rate: ${report.metrics.runtime.digestTriggerRate}`,
           `- Write tiers: ${Object.keys(report.metrics.runtime.writeTierCounts || {}).length ? Object.entries(report.metrics.runtime.writeTierCounts).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`,
@@ -1561,7 +1567,8 @@ async function run() {
           `- Evidence event snippet rate: ${report.metrics.answer.evidenceEventSnippetRate}`,
           `- Evidence event ranking-reason rate: ${report.metrics.answer.evidenceEventRankingReasonRate}`,
           `- Evidence event score rate: ${report.metrics.answer.evidenceEventScoreRate}`,
-          `- Evidence state summary rate: ${report.metrics.answer.evidenceStateSummaryRate}`
+          `- Evidence state summary rate: ${report.metrics.answer.evidenceStateSummaryRate}`,
+          `- Evidence state transition-taxonomy rate: ${report.metrics.answer.evidenceStateTransitionTaxonomyRate ?? 0}`
         ]
       : ["- skipped"]),
     "",

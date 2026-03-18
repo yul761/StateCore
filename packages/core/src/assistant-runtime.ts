@@ -202,12 +202,23 @@ export interface AssistantSessionOptions {
 export function buildGroundingStateDetails(snapshot?: RuntimeStateSnapshot | null) {
   if (!snapshot?.digestId) return null;
   const provenance = snapshot.state?.provenance;
+  const recentChanges = snapshot.state?.recentChanges ?? [];
   const provenanceFields = [
     Array.isArray(provenance?.goal) && provenance.goal.length ? "goal" : null,
     Array.isArray(provenance?.constraints) && provenance.constraints.length ? "constraints" : null,
     Array.isArray(provenance?.decisions) && provenance.decisions.length ? "decisions" : null,
     Array.isArray(provenance?.todos) && provenance.todos.length ? "todos" : null
   ].filter((value): value is string => Boolean(value));
+  const transitionTaxonomy = Object.fromEntries(
+    Object.entries(
+      recentChanges.reduce<Record<string, number>>((acc, change) => {
+        if (!change?.field || !change?.action) return acc;
+        const key = `${change.field}:${change.action}`;
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {})
+    ).sort(([a], [b]) => a.localeCompare(b))
+  );
 
   return {
     digestId: snapshot.digestId,
@@ -216,7 +227,8 @@ export function buildGroundingStateDetails(snapshot?: RuntimeStateSnapshot | nul
     todos: snapshot.state?.todos ?? [],
     risks: snapshot.state?.workingNotes?.risks ?? [],
     provenanceFields,
-    recentChanges: snapshot.state?.recentChanges ?? []
+    transitionTaxonomy,
+    recentChanges
   };
 }
 

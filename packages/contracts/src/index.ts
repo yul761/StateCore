@@ -162,6 +162,7 @@ export const GroundingEvidenceOutput = z.object({
     todos: z.array(z.string()).optional(),
     risks: z.array(z.string()).optional(),
     provenanceFields: z.array(z.string()).optional(),
+    transitionTaxonomy: z.record(z.string(), z.number()).optional(),
     recentChanges: z.array(z.object({
       field: z.enum(["goal", "constraints", "decisions", "todos", "volatileContext", "openQuestions", "risks"]).optional(),
       action: z.enum(["set", "add", "remove", "reaffirm"]).optional(),
