@@ -71,7 +71,9 @@ describe("protectedStateMerge", () => {
     const prevState: DigestState = {
       stableFacts: { goal: "ship alpha", constraints: ["no paid infra"], decisions: ["use postgres"] },
       workingNotes: {},
-      todos: []
+      todos: [],
+      volatileContext: [],
+      evidenceRefs: []
     };
 
     const merged = protectedStateMerge({
@@ -82,6 +84,35 @@ describe("protectedStateMerge", () => {
 
     expect(merged.stableFacts.goal).toBe("ship alpha");
     expect(merged.stableFacts.decisions).toContain("use postgres");
+  });
+
+  it("captures volatile context and evidence references", () => {
+    const merged = protectedStateMerge({
+      prevState: null,
+      documents: [
+        event({ id: "doc1", scopeId: "sc", userId: "u", type: "document", key: "doc:goal", content: "goal: ship alpha" })
+      ],
+      deltaCandidates: [
+        {
+          eventId: "e1",
+          reason: "novel_event",
+          features: { kind: "status", importanceScore: 0.5, noveltyScore: 0.7 },
+          event: event({ id: "e1", scopeId: "sc", userId: "u", type: "stream", content: "Status update: queue is stable" })
+        },
+        {
+          eventId: "e2",
+          reason: "novel_event",
+          features: { kind: "note", importanceScore: 0.4, noveltyScore: 0.8 },
+          event: event({ id: "e2", scopeId: "sc", userId: "u", type: "stream", content: "Note: keep digest reports small" })
+        }
+      ]
+    });
+
+    expect(merged.volatileContext).toContain("Status update: queue is stable");
+    expect(merged.volatileContext).toContain("Note: keep digest reports small");
+    expect(merged.evidenceRefs).toContain("doc:goal");
+    expect(merged.evidenceRefs).toContain("e1");
+    expect(merged.evidenceRefs).toContain("e2");
   });
 });
 

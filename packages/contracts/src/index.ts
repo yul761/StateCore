@@ -174,6 +174,8 @@ export const DigestState = z.object({
     risks: z.array(z.string()).optional(),
     context: z.string().optional()
   }),
-  todos: z.array(z.string())
+  todos: z.array(z.string()),
+  volatileContext: z.array(z.string()).optional(),
+  evidenceRefs: z.array(z.string()).optional()
 });
 export type DigestState = z.infer<typeof DigestState>;

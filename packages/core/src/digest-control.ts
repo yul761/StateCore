@@ -23,6 +23,8 @@ export interface DigestState {
     context?: string;
   };
   todos: string[];
+  volatileContext?: string[];
+  evidenceRefs?: string[];
 }
 
 export interface SelectedEvent {
@@ -69,7 +71,9 @@ export const DigestOutputSchema = z.object({
 const DEFAULT_DIGEST_STATE: DigestState = {
   stableFacts: { decisions: [] },
   workingNotes: {},
-  todos: []
+  todos: [],
+  volatileContext: [],
+  evidenceRefs: []
 };
 
 function deriveStateFromDigest(digest?: Digest | null): DigestState | null {
@@ -89,7 +93,9 @@ function deriveStateFromDigest(digest?: Digest | null): DigestState | null {
       decisions
     },
     workingNotes: {},
-    todos: digest.nextSteps ?? []
+    todos: digest.nextSteps ?? [],
+    volatileContext: [],
+    evidenceRefs: []
   };
 }
 
@@ -296,6 +302,8 @@ export function protectedStateMerge(input: {
   next.stableFacts.decisions = next.stableFacts.decisions ?? [];
   next.stableFacts.constraints = next.stableFacts.constraints ?? [];
   next.todos = next.todos ?? [];
+  next.volatileContext = next.volatileContext ?? [];
+  next.evidenceRefs = next.evidenceRefs ?? [];
 
   const docText = input.documents.map((doc) => doc.content).join("\n");
   const docGoal = parseGoal(docText);
@@ -317,7 +325,12 @@ export function protectedStateMerge(input: {
     }
   }
 
+  for (const doc of input.documents) {
+    next.evidenceRefs.push(doc.key ?? doc.id);
+  }
+
   for (const delta of input.deltaCandidates) {
+    next.evidenceRefs.push(delta.eventId);
     const text = delta.event.content.trim();
     const lowered = text.toLowerCase();
 
@@ -353,6 +366,10 @@ export function protectedStateMerge(input: {
       next.workingNotes.openQuestions = [...(next.workingNotes.openQuestions ?? []), text].slice(-10);
     }
 
+    if (delta.features.kind === "status" || delta.features.kind === "note") {
+      next.volatileContext = [...(next.volatileContext ?? []), text].slice(-10);
+    }
+
     if (/\b(risk|blocked|blocker)\b/.test(lowered)) {
       next.workingNotes.risks = [...(next.workingNotes.risks ?? []), text].slice(-10);
     }
@@ -361,6 +378,8 @@ export function protectedStateMerge(input: {
   next.stableFacts.decisions = [...new Set(next.stableFacts.decisions)];
   next.stableFacts.constraints = [...new Set(next.stableFacts.constraints ?? [])];
   next.todos = [...new Set(next.todos)];
+  next.volatileContext = [...new Set(next.volatileContext ?? [])].slice(-10);
+  next.evidenceRefs = [...new Set(next.evidenceRefs ?? [])].slice(-50);
 
   return next;
 }

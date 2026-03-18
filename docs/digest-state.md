@@ -20,11 +20,13 @@ Without a protected state layer, the system must repeatedly infer memory from pr
 
 ## Current State in the Repository
 
-The current implementation stores `DigestState` with three top-level sections:
+The current implementation stores `DigestState` with five top-level sections:
 
 - `stableFacts`
 - `workingNotes`
 - `todos`
+- `volatileContext`
+- `evidenceRefs`
 
 Current shape:
 
@@ -41,6 +43,8 @@ interface DigestState {
     context?: string;
   };
   todos: string[];
+  volatileContext?: string[];
+  evidenceRefs?: string[];
 }
 ```
 

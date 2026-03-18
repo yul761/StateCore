@@ -75,6 +75,8 @@ flowchart TD
   - `stableFacts` (goal, constraints, decisions)
   - `workingNotes` (risks, open questions, context)
   - `todos`
+  - `volatileContext`
+  - `evidenceRefs`
 - Conservative overwrite rules prevent accidental drift.
 
 ### 4) LLM Generation
