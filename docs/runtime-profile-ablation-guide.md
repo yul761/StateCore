@@ -8,6 +8,12 @@ The goal is to compare how runtime behavior changes under:
 - `conservative`
 - `document-heavy`
 
+And, when needed, under targeted override variants such as:
+
+- conservative + `promoteLongFormToDocumented`
+- default + `digestOnCandidate`
+- reduced `recallLimit`
+
 These profile comparisons are intentionally treated as first-class research artifacts, not as incidental API behavior.
 
 ## Why This Matters
@@ -53,6 +59,16 @@ Ablation sweep:
 
 ```bash
 BENCH_FIXTURE=benchmark-fixtures/document-heavy.json node scripts/benchmark/run-ablations.mjs
+```
+
+Override-focused benchmark:
+
+```bash
+BENCH_FIXTURE=benchmark-fixtures/document-heavy.json \
+BENCH_RUNTIME_POLICY_PROFILE=conservative \
+BENCH_RUNTIME_PROMOTE_LONG_FORM=true \
+BENCH_RUNTIME_RECALL_LIMIT=8 \
+pnpm benchmark
 ```
 
 ## What To Compare

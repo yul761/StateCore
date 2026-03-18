@@ -22,7 +22,22 @@ const matrix = [
   { name: "small_budget", env: { DIGEST_EVENT_BUDGET_TOTAL: "20", DIGEST_EVENT_BUDGET_STREAM: "15", DIGEST_EVENT_BUDGET_DOCS: "5" } },
   { name: "large_budget", env: { DIGEST_EVENT_BUDGET_TOTAL: "60", DIGEST_EVENT_BUDGET_STREAM: "45", DIGEST_EVENT_BUDGET_DOCS: "15" } },
   { name: "runtime_conservative", env: { BENCH_RUNTIME_POLICY_PROFILE: "conservative" } },
-  { name: "runtime_document_heavy", env: { BENCH_RUNTIME_POLICY_PROFILE: "document-heavy" } }
+  { name: "runtime_document_heavy", env: { BENCH_RUNTIME_POLICY_PROFILE: "document-heavy" } },
+  {
+    name: "runtime_conservative_long_form",
+    env: {
+      BENCH_RUNTIME_POLICY_PROFILE: "conservative",
+      BENCH_RUNTIME_PROMOTE_LONG_FORM: "true",
+      BENCH_RUNTIME_RECALL_LIMIT: "8"
+    }
+  },
+  {
+    name: "runtime_candidate_digest",
+    env: {
+      BENCH_RUNTIME_POLICY_PROFILE: "default",
+      BENCH_RUNTIME_DIGEST_ON_CANDIDATE: "true"
+    }
+  }
 ];
 
 function runCase(entry) {
