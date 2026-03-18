@@ -71,6 +71,17 @@ export interface RuntimeStateSnapshot {
       risks?: string[];
       openQuestions?: string[];
     };
+    provenance?: {
+      goal?: Array<{
+        id?: string;
+        sourceType?: "document" | "event";
+        key?: string;
+        kind?: "decision" | "constraint" | "todo" | "note" | "status" | "question" | "noise";
+      }>;
+      constraints?: Array<{ value?: string; refs?: Array<{ id?: string; sourceType?: "document" | "event"; key?: string; kind?: "decision" | "constraint" | "todo" | "note" | "status" | "question" | "noise" }> }>;
+      decisions?: Array<{ value?: string; refs?: Array<{ id?: string; sourceType?: "document" | "event"; key?: string; kind?: "decision" | "constraint" | "todo" | "note" | "status" | "question" | "noise" }> }>;
+      todos?: Array<{ value?: string; refs?: Array<{ id?: string; sourceType?: "document" | "event"; key?: string; kind?: "decision" | "constraint" | "todo" | "note" | "status" | "question" | "noise" }> }>;
+    };
     recentChanges?: Array<{
       field?: "goal" | "constraints" | "decisions" | "todos" | "volatileContext" | "openQuestions" | "risks";
       action?: "set" | "add" | "remove" | "reaffirm";
@@ -439,12 +450,22 @@ export class AssistantSession {
     const constraints = snapshot.state?.stableFacts?.constraints ?? [];
     const todos = snapshot.state?.todos ?? [];
     const risks = snapshot.state?.workingNotes?.risks ?? [];
+    const provenance = snapshot.state?.provenance;
     const recentChanges = snapshot.state?.recentChanges ?? [];
     const parts = [`digest:${snapshot.digestId}`];
     if (goal) parts.push(`goal:${goal}`);
     if (constraints.length) parts.push(`constraints:${constraints.slice(0, 2).join(" | ")}`);
     if (todos.length) parts.push(`todos:${todos.slice(0, 2).join(" | ")}`);
     if (risks.length) parts.push(`risks:${risks.slice(0, 2).join(" | ")}`);
+    const provenanceParts = [
+      Array.isArray(provenance?.goal) && provenance.goal.length ? "goal" : null,
+      Array.isArray(provenance?.constraints) && provenance.constraints.length ? "constraints" : null,
+      Array.isArray(provenance?.decisions) && provenance.decisions.length ? "decisions" : null,
+      Array.isArray(provenance?.todos) && provenance.todos.length ? "todos" : null
+    ].filter(Boolean);
+    if (provenanceParts.length) {
+      parts.push(`provenance:${provenanceParts.join("|")}`);
+    }
     if (recentChanges.length) {
       parts.push(
         `recent:${recentChanges

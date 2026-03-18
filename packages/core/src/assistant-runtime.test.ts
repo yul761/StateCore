@@ -152,6 +152,10 @@ describe("AssistantSession", () => {
               constraints: ["self-hosted first"]
             },
             todos: ["Document replay checks"],
+            provenance: {
+              goal: [{ id: "doc:goal", sourceType: "document", key: "doc:goal" }],
+              todos: [{ value: "Document replay checks", refs: [{ id: "e1", sourceType: "event", kind: "decision" }] }]
+            },
             recentChanges: [
               { field: "goal", action: "set", value: "keep api stable" },
               { field: "todos", action: "add", value: "Document replay checks" }
@@ -184,7 +188,7 @@ describe("AssistantSession", () => {
     expect(result.evidence.digestSummary).toBe("goal: keep api stable");
     expect(result.evidence.eventSnippets?.[0]?.snippet).toContain("prioritize digest consistency");
     expect(result.evidence.stateSummary).toBe(
-      "digest:digest-1; goal:keep api stable; constraints:self-hosted first; todos:Document replay checks; recent:goal:set:keep api stable | todos:add:Document replay checks"
+      "digest:digest-1; goal:keep api stable; constraints:self-hosted first; todos:Document replay checks; provenance:goal|todos; recent:goal:set:keep api stable | todos:add:Document replay checks"
     );
     expect(ingestEvent).toHaveBeenCalledTimes(2);
     expect(requestDigest).toHaveBeenCalledWith("scope-1");

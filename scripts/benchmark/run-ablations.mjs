@@ -99,6 +99,7 @@ function collectSummary(jsonPath) {
     runtimeEvidenceDigestSummaryRate: data.metrics?.runtime?.evidenceDigestSummaryRate ?? 0,
     runtimeEvidenceEventSnippetRate: data.metrics?.runtime?.evidenceEventSnippetRate ?? 0,
     runtimeEvidenceStateSummaryRate: data.metrics?.runtime?.evidenceStateSummaryRate ?? 0,
+    runtimeEvidenceStateProvenanceRate: data.metrics?.runtime?.evidenceStateProvenanceRate ?? 0,
     runtimeEvidenceRecentStateChangesRate: data.metrics?.runtime?.evidenceRecentStateChangesRate ?? 0,
     runtimeDigestTriggerRate: data.metrics?.runtime?.digestTriggerRate ?? 0,
     runtimePolicyProfile: data.metrics?.runtime?.policyProfile ?? data.config?.runtimePolicyProfile ?? "default",
@@ -128,6 +129,7 @@ function compareAgainstBaseline(baseline, item) {
     runtimeEvidenceDigestSummaryRate: roundDelta((item.runtimeEvidenceDigestSummaryRate ?? 0) - (baseline.runtimeEvidenceDigestSummaryRate ?? 0)),
     runtimeEvidenceEventSnippetRate: roundDelta((item.runtimeEvidenceEventSnippetRate ?? 0) - (baseline.runtimeEvidenceEventSnippetRate ?? 0)),
     runtimeEvidenceStateSummaryRate: roundDelta((item.runtimeEvidenceStateSummaryRate ?? 0) - (baseline.runtimeEvidenceStateSummaryRate ?? 0)),
+    runtimeEvidenceStateProvenanceRate: roundDelta((item.runtimeEvidenceStateProvenanceRate ?? 0) - (baseline.runtimeEvidenceStateProvenanceRate ?? 0)),
     runtimeEvidenceRecentStateChangesRate: roundDelta((item.runtimeEvidenceRecentStateChangesRate ?? 0) - (baseline.runtimeEvidenceRecentStateChangesRate ?? 0)),
     runtimeDigestTriggerRate: roundDelta((item.runtimeDigestTriggerRate ?? 0) - (baseline.runtimeDigestTriggerRate ?? 0))
   };
@@ -268,7 +270,7 @@ const lines = [
       `- Digest quality: consistency ${s.digestConsistencyPassRate}, omission-warning ${s.digestOmissionWarningRate}, temporary-todo-intrusion ${s.temporaryTodoIntrusionRate}, superseded-doc-intrusion ${s.supersededDocumentIntrusionRate}`,
       `- Retention: latest-document digest ${s.latestDocumentRetentionRate}, latest-document state ${s.stateLatestDocumentRetentionRate}, state fact ${s.stateFactRetentionRate}, goal ${s.stateGoalRetentionRate}, constraints ${s.stateConstraintPreservationRate}, decisions ${s.stateDecisionContinuityRate}, todos ${s.stateTodoContinuityRate}`,
       `- Runtime: ${s.runtimeSuccess}/${s.runtimeRuns} success, evidence ${s.runtimeEvidenceCoverageRate}, digest-trigger ${s.runtimeDigestTriggerRate}`,
-      `- Runtime evidence detail: digest-summary ${s.runtimeEvidenceDigestSummaryRate}, event-snippet ${s.runtimeEvidenceEventSnippetRate}, state-summary ${s.runtimeEvidenceStateSummaryRate}, recent-state-changes ${s.runtimeEvidenceRecentStateChangesRate}`,
+      `- Runtime evidence detail: digest-summary ${s.runtimeEvidenceDigestSummaryRate}, event-snippet ${s.runtimeEvidenceEventSnippetRate}, state-summary ${s.runtimeEvidenceStateSummaryRate}, state-provenance ${s.runtimeEvidenceStateProvenanceRate}, recent-state-changes ${s.runtimeEvidenceRecentStateChangesRate}`,
       `- Runtime policy profile: ${s.runtimePolicyProfile}`,
       `- Runtime overrides: recallLimit=${s.runtimeOverrides.recallLimit ?? "default"}, promoteLongForm=${s.runtimeOverrides.promoteLongFormToDocumented ? "yes" : "no"}, digestOnCandidate=${s.runtimeOverrides.digestOnCandidate ? "yes" : "no"}`,
       `- Report: ${s.file}`,
