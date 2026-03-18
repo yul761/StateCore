@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { Queue, Worker } from "bullmq";
 import { prisma } from "@project-memory/db";
-import { LlmClient, logger, runDigestControlPipeline } from "@project-memory/core";
+import { createChatModelClient, logger, runDigestControlPipeline } from "@project-memory/core";
 import type { DigestState } from "@project-memory/core";
 import {
   digestClassifySystemPrompt,
@@ -17,11 +17,12 @@ const connection = {
 
 const reminderQueue = new Queue("reminder", { connection });
 
-const llm = workerEnv.featureLlm && workerEnv.openaiApiKey
-  ? new LlmClient({
-      apiKey: workerEnv.openaiApiKey,
-      baseUrl: workerEnv.openaiBaseUrl,
-      model: workerEnv.openaiModel,
+const llm = workerEnv.featureLlm
+  ? createChatModelClient({
+      provider: workerEnv.modelProvider,
+      apiKey: workerEnv.modelApiKey,
+      baseUrl: workerEnv.modelBaseUrl,
+      model: workerEnv.modelName,
       timeoutMs: 20000
     })
   : null;
@@ -49,7 +50,7 @@ function toCoreDigest(digest: { id: string; scopeId: string; summary: string; ch
 
 async function runDigestScopeJob(data: { userId: string; scopeId: string }) {
   if (!workerEnv.featureLlm || !llm) {
-    throw new Error("FEATURE_LLM disabled or missing OPENAI_API_KEY. Set FEATURE_LLM=true and OPENAI_API_KEY.");
+    throw new Error("FEATURE_LLM disabled or model provider not configured. Set FEATURE_LLM=true and configure MODEL_* or OPENAI_*.");
   }
 
   const t0 = Date.now();
@@ -78,7 +79,7 @@ async function runDigestScopeJob(data: { userId: string; scopeId: string }) {
   const result = await runDigestControlPipeline({
     scope,
     lastDigest: lastDigestRow ? toCoreDigest(lastDigestRow) : null,
-    prevState: (lastStateRow?.state as DigestState) ?? null,
+    prevState: (lastStateRow?.state as unknown as DigestState) ?? null,
     recentEvents,
     llm,
     prompts: {
@@ -160,7 +161,7 @@ async function runDigestScopeJob(data: { userId: string; scopeId: string }) {
 
 async function runRebuildDigestChainJob(data: { userId: string; scopeId: string; from?: string; to?: string; strategy?: "full" | "since_last_good" }) {
   if (!workerEnv.featureLlm || !llm) {
-    throw new Error("FEATURE_LLM disabled or missing OPENAI_API_KEY. Rebuild requires LLM.");
+    throw new Error("FEATURE_LLM disabled or model provider not configured. Rebuild requires MODEL_* or OPENAI_* configuration.");
   }
 
   const scope = await prisma.projectScope.findFirst({ where: { id: data.scopeId, userId: data.userId } });
@@ -200,7 +201,7 @@ async function runRebuildDigestChainJob(data: { userId: string; scopeId: string;
   let lastState: DigestState | null = null;
   if (lastDigest && data.strategy !== "full") {
     const snapshot = await prisma.digestStateSnapshot.findUnique({ where: { digestId: lastDigest.id } });
-    lastState = (snapshot?.state as DigestState) ?? null;
+    lastState = (snapshot?.state as unknown as DigestState) ?? null;
   }
 
   for (let i = 0; i < events.length; i += workerEnv.digestRebuildChunkSize) {

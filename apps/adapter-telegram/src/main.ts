@@ -4,7 +4,30 @@ import { adapterEnv } from "./env";
 const app = express();
 app.use(express.json());
 
-async function apiFetch(path: string, telegramUserId: string, options?: RequestInit) {
+interface AdapterScope {
+  id: string;
+  name: string;
+}
+
+interface AdapterScopesResponse {
+  items: AdapterScope[];
+}
+
+interface AdapterStateResponse {
+  activeScopeId: string | null;
+}
+
+interface AdapterCreateScopeResponse {
+  id: string;
+  name: string;
+}
+
+interface AdapterDigestResponse {
+  jobId?: string;
+  error?: string;
+}
+
+async function apiFetch<T>(path: string, telegramUserId: string, options?: RequestInit): Promise<T | { error: string; detail?: string }> {
   const url = `${adapterEnv.apiBaseUrl}${path}`;
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -17,15 +40,15 @@ async function apiFetch(path: string, telegramUserId: string, options?: RequestI
           ...(options?.headers || {})
         }
       });
-      const data = await readJsonSafe(response);
+      const data = await readJsonSafe<T>(response);
       if (!response.ok) {
         if (shouldRetry(response.status) && attempt < 2) {
           await sleep(backoff(attempt));
           continue;
         }
-        return data ?? { error: `HTTP ${response.status}` };
+        return (data ?? { error: `HTTP ${response.status}` }) as T | { error: string; detail?: string };
       }
-      return data;
+      return data as T;
     } catch (err) {
       lastError = err;
       if (attempt < 2) {
@@ -49,9 +72,9 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function readJsonSafe(response: Response) {
+async function readJsonSafe<T>(response: Response): Promise<T | null> {
   try {
-    return await response.json();
+    return await response.json() as T;
   } catch {
     return null;
   }
@@ -78,8 +101,8 @@ async function setWebhook() {
 }
 
 async function getActiveScopeId(telegramUserId: string) {
-  const result = await apiFetch("/state", telegramUserId);
-  return result?.activeScopeId as string | null;
+  const result = await apiFetch<AdapterStateResponse>("/state", telegramUserId);
+  return result && "activeScopeId" in result ? result.activeScopeId : null;
 }
 
 app.post(adapterEnv.webhookPath, async (req, res) => {
@@ -112,15 +135,15 @@ app.post(adapterEnv.webhookPath, async (req, res) => {
     const scope = await apiFetch("/scopes", telegramUserId, {
       method: "POST",
       body: JSON.stringify({ name })
-    });
+    }) as AdapterCreateScopeResponse;
     await sendMessage(chatId, `Created scope: ${scope.name} (${scope.id}) and set active.`);
     return res.json({ ok: true });
   }
 
   if (text.startsWith("/p")) {
-    const scopes = await apiFetch("/scopes", telegramUserId);
+    const scopes = await apiFetch<AdapterScopesResponse>("/scopes", telegramUserId) as AdapterScopesResponse;
     const activeId = await getActiveScopeId(telegramUserId);
-    const lines = scopes.items.map((s: any) => `${s.id === activeId ? "*" : "-"} ${s.name} (${s.id})`);
+    const lines = scopes.items.map((scope) => `${scope.id === activeId ? "*" : "-"} ${scope.name} (${scope.id})`);
     await sendMessage(chatId, lines.length ? lines.join("\n") : "No scopes yet.");
     return res.json({ ok: true });
   }
@@ -131,8 +154,8 @@ app.post(adapterEnv.webhookPath, async (req, res) => {
       await sendMessage(chatId, "Usage: /use <name|id>");
       return res.json({ ok: true });
     }
-    const scopes = await apiFetch("/scopes", telegramUserId);
-    const match = scopes.items.find((s: any) => s.id === query || s.name.toLowerCase() === query.toLowerCase());
+    const scopes = await apiFetch<AdapterScopesResponse>("/scopes", telegramUserId) as AdapterScopesResponse;
+    const match = scopes.items.find((scope) => scope.id === query || scope.name.toLowerCase() === query.toLowerCase());
     if (!match) {
       await sendMessage(chatId, "Scope not found.");
       return res.json({ ok: true });
@@ -148,10 +171,10 @@ app.post(adapterEnv.webhookPath, async (req, res) => {
       await sendMessage(chatId, "No active scope. Use /use or /new.");
       return res.json({ ok: true });
     }
-    const result = await apiFetch("/memory/digest", telegramUserId, {
+    const result = await apiFetch<AdapterDigestResponse>("/memory/digest", telegramUserId, {
       method: "POST",
       body: JSON.stringify({ scopeId: activeId })
-    });
+    }) as AdapterDigestResponse;
     await sendMessage(chatId, `Digest queued. Job: ${result.jobId}`);
     return res.json({ ok: true });
   }

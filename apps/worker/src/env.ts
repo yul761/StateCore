@@ -25,6 +25,10 @@ const envSchema = z.object({
   REDIS_URL: z.string().min(1),
   FEATURE_LLM: z.string().optional(),
   FEATURE_TELEGRAM: z.string().optional(),
+  MODEL_PROVIDER: z.string().optional(),
+  MODEL_API_KEY: z.string().optional(),
+  MODEL_BASE_URL: z.string().optional(),
+  MODEL_NAME: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
   OPENAI_MODEL: z.string().optional(),
@@ -54,10 +58,15 @@ if (!parsed.success) {
 
 const env = parsed.data;
 const toBool = (value?: string) => value === "true";
+const modelBaseUrl = env.MODEL_BASE_URL || env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+const modelName = env.MODEL_NAME || env.OPENAI_MODEL || "gpt-4o-mini";
+const modelApiKey = env.MODEL_API_KEY || env.OPENAI_API_KEY || "";
+const modelProvider = env.MODEL_PROVIDER || "openai-compatible";
+const requiresApiKey = /(^https?:\/\/)?api\.openai\.com\/?/i.test(modelBaseUrl);
 
-if (toBool(env.FEATURE_LLM) && !env.OPENAI_API_KEY) {
+if (toBool(env.FEATURE_LLM) && requiresApiKey && !modelApiKey) {
   // eslint-disable-next-line no-console
-  console.error("Invalid environment variables", { OPENAI_API_KEY: ["OPENAI_API_KEY required when FEATURE_LLM=true"] });
+  console.error("Invalid environment variables", { MODEL_API_KEY: ["MODEL_API_KEY or OPENAI_API_KEY required for the configured provider when FEATURE_LLM=true"] });
   process.exit(1);
 }
 
@@ -66,9 +75,10 @@ export const workerEnv = {
   redisUrl: env.REDIS_URL,
   featureLlm: toBool(env.FEATURE_LLM),
   featureTelegram: toBool(env.FEATURE_TELEGRAM),
-  openaiApiKey: env.OPENAI_API_KEY || "",
-  openaiBaseUrl: env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-  openaiModel: env.OPENAI_MODEL || "gpt-4o-mini",
+  modelProvider,
+  modelApiKey,
+  modelBaseUrl,
+  modelName,
   telegramBotToken: env.TELEGRAM_BOT_TOKEN || "",
   maxRecentEvents: Number(env.DIGEST_MAX_RECENT_EVENTS || 50),
   maxDaysLookback: Number(env.DIGEST_MAX_DAYS_LOOKBACK || 14),

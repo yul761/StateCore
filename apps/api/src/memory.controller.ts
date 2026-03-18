@@ -6,7 +6,7 @@ import {
   MemoryEventInput,
   RetrieveInput
 } from "@project-memory/contracts";
-import { generateAnswer, LlmClient } from "@project-memory/core";
+import { createChatModelClient, generateAnswer, LlmClient } from "@project-memory/core";
 import { digestQueue } from "./queue";
 import { DomainService } from "./domain.service";
 import type { RequestWithUser } from "./types";
@@ -18,11 +18,12 @@ export class MemoryController {
   private llm: LlmClient | null = null;
 
   constructor(@Inject(DomainService) private readonly domain: DomainService) {
-    if (apiEnv.featureLlm && apiEnv.openaiApiKey) {
-      this.llm = new LlmClient({
-        apiKey: apiEnv.openaiApiKey,
-        baseUrl: apiEnv.openaiBaseUrl,
-        model: apiEnv.openaiModel,
+    if (apiEnv.featureLlm) {
+      this.llm = createChatModelClient({
+        provider: apiEnv.modelProvider,
+        apiKey: apiEnv.modelApiKey,
+        baseUrl: apiEnv.modelBaseUrl,
+        model: apiEnv.modelName,
         timeoutMs: 20000
       });
     }
@@ -93,7 +94,7 @@ export class MemoryController {
   @Post("/memory/digest")
   async enqueueDigest(@Req() req: RequestWithUser, @Body() body: unknown) {
     if (!apiEnv.featureLlm) {
-      throw new BadRequestException("FEATURE_LLM disabled. Enable FEATURE_LLM=true and set OPENAI_API_KEY to run digest.");
+      throw new BadRequestException("FEATURE_LLM disabled. Enable FEATURE_LLM=true and configure MODEL_* or OPENAI_* to run digest.");
     }
     const input = DigestRequestInput.parse(body);
     const scope = await this.domain.projectService.getScope(req.userId, input.scopeId);
@@ -107,7 +108,7 @@ export class MemoryController {
   @Post("/memory/digest/rebuild")
   async rebuildDigest(@Req() req: RequestWithUser, @Body() body: unknown) {
     if (!apiEnv.featureLlm) {
-      throw new BadRequestException("FEATURE_LLM disabled. Enable FEATURE_LLM=true and set OPENAI_API_KEY to run digest rebuild.");
+      throw new BadRequestException("FEATURE_LLM disabled. Enable FEATURE_LLM=true and configure MODEL_* or OPENAI_* to run digest rebuild.");
     }
     const input = DigestRebuildInput.parse(body);
     const scope = await this.domain.projectService.getScope(req.userId, input.scopeId);

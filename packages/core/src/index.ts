@@ -294,7 +294,15 @@ export class ReminderService {
 }
 
 export interface LlmClientOptions {
-  apiKey: string;
+  apiKey?: string;
+  baseUrl: string;
+  model: string;
+  timeoutMs?: number;
+}
+
+export interface ModelProviderConfig {
+  provider?: string;
+  apiKey?: string;
   baseUrl: string;
   model: string;
   timeoutMs?: number;
@@ -307,7 +315,7 @@ export class LlmClient {
   private timeoutMs: number;
 
   constructor(options: LlmClientOptions) {
-    this.apiKey = options.apiKey;
+    this.apiKey = options.apiKey ?? "";
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
     this.model = options.model;
     this.timeoutMs = options.timeoutMs ?? 20000;
@@ -319,12 +327,15 @@ export class LlmClient {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
       try {
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json"
+        };
+        if (this.apiKey) {
+          headers.Authorization = `Bearer ${this.apiKey}`;
+        }
         const response = await fetch(`${this.baseUrl}/chat/completions`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${this.apiKey}`
-          },
+          headers,
           body: JSON.stringify({
             model: this.model,
             messages
@@ -352,6 +363,16 @@ export class LlmClient {
     }
     throw lastError ?? new Error("LLM call failed");
   }
+}
+
+export function createChatModelClient(config: ModelProviderConfig | null | undefined) {
+  if (!config) return null;
+  return new LlmClient({
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl,
+    model: config.model,
+    timeoutMs: config.timeoutMs
+  });
 }
 
 export interface DigestResult {
