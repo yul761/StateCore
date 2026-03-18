@@ -1,0 +1,386 @@
+# Assistant Runtime Specification
+
+This document defines the intended assistant runtime layer for Project Memory.
+
+Project Memory should not stop at exposing low-level memory primitives. It should provide a developer-facing runtime that makes long-term memory usable without forcing every integrator to rebuild the same ingestion, recall, prompt assembly, answer grounding, and digest-trigger logic.
+
+## Purpose
+
+The assistant runtime exists to turn the memory system into a practical integration layer.
+
+Its job is to standardize:
+
+- how messages become memory events
+- how recall is assembled before answer generation
+- how and when memory is written
+- how digesting is triggered
+- how answers stay grounded in memory
+
+The runtime should reduce glue code without turning the project into a generic agent orchestration framework.
+
+## Position in the Architecture
+
+Project Memory should be understood as four layers:
+
+1. model layer
+2. memory runtime layer
+3. interaction layer
+4. evaluation layer
+
+The assistant runtime belongs in the memory runtime layer.
+
+It sits above raw endpoints like:
+
+- `POST /memory/events`
+- `POST /memory/retrieve`
+- `POST /memory/digest`
+- `POST /memory/answer`
+
+And below interaction surfaces like:
+
+- CLI
+- Telegram adapter
+- future reference apps
+
+## Why a Runtime Layer Is Needed
+
+The current repository already provides useful primitives, but an integrator still has to decide:
+
+- what counts as a memory-worthy turn
+- how to map a user message into stream or document events
+- when recall should run
+- how much memory should be included in the answer prompt
+- when to trigger digest generation
+- how to return evidence with an answer
+
+If every developer solves these questions differently, Project Memory remains a memory toolkit rather than a reusable runtime.
+
+## Runtime Goals
+
+The assistant runtime should optimize for:
+
+- low integration overhead
+- explicit memory policy
+- evidence-backed answers
+- compatibility with local or bring-your-own model providers
+- low drift over long-running use
+
+## Core Concepts
+
+### AssistantSession
+
+`AssistantSession` is the primary runtime unit.
+
+It represents a scoped, memory-aware interaction loop for one user and one project or conversation scope.
+
+Responsibilities:
+
+- receive new conversation turns
+- resolve recall for the current turn
+- apply memory write policy
+- trigger answer generation
+- schedule or trigger digesting
+- return answer output with evidence
+
+Minimum semantics:
+
+- bound to `userId`
+- bound to `scopeId`
+- associated with a model provider and runtime policies
+
+### ConversationTurn
+
+A `ConversationTurn` is a single user-input and assistant-output cycle.
+
+It should include:
+
+- user message
+- optional assistant reply
+- timestamps
+- optional metadata such as source, channel, tags, or attachments
+
+The runtime should not assume every turn becomes long-term memory.
+
+### MemoryWritePolicy
+
+`MemoryWritePolicy` decides how conversation content enters memory.
+
+This is critical because writing everything into long-term memory increases noise and drift.
+
+Recommended write tiers:
+
+- `ephemeral`: useful only for the immediate turn
+- `candidate`: worth considering for digest inclusion
+- `stable`: likely to become long-lived state
+- `documented`: should be treated like durable document memory
+
+The runtime should support rules that map incoming content into these tiers.
+
+### RecallPolicy
+
+`RecallPolicy` determines what memory is retrieved before answer generation.
+
+At minimum, recall should consider:
+
+- the latest digest
+- protected state or snapshot state
+- recent events
+- relevant documents
+
+As retrieval evolves, this policy may also include vector or hybrid ranking. The runtime should keep the policy boundary explicit so retrieval improvements do not silently change answer behavior.
+
+### DigestPolicy
+
+`DigestPolicy` determines when and how digesting is triggered.
+
+Possible triggers:
+
+- after a fixed number of candidate events
+- after important decisions or constraints
+- on a timer
+- on explicit manual request
+- after document updates
+
+The runtime should be able to expose these choices rather than baking in one hardcoded rule.
+
+### GroundedAnswer
+
+A runtime answer should not just return free-form text. It should be able to return an evidence-backed answer object.
+
+Recommended shape:
+
+```ts
+interface GroundedAnswer {
+  answer: string;
+  evidence: {
+    digestIds: string[];
+    eventIds: string[];
+    stateRefs: string[];
+  };
+  notes?: string[];
+}
+```
+
+The exact schema can evolve, but the runtime should preserve the idea that answers can be traced to memory sources.
+
+## Recommended Runtime Flow
+
+The runtime for a single turn should roughly follow this sequence:
+
+1. Receive a user message.
+2. Classify the message for memory write intent.
+3. Store the raw turn or derived event payloads.
+4. Resolve recall for the turn.
+5. Build the answer context from digest, state, and selected events.
+6. Generate or return an answer.
+7. Persist the assistant reply if policy requires it.
+8. Trigger digesting if `DigestPolicy` conditions are met.
+9. Return answer text plus evidence information.
+
+## Suggested Runtime Interfaces
+
+The names below are intentionally simple and reflect the roadmap direction.
+
+```ts
+interface AssistantSession {
+  userId: string;
+  scopeId: string;
+  handleTurn(input: RuntimeTurnInput): Promise<GroundedAnswer>;
+}
+
+interface RuntimeTurnInput {
+  message: string;
+  source?: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface MemoryWritePolicy {
+  classifyTurn(input: RuntimeTurnInput): Promise<"ephemeral" | "candidate" | "stable" | "documented">;
+}
+
+interface RecallPolicy {
+  resolve(input: RuntimeTurnInput): Promise<ResolvedRecall>;
+}
+
+interface DigestPolicy {
+  shouldDigest(input: RuntimeTurnInput, context: RuntimeTurnContext): boolean | Promise<boolean>;
+}
+```
+
+These are not yet repository APIs. They are the intended product boundary.
+
+## Mapping to the Current Repository
+
+The current codebase already contains the pieces needed for an initial runtime:
+
+- scopes as the session boundary
+- `/memory/events` for ingestion
+- `/memory/retrieve` for baseline recall
+- `/memory/answer` for answer generation
+- `/memory/digest` for digest triggering
+- CLI and Telegram adapter as reference interaction layers
+
+What is missing is a single, documented abstraction that composes these primitives into one coherent developer flow.
+
+## Runtime Write Policy
+
+Not every message should be treated as durable memory.
+
+The runtime should prefer a write policy like this:
+
+### Ephemeral
+
+Use for:
+
+- chit-chat
+- acknowledgements
+- one-off requests with no project relevance
+- transient clarification
+
+Ephemeral content may influence the immediate answer, but should not automatically become long-term memory.
+
+### Candidate
+
+Use for:
+
+- plausible project updates
+- intermediate work notes
+- partially important observations
+
+Candidate content should be stored as events and allowed into digest selection, but not automatically promoted to stable facts.
+
+### Stable
+
+Use for:
+
+- explicit goals
+- constraints
+- decisions
+- persistent preferences or project rules
+
+Stable content should be favored by digest selection and protected state evolution.
+
+### Documented
+
+Use for:
+
+- canonical project plans
+- specs
+- updated reference documents
+- durable written notes
+
+Documented content should usually map to document memory rather than ordinary stream events.
+
+## Runtime Recall Policy
+
+The runtime should assemble recall in evidence-first order.
+
+Recommended order:
+
+1. protected state
+2. latest digest
+3. recent high-value events
+4. current documents
+5. optional retrieval plugins
+
+This keeps answer generation grounded in the most stable memory layers before broader evidence is introduced.
+
+## Runtime Answering Policy
+
+The runtime should treat answering as a memory-backed operation, not just a plain LLM call.
+
+Answer generation should:
+
+- prefer recalled evidence over parametric guessing
+- surface uncertainty when evidence is weak
+- preserve constraint awareness
+- avoid inventing decisions or todos
+
+The runtime should eventually support an option to return:
+
+- answer text
+- grounding metadata
+- warnings when evidence is weak or conflicting
+
+## Digest Trigger Policy
+
+Digesting should be policy-driven.
+
+Recommended trigger categories:
+
+- count-based: after N candidate or stable events
+- importance-based: after decisions or constraints
+- document-based: after meaningful document change
+- time-based: after a quiet period or fixed interval
+- manual: explicit developer request
+
+This is preferable to forcing all integrations into a single cadence.
+
+## Reference Integrations
+
+The current CLI and Telegram adapter should be treated as reference integrations for the future runtime.
+
+They are useful because they demonstrate:
+
+- session-scoped interaction
+- event ingestion
+- digest triggering
+- answer retrieval
+
+But they should not become the product boundary themselves.
+
+## Non-goals
+
+The assistant runtime should not become:
+
+- a general multi-agent framework
+- a tool execution planner
+- a hosted chat app
+- a universal orchestration layer for arbitrary workflows
+
+The runtime exists to standardize memory-aware assistant behavior, not to absorb every assistant concern.
+
+## Relationship to Drift
+
+The assistant runtime is a drift control surface because it decides:
+
+- what enters long-term memory
+- what gets recalled
+- when digests run
+- whether answers are evidence-backed
+
+A poor runtime policy can create drift even when the digest engine itself is good. That is why runtime policy should be explicit and benchmarkable.
+
+## Evaluation Implications
+
+A future runtime-aware benchmark should be able to evaluate:
+
+- write-policy quality
+- recall grounding quality
+- answer grounding rate
+- unsupported claim rate
+- drift under different digest trigger cadences
+
+This matters because long-term memory quality is not only a digest problem. It is also a runtime policy problem.
+
+## Suggested Implementation Path
+
+The safest rollout path is:
+
+1. Document the runtime boundary.
+2. Build a thin session abstraction on top of existing API primitives.
+3. Add write-policy hooks before introducing more complex retrieval.
+4. Return evidence metadata from answer paths.
+5. Add benchmark fixtures that evaluate runtime policies, not only digest internals.
+
+## Success Criteria
+
+The assistant runtime is successful when a developer can attach Project Memory to a local or remote model assistant and avoid rebuilding:
+
+- session handling
+- memory write classification
+- recall assembly
+- answer grounding
+- digest trigger logic
+
+At that point, Project Memory stops being only a memory engine and becomes a usable long-term memory runtime.
