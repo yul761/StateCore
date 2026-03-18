@@ -130,12 +130,13 @@ In the near term, one provider client may back more than one role, but the inter
 
 ## Provider Factory
 
-The repository should evolve toward a provider factory rather than constructing clients directly in controllers or workers.
+The repository now includes an initial provider bundle in `packages/core/src/model-provider.ts`, and should continue evolving it instead of falling back to ad hoc client construction.
 
 Current behavior:
 
-- API constructs `LlmClient` directly
-- worker constructs `LlmClient` directly
+- API requests a provider bundle and uses its `chat` role
+- worker requests a provider bundle and uses its `structuredOutput` role
+- embedding is not implemented yet and still resolves to `null`
 
 Target behavior:
 
@@ -153,7 +154,7 @@ interface ModelProviderFactory {
 }
 ```
 
-This is a design target, not a current repository API.
+This is no longer purely aspirational. The current repository already exposes a provider bundle with `chat`, `structuredOutput`, and `embedding` roles, but only the first two are backed by a real client today.
 
 ## Compatibility Rule
 

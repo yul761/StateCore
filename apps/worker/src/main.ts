@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { Queue, Worker } from "bullmq";
 import { prisma } from "@project-memory/db";
-import { createChatModelClient, logger, runDigestControlPipeline } from "@project-memory/core";
+import { createModelProvider, logger, runDigestControlPipeline } from "@project-memory/core";
 import type { DigestState } from "@project-memory/core";
 import {
   digestClassifySystemPrompt,
@@ -18,13 +18,13 @@ const connection = {
 const reminderQueue = new Queue("reminder", { connection });
 
 const llm = workerEnv.featureLlm
-  ? createChatModelClient({
+  ? createModelProvider({
       provider: workerEnv.modelProvider,
       apiKey: workerEnv.modelApiKey,
       baseUrl: workerEnv.modelBaseUrl,
       model: workerEnv.modelName,
       timeoutMs: 20000
-    })
+    })?.structuredOutput ?? null
   : null;
 
 async function sendTelegramMessage(telegramUserId: string, text: string) {

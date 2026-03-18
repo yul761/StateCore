@@ -13,6 +13,25 @@ export interface ModelProviderConfig {
   timeoutMs?: number;
 }
 
+export interface ChatModel {
+  chat: LlmClient["chat"];
+}
+
+export interface StructuredOutputModel {
+  chat: LlmClient["chat"];
+}
+
+export interface EmbeddingModel {
+  embed: (input: string[]) => Promise<number[][]>;
+}
+
+export interface ModelProviderFactory {
+  provider: string;
+  chat: ChatModel;
+  structuredOutput: StructuredOutputModel;
+  embedding: EmbeddingModel | null;
+}
+
 export class LlmClient {
   private apiKey: string;
   private baseUrl: string;
@@ -78,4 +97,15 @@ export function createChatModelClient(config: ModelProviderConfig | null | undef
     model: config.model,
     timeoutMs: config.timeoutMs
   });
+}
+
+export function createModelProvider(config: ModelProviderConfig | null | undefined): ModelProviderFactory | null {
+  const chat = createChatModelClient(config);
+  if (!chat) return null;
+  return {
+    provider: config?.provider || "openai-compatible",
+    chat,
+    structuredOutput: chat,
+    embedding: null
+  };
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createChatModelClient, LlmClient } from "./index";
+import { createChatModelClient, createModelProvider, LlmClient } from "./index";
 
 describe("createChatModelClient", () => {
   it("returns null when config is missing", () => {
@@ -15,6 +15,26 @@ describe("createChatModelClient", () => {
     });
 
     expect(client).toBeInstanceOf(LlmClient);
+  });
+});
+
+describe("createModelProvider", () => {
+  it("returns null when config is missing", () => {
+    expect(createModelProvider(null)).toBeNull();
+  });
+
+  it("creates a provider bundle with chat and structured output clients", () => {
+    const provider = createModelProvider({
+      provider: "openai-compatible",
+      baseUrl: "http://localhost:11434/v1",
+      model: "local-model",
+      apiKey: ""
+    });
+
+    expect(provider?.provider).toBe("openai-compatible");
+    expect(provider?.chat).toBeInstanceOf(LlmClient);
+    expect(provider?.structuredOutput).toBeInstanceOf(LlmClient);
+    expect(provider?.embedding).toBeNull();
   });
 });
 

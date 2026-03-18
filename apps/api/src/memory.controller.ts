@@ -10,11 +10,11 @@ import {
 } from "@project-memory/contracts";
 import {
   AssistantSession,
+  type ChatModel,
   createRuntimePolicyBundle,
   createRuntimeRecallPolicy,
-  createChatModelClient,
-  generateAnswer,
-  LlmClient
+  createModelProvider,
+  generateAnswer
 } from "@project-memory/core";
 import { digestQueue } from "./queue";
 import { DomainService } from "./domain.service";
@@ -24,17 +24,17 @@ import { answerSystemPrompt, answerUserPrompt } from "@project-memory/prompts";
 
 @Controller()
 export class MemoryController {
-  private llm: LlmClient | null = null;
+  private llm: ChatModel | null = null;
 
   constructor(@Inject(DomainService) private readonly domain: DomainService) {
     if (apiEnv.featureLlm) {
-      this.llm = createChatModelClient({
+      this.llm = createModelProvider({
         provider: apiEnv.modelProvider,
         apiKey: apiEnv.modelApiKey,
         baseUrl: apiEnv.modelBaseUrl,
         model: apiEnv.modelName,
         timeoutMs: 20000
-      });
+      })?.chat ?? null;
     }
   }
 

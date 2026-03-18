@@ -1,9 +1,19 @@
 import pino from "pino";
 import { createHash } from "crypto";
 import { z } from "zod";
-export { LlmClient, type LlmClientOptions, createChatModelClient, type ModelProviderConfig } from "./model-provider";
+export {
+  LlmClient,
+  type LlmClientOptions,
+  createChatModelClient,
+  createModelProvider,
+  type ChatModel,
+  type StructuredOutputModel,
+  type EmbeddingModel,
+  type ModelProviderConfig,
+  type ModelProviderFactory
+} from "./model-provider";
 export type { DigestConsistencyResult } from "./digest-control";
-import { LlmClient } from "./model-provider";
+import type { ChatModel } from "./model-provider";
 
 export const logger = pino({ level: process.env.LOG_LEVEL || "info" });
 
@@ -255,7 +265,7 @@ export class RetrieveService {
 }
 
 export class AnswerService {
-  constructor(private retrieveService: RetrieveService, private llm: LlmClient) {}
+  constructor(private retrieveService: RetrieveService, private llm: ChatModel) {}
 
   async answer(scopeId: string, question: string, prompts: { system: string; user: string }) {
     const result = await this.retrieveService.retrieve(scopeId, 25, question);
@@ -326,7 +336,7 @@ export async function generateDigest(input: {
   recentEvents: MemoryEvent[];
   systemPrompt: string;
   userPromptTemplate: string;
-  llm: LlmClient;
+  llm: ChatModel;
 }): Promise<DigestResult> {
   const recentEventsText = input.recentEvents
     .map((event) => `- ${event.createdAt.toISOString()}: ${event.content}`)
@@ -378,7 +388,7 @@ export async function generateAnswer(input: {
   eventsText: string;
   systemPrompt: string;
   userPromptTemplate: string;
-  llm: LlmClient;
+  llm: ChatModel;
 }) {
   const userPrompt = renderTemplate(input.userPromptTemplate, {
     question: input.question,

@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import type { LlmClient } from "./model-provider";
+import type { ChatModel } from "./model-provider";
 
 export type MemorySource = "telegram" | "cli" | "api" | "sdk";
 
@@ -111,7 +111,7 @@ export interface AssistantSessionOptions {
   scopeId: string;
   memoryService: RuntimeMemoryService;
   recallPolicy: RecallPolicy;
-  llm: LlmClient;
+  llm: ChatModel;
   prompts: {
     system: string;
     user: string;
