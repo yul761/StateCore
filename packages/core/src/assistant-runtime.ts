@@ -55,6 +55,23 @@ export interface ResolvedRecall {
   digest: Digest | null;
   events: Array<{ id: string; content: string; createdAt: Date }>;
   stateRef?: string | null;
+  stateSnapshot?: RuntimeStateSnapshot | null;
+}
+
+export interface RuntimeStateSnapshot {
+  digestId: string | null;
+  state?: {
+    stableFacts?: {
+      goal?: string;
+      constraints?: string[];
+      decisions?: string[];
+    };
+    todos?: string[];
+    workingNotes?: {
+      risks?: string[];
+      openQuestions?: string[];
+    };
+  } | null;
 }
 
 export interface GroundingEvidence {
@@ -193,7 +210,7 @@ export class DefaultRecallPolicy implements RecallPolicy {
   constructor(
     private retrieveService: RuntimeRetrieveService,
     private options?: {
-      scopeStateLoader?: (scopeId: string) => Promise<{ digestId: string | null } | null>;
+      scopeStateLoader?: (scopeId: string) => Promise<RuntimeStateSnapshot | null>;
       limit?: number;
     }
   ) {}
@@ -204,7 +221,8 @@ export class DefaultRecallPolicy implements RecallPolicy {
     return {
       digest: result.digest,
       events: result.events,
-      stateRef: state?.digestId ?? null
+      stateRef: state?.digestId ?? null,
+      stateSnapshot: state
     };
   }
 }
@@ -272,7 +290,7 @@ export function createRuntimeRecallPolicy(
   options?: {
     profile?: RuntimePolicyProfile;
     overrides?: RuntimePolicyOverrides;
-    scopeStateLoader?: (scopeId: string) => Promise<{ digestId: string | null } | null>;
+    scopeStateLoader?: (scopeId: string) => Promise<RuntimeStateSnapshot | null>;
   }
 ) {
   const profile = options?.profile ?? "default";
@@ -395,6 +413,7 @@ export class AssistantSession {
   }
 
   private buildEvidence(recall: ResolvedRecall): GroundingEvidence {
+    const stateSummary = this.summarizeStateSnapshot(recall.stateSnapshot);
     return {
       digestIds: recall.digest ? [recall.digest.id] : [],
       eventIds: recall.events.map((event) => event.id),
@@ -405,8 +424,22 @@ export class AssistantSession {
         createdAt: event.createdAt.toISOString(),
         snippet: event.content.length > 160 ? `${event.content.slice(0, 157)}...` : event.content
       })),
-      stateSummary: recall.stateRef ? `latest_state_snapshot:${recall.stateRef}` : null
+      stateSummary
     };
+  }
+
+  private summarizeStateSnapshot(snapshot?: RuntimeStateSnapshot | null) {
+    if (!snapshot?.digestId) return null;
+    const goal = snapshot.state?.stableFacts?.goal;
+    const constraints = snapshot.state?.stableFacts?.constraints ?? [];
+    const todos = snapshot.state?.todos ?? [];
+    const risks = snapshot.state?.workingNotes?.risks ?? [];
+    const parts = [`digest:${snapshot.digestId}`];
+    if (goal) parts.push(`goal:${goal}`);
+    if (constraints.length) parts.push(`constraints:${constraints.slice(0, 2).join(" | ")}`);
+    if (todos.length) parts.push(`todos:${todos.slice(0, 2).join(" | ")}`);
+    if (risks.length) parts.push(`risks:${risks.slice(0, 2).join(" | ")}`);
+    return parts.join("; ");
   }
 
   private async generateGroundedAnswer(question: string, recall: ResolvedRecall) {

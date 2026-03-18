@@ -144,7 +144,16 @@ describe("AssistantSession", () => {
       scopeId: "scope-1",
       memoryService,
       recallPolicy: new DefaultRecallPolicy(retrieveService, {
-        scopeStateLoader: async () => ({ digestId: "digest-1" })
+        scopeStateLoader: async () => ({
+          digestId: "digest-1",
+          state: {
+            stableFacts: {
+              goal: "keep api stable",
+              constraints: ["self-hosted first"]
+            },
+            todos: ["Document replay checks"]
+          }
+        })
       }),
       llm: llm as any,
       prompts: {
@@ -170,7 +179,7 @@ describe("AssistantSession", () => {
     expect(result.evidence.stateRefs).toEqual(["digest-1"]);
     expect(result.evidence.digestSummary).toBe("goal: keep api stable");
     expect(result.evidence.eventSnippets?.[0]?.snippet).toContain("prioritize digest consistency");
-    expect(result.evidence.stateSummary).toBe("latest_state_snapshot:digest-1");
+    expect(result.evidence.stateSummary).toBe("digest:digest-1; goal:keep api stable; constraints:self-hosted first; todos:Document replay checks");
     expect(ingestEvent).toHaveBeenCalledTimes(2);
     expect(requestDigest).toHaveBeenCalledWith("scope-1");
   });
