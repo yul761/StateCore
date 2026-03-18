@@ -395,6 +395,104 @@ describe("protectedStateMerge", () => {
     );
   });
 
+  it("reaffirms semantically equivalent constraints and todos from stream events", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: ["self hosted only"],
+          decisions: []
+        },
+        workingNotes: {},
+        todos: ["ship runtime docs"],
+        provenance: {
+          constraints: [{ value: "self hosted only", refs: [{ id: "evt-old", sourceType: "event", kind: "constraint" }] }],
+          todos: [{ value: "ship runtime docs", refs: [{ id: "evt-old-2", sourceType: "event", kind: "todo" }] }]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "evt-constraint",
+          reason: "stable_fact_signal",
+          features: { kind: "constraint", importanceScore: 0.9, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-constraint",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "self-hosted only"
+          })
+        },
+        {
+          eventId: "evt-todo",
+          reason: "stable_fact_signal",
+          features: { kind: "todo", importanceScore: 0.8, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-todo",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "ship runtime documentation"
+          })
+        }
+      ]
+    });
+
+    expect(merged.stableFacts.constraints).toEqual(["self hosted only"]);
+    expect(merged.todos).toEqual(["ship runtime docs"]);
+    expect(merged.recentChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "constraints", action: "reaffirm", value: "self hosted only" }),
+        expect.objectContaining({ field: "todos", action: "reaffirm", value: "ship runtime docs" })
+      ])
+    );
+  });
+
+  it("removes matching todos when a stream event marks them done or cancelled", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: [],
+          decisions: []
+        },
+        workingNotes: {},
+        todos: ["publish benchmark report", "ship runtime"],
+        provenance: {
+          todos: [
+            { value: "publish benchmark report", refs: [{ id: "evt-old", sourceType: "event", kind: "todo" }] },
+            { value: "ship runtime", refs: [{ id: "evt-old-2", sourceType: "event", kind: "todo" }] }
+          ]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "evt-done",
+          reason: "stable_fact_signal",
+          features: { kind: "todo", importanceScore: 0.8, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-done",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "completed publish benchmark report"
+          })
+        }
+      ]
+    });
+
+    expect(merged.todos).toEqual(["ship runtime"]);
+    expect(merged.recentChanges).toContainEqual(
+      expect.objectContaining({ field: "todos", action: "remove", value: "publish benchmark report" })
+    );
+  });
+
   it("normalizes legacy string evidence refs from previous snapshots", () => {
     const normalized = normalizeDigestState({
       stableFacts: { decisions: [] },

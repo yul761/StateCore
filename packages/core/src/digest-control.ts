@@ -241,7 +241,13 @@ function normalizeText(value: string) {
 
 function tokenize(value: string) {
   const normalized = normalizeText(value);
-  return normalized.split(" ").filter((token) => token.length > 2);
+  return normalized
+    .split(" ")
+    .filter((token) => token.length > 2)
+    .map((token) => {
+      if (token === "docs" || token === "doc") return "documentation";
+      return token;
+    });
 }
 
 function jaccardSimilarity(a: string, b: string) {
@@ -443,6 +449,12 @@ function findBestSemanticMatch(values: string[], candidate: string, threshold = 
 function stripDecisionRevocationPrefix(text: string) {
   return text
     .replace(/^\s*(revoke|undo|cancel decision|cancel|drop|remove)\s+/i, "")
+    .trim();
+}
+
+function stripTodoRemovalPrefix(text: string) {
+  return text
+    .replace(/^\s*(done|completed|complete|cancel|remove|drop|close)\s+/i, "")
     .trim();
 }
 
@@ -687,23 +699,37 @@ export function protectedStateMerge(input: {
     }
 
     if (delta.features.kind === "constraint" && delta.features.importanceScore >= 0.75) {
-      if (!next.stableFacts.constraints.includes(text)) {
+      const existing = findBestSemanticMatch(next.stableFacts.constraints, text);
+      if (!existing) {
         next.stableFacts.constraints.push(text);
         pushRecentChange(next, { field: "constraints", action: "add", value: text, evidence });
+        next.provenance.constraints = upsertValueProvenance(next.provenance.constraints, text, evidence);
       } else {
-        pushRecentChange(next, { field: "constraints", action: "reaffirm", value: text, evidence });
+        pushRecentChange(next, { field: "constraints", action: "reaffirm", value: existing, evidence });
+        next.provenance.constraints = upsertValueProvenance(next.provenance.constraints, existing, evidence);
       }
-      next.provenance.constraints = upsertValueProvenance(next.provenance.constraints, text, evidence);
     }
 
     if (delta.features.kind === "todo") {
-      if (!next.todos.includes(text)) {
-        next.todos.push(text);
-        pushRecentChange(next, { field: "todos", action: "add", value: text, evidence });
+      if (/\b(done|completed|complete|cancel|remove|drop|close)\b/.test(lowered)) {
+        const removalTarget = stripTodoRemovalPrefix(text);
+        const matched = findBestSemanticMatch(next.todos, removalTarget, 0.45);
+        if (matched) {
+          next.todos = next.todos.filter((item) => item !== matched);
+          next.provenance.todos = removeValueProvenance(next.provenance.todos, matched);
+          pushRecentChange(next, { field: "todos", action: "remove", value: matched, evidence });
+        }
       } else {
-        pushRecentChange(next, { field: "todos", action: "reaffirm", value: text, evidence });
+        const existing = findBestSemanticMatch(next.todos, text);
+        if (!existing) {
+          next.todos.push(text);
+          pushRecentChange(next, { field: "todos", action: "add", value: text, evidence });
+          next.provenance.todos = upsertValueProvenance(next.provenance.todos, text, evidence);
+        } else {
+          pushRecentChange(next, { field: "todos", action: "reaffirm", value: existing, evidence });
+          next.provenance.todos = upsertValueProvenance(next.provenance.todos, existing, evidence);
+        }
       }
-      next.provenance.todos = upsertValueProvenance(next.provenance.todos, text, evidence);
     }
 
     if (delta.features.kind === "question") {
