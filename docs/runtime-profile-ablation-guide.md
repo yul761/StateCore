@@ -118,9 +118,17 @@ When publishing a runtime profile comparison, include:
 5. Replay differences, if any
 6. Interpretation of trade-offs
 
+Prefer phrasing these comparisons relative to the `baseline` case instead of listing isolated scores. The generated ablation summary now includes:
+
+- best reliability delta versus baseline
+- worst reliability delta versus baseline
+- best runtime evidence coverage delta versus baseline
+- worst runtime evidence coverage delta versus baseline
+
 ## Suggested Research Questions
 
 - Which runtime profile best preserves reliability under long-form document updates?
 - Does a conservative profile reduce contradiction at the cost of recall?
 - Does a document-heavy profile improve retention while increasing replay divergence?
 - How much of reliability variation comes from runtime policy versus digest-control parameters?
+- Which override changes runtime evidence density without materially improving reliability?

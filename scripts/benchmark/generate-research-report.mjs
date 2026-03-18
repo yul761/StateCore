@@ -31,6 +31,16 @@ function formatOverrideSummary(overrides = {}) {
   return `recallLimit=${overrides.recallLimit ?? "default"}, promoteLongForm=${overrides.promoteLongFormToDocumented ? "yes" : "no"}, digestOnCandidate=${overrides.digestOnCandidate ? "yes" : "no"}`;
 }
 
+function formatDelta(value) {
+  const normalized = Number.isFinite(value) ? value : 0;
+  return normalized > 0 ? `+${normalized}` : `${normalized}`;
+}
+
+function formatDeltaHighlight(label, entry, metric) {
+  if (!entry) return `- ${label}: none`;
+  return `- ${label}: ${entry.name} (${metric} ${formatDelta(entry.deltas?.[metric] ?? 0)}, profile ${entry.runtimePolicyProfile}, overrides ${formatOverrideSummary(entry.runtimeOverrides)})`;
+}
+
 function formatRuntimeComparisons(cases = []) {
   const runtimeCases = cases.filter((item) => item.name.startsWith("runtime_"));
   if (!runtimeCases.length) return "- none";
@@ -91,6 +101,13 @@ const lines = [
   ...(ablation
     ? [
         "## Ablation Highlights",
+        `- Baseline: ${ablation.deltaSummary?.baseline || "baseline"}`,
+        formatDeltaHighlight("Best reliability delta", ablation.deltaSummary?.bestReliability, "reliability"),
+        formatDeltaHighlight("Worst reliability delta", ablation.deltaSummary?.worstReliability, "reliability"),
+        formatDeltaHighlight("Best runtime evidence delta", ablation.deltaSummary?.bestRuntimeEvidenceCoverage, "runtimeEvidenceCoverageRate"),
+        formatDeltaHighlight("Worst runtime evidence delta", ablation.deltaSummary?.worstRuntimeEvidenceCoverage, "runtimeEvidenceCoverageRate"),
+        "",
+        "## Top Ablations",
         formatTopAblations(ablation.cases),
         "",
         "## Runtime Profile Comparison",

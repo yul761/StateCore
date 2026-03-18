@@ -91,6 +91,68 @@ function collectSummary(jsonPath) {
   };
 }
 
+function roundDelta(value) {
+  return Math.round(value * 1000) / 1000;
+}
+
+function compareAgainstBaseline(baseline, item) {
+  return {
+    overall: roundDelta((item.overall ?? 0) - (baseline.overall ?? 0)),
+    reliability: roundDelta((item.reliability ?? 0) - (baseline.reliability ?? 0)),
+    runtimeEvidenceCoverageRate: roundDelta((item.runtimeEvidenceCoverageRate ?? 0) - (baseline.runtimeEvidenceCoverageRate ?? 0)),
+    runtimeEvidenceDigestSummaryRate: roundDelta((item.runtimeEvidenceDigestSummaryRate ?? 0) - (baseline.runtimeEvidenceDigestSummaryRate ?? 0)),
+    runtimeEvidenceEventSnippetRate: roundDelta((item.runtimeEvidenceEventSnippetRate ?? 0) - (baseline.runtimeEvidenceEventSnippetRate ?? 0)),
+    runtimeEvidenceStateSummaryRate: roundDelta((item.runtimeEvidenceStateSummaryRate ?? 0) - (baseline.runtimeEvidenceStateSummaryRate ?? 0)),
+    runtimeDigestTriggerRate: roundDelta((item.runtimeDigestTriggerRate ?? 0) - (baseline.runtimeDigestTriggerRate ?? 0))
+  };
+}
+
+function summarizeDeltas(cases) {
+  const baseline = cases.find((item) => item.name === "baseline");
+  if (!baseline) return null;
+  const compared = cases
+    .filter((item) => item.name !== baseline.name)
+    .map((item) => ({
+      name: item.name,
+      runtimePolicyProfile: item.runtimePolicyProfile,
+      runtimeOverrides: item.runtimeOverrides,
+      deltas: compareAgainstBaseline(baseline, item)
+    }));
+
+  if (!compared.length) {
+    return {
+      baseline: baseline.name,
+      bestReliability: null,
+      worstReliability: null,
+      bestRuntimeEvidenceCoverage: null,
+      worstRuntimeEvidenceCoverage: null
+    };
+  }
+
+  const byMetric = (metric, direction) =>
+    [...compared].sort((a, b) =>
+      direction === "desc" ? (b.deltas[metric] ?? 0) - (a.deltas[metric] ?? 0) : (a.deltas[metric] ?? 0) - (b.deltas[metric] ?? 0)
+    )[0] ?? null;
+
+  return {
+    baseline: baseline.name,
+    bestReliability: byMetric("reliability", "desc"),
+    worstReliability: byMetric("reliability", "asc"),
+    bestRuntimeEvidenceCoverage: byMetric("runtimeEvidenceCoverageRate", "desc"),
+    worstRuntimeEvidenceCoverage: byMetric("runtimeEvidenceCoverageRate", "asc")
+  };
+}
+
+function formatDelta(value) {
+  const normalized = Number.isFinite(value) ? value : 0;
+  return normalized > 0 ? `+${normalized}` : `${normalized}`;
+}
+
+function formatDeltaEntry(label, entry, metric) {
+  if (!entry) return `- ${label}: none`;
+  return `- ${label}: ${entry.name} (${metric} ${formatDelta(entry.deltas[metric])}, profile ${entry.runtimePolicyProfile}, overrides recallLimit=${entry.runtimeOverrides.recallLimit ?? "default"}, promoteLongForm=${entry.runtimeOverrides.promoteLongFormToDocumented ? "yes" : "no"}, digestOnCandidate=${entry.runtimeOverrides.digestOnCandidate ? "yes" : "no"})`;
+}
+
 const summaries = [];
 for (const entry of matrix) {
   process.env.ABLATION_NAME = entry.name;
@@ -112,6 +174,7 @@ for (const entry of matrix) {
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const outPath = path.join(outDir, `ablation-${stamp}.md`);
 const jsonPath = path.join(outDir, `ablation-${stamp}.json`);
+const deltaSummary = summarizeDeltas(summaries);
 const report = {
   generatedAt: new Date().toISOString(),
   config: {
@@ -119,6 +182,7 @@ const report = {
     fixture: baseEnv.BENCH_FIXTURE,
     profile: baseEnv.BENCH_PROFILE
   },
+  deltaSummary,
   cases: summaries
 };
 const lines = [
@@ -128,6 +192,14 @@ const lines = [
   `Fixture: ${baseEnv.BENCH_FIXTURE}`,
   `Profile: ${baseEnv.BENCH_PROFILE}`,
   "",
+  "## Baseline Delta Highlights",
+  "",
+  `- Baseline: ${deltaSummary?.baseline ?? "none"}`,
+  formatDeltaEntry("Best reliability delta", deltaSummary?.bestReliability, "reliability"),
+  formatDeltaEntry("Worst reliability delta", deltaSummary?.worstReliability, "reliability"),
+  formatDeltaEntry("Best runtime evidence delta", deltaSummary?.bestRuntimeEvidenceCoverage, "runtimeEvidenceCoverageRate"),
+  formatDeltaEntry("Worst runtime evidence delta", deltaSummary?.worstRuntimeEvidenceCoverage, "runtimeEvidenceCoverageRate"),
+  "",
   "## Summary",
   "",
   ...summaries.map(
@@ -136,6 +208,11 @@ const lines = [
       "",
       `- Overall: ${s.overall}`,
       `- Reliability: ${s.reliability}`,
+      ...(s.name !== "baseline" && deltaSummary?.baseline
+        ? [
+            `- Baseline deltas: overall ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).overall)}, reliability ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).reliability)}, evidence ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).runtimeEvidenceCoverageRate)}, digest-trigger ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).runtimeDigestTriggerRate)}`
+          ]
+        : []),
       `- Component scores: ingest ${s.ingest}, retrieve ${s.retrieve}, digest ${s.digest}, reminder ${s.reminder}`,
       `- Runtime: ${s.runtimeSuccess}/${s.runtimeRuns} success, evidence ${s.runtimeEvidenceCoverageRate}, digest-trigger ${s.runtimeDigestTriggerRate}`,
       `- Runtime evidence detail: digest-summary ${s.runtimeEvidenceDigestSummaryRate}, event-snippet ${s.runtimeEvidenceEventSnippetRate}, state-summary ${s.runtimeEvidenceStateSummaryRate}`,
