@@ -221,6 +221,29 @@ describe("consistencyCheck", () => {
     expect(result.warnings).toContain("goal_omission");
     expect(result.warnings).toContain("constraint_omission");
   });
+
+  it("catches decision and todo omissions when durable state disappears from the digest", () => {
+    const result = consistencyCheck({
+      output: {
+        summary: "Worked on benchmark polish and queue cleanup.",
+        changes: ["Updated benchmark markdown output"],
+        nextSteps: ["Write queue latency notes"]
+      },
+      protectedState: {
+        stableFacts: {
+          goal: "ship low drift memory runtime",
+          constraints: [],
+          decisions: ["use postgres for storage"]
+        },
+        workingNotes: {},
+        todos: ["define drift metrics"]
+      }
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toContain("decision_omission");
+    expect(result.warnings).toContain("todo_omission");
+  });
 });
 
 describe("generateDigestStage2", () => {

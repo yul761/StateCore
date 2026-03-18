@@ -570,6 +570,20 @@ export function consistencyCheck(input: {
   ) {
     warnings.push("constraint_omission");
   }
+  const stableDecisions = input.protectedState.stableFacts.decisions ?? [];
+  if (
+    stableDecisions.length > 0 &&
+    stableDecisions.every((decision) => !mentionsFact(combinedText, decision, 2))
+  ) {
+    warnings.push("decision_omission");
+  }
+  const stableTodos = input.protectedState.todos ?? [];
+  if (
+    stableTodos.length > 0 &&
+    stableTodos.every((todo) => !mentionsFact(combinedText, todo, 2))
+  ) {
+    warnings.push("todo_omission");
+  }
   for (const constraint of stableConstraints) {
     const keyTokens = tokenize(constraint).slice(0, 3);
     if (!keyTokens.length) continue;
@@ -581,7 +595,7 @@ export function consistencyCheck(input: {
   }
 
   const decisionNegation = /\b(revert|reverse|undo|cancel|drop|abandon|deprioritize|no longer|instead)\b/;
-  for (const decision of input.protectedState.stableFacts.decisions ?? []) {
+  for (const decision of stableDecisions) {
     if (mentionsFactWithNegation(combinedText, decision, decisionNegation)) {
       errors.push("decision_contradiction");
       break;
@@ -589,7 +603,7 @@ export function consistencyCheck(input: {
   }
 
   const todoNegation = /\b(remove|delete|drop|cancel|skip|ignore|defer|deprioritize)\b/;
-  for (const todo of input.protectedState.todos ?? []) {
+  for (const todo of stableTodos) {
     if (mentionsFactWithNegation(combinedText, todo, todoNegation)) {
       errors.push("todo_contradiction");
       break;

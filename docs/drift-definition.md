@@ -216,6 +216,17 @@ The current codebase already contains partial building blocks for this model:
 - digest state snapshots in Prisma schema
 - drift-oriented benchmark runner in `scripts/benchmark/run-drift.mjs`
 
+The current consistency taxonomy now includes omission/contradiction signals across all four protected memory categories:
+
+- `goal_omission`
+- `constraint_omission`
+- `decision_omission`
+- `todo_omission`
+- `goal_contradiction`
+- `constraint_contradiction`
+- `decision_contradiction`
+- `todo_contradiction`
+
 The current `DigestState` shape is:
 
 - `stableFacts.goal`
