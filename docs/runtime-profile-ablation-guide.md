@@ -78,6 +78,8 @@ Do not compare only the overall score.
 Prefer comparing:
 
 - `Long-term Memory Reliability`
+- digest omission warning rate
+- temporary todo intrusion rate when todo-heavy fixtures are used
 - runtime turn success
 - runtime evidence coverage rate
 - runtime digest-summary / event-snippet / state-summary evidence rates
@@ -121,6 +123,8 @@ When publishing a runtime profile comparison, include:
 Prefer phrasing these comparisons relative to the `baseline` case instead of listing isolated scores. The generated ablation summary now includes:
 
 - best reliability delta versus baseline
+- best omission warning delta versus baseline
+- worst omission warning delta versus baseline
 - worst reliability delta versus baseline
 - best runtime evidence coverage delta versus baseline
 - worst runtime evidence coverage delta versus baseline

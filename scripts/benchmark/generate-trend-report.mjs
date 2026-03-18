@@ -63,6 +63,8 @@ function summarizeBenchmark(data, fileName) {
       runtimeGrounding: data.scores?.reliabilityBreakdown?.runtimeGrounding ?? 0
     },
     digestConsistency: data.metrics?.digest?.consistencyPassRate ?? 0,
+    digestOmissionWarningRate: data.metrics?.digest?.omissionWarningRate ?? 0,
+    temporaryTodoIntrusionRate: data.metrics?.digest?.goldRetention?.temporaryTodoIntrusionRate ?? 0,
     runtimeEvidenceCoverage: data.metrics?.runtime?.evidenceCoverageRate ?? 0,
     runtimeDigestSummaryRate: data.metrics?.runtime?.evidenceDigestSummaryRate ?? 0,
     replayStateMatch: Boolean(data.metrics?.replay?.stateMatch),
@@ -85,6 +87,8 @@ function buildDeltaSummary(items) {
     replay: Math.round((last.reliabilityBreakdown.replay - first.reliabilityBreakdown.replay) * 1000) / 1000,
     runtimeGrounding: Math.round((last.reliabilityBreakdown.runtimeGrounding - first.reliabilityBreakdown.runtimeGrounding) * 1000) / 1000,
     digestConsistency: Math.round((last.digestConsistency - first.digestConsistency) * 1000) / 1000,
+    digestOmissionWarningRate: Math.round((last.digestOmissionWarningRate - first.digestOmissionWarningRate) * 1000) / 1000,
+    temporaryTodoIntrusionRate: Math.round((last.temporaryTodoIntrusionRate - first.temporaryTodoIntrusionRate) * 1000) / 1000,
     runtimeEvidenceCoverage: Math.round((last.runtimeEvidenceCoverage - first.runtimeEvidenceCoverage) * 1000) / 1000
   };
 }
@@ -135,6 +139,8 @@ const md = [
   `- Reliability: ${latest.reliability}`,
   `- Reliability breakdown: consistency ${latest.reliabilityBreakdown.consistency}, retention ${latest.reliabilityBreakdown.retention}, contradiction control ${latest.reliabilityBreakdown.contradictionControl}, replay ${latest.reliabilityBreakdown.replay}, runtime grounding ${latest.reliabilityBreakdown.runtimeGrounding}`,
   `- Digest consistency: ${latest.digestConsistency}`,
+  `- Digest omission warning rate: ${latest.digestOmissionWarningRate}`,
+  `- Temporary todo intrusion rate: ${latest.temporaryTodoIntrusionRate}`,
   `- Runtime evidence coverage: ${latest.runtimeEvidenceCoverage}`,
   `- Runtime digest summary rate: ${latest.runtimeDigestSummaryRate}`,
   `- Replay state match: ${latest.replayStateMatch ? "yes" : "no"}`,
@@ -148,6 +154,8 @@ const md = [
         `- Reliability delta: ${formatDelta(deltaSummary.reliability)}`,
         `- Reliability breakdown delta: consistency ${formatDelta(deltaSummary.consistency)}, retention ${formatDelta(deltaSummary.retention)}, contradiction control ${formatDelta(deltaSummary.contradictionControl)}, replay ${formatDelta(deltaSummary.replay)}, runtime grounding ${formatDelta(deltaSummary.runtimeGrounding)}`,
         `- Digest consistency delta: ${formatDelta(deltaSummary.digestConsistency)}`,
+        `- Digest omission warning delta: ${formatDelta(deltaSummary.digestOmissionWarningRate)}`,
+        `- Temporary todo intrusion delta: ${formatDelta(deltaSummary.temporaryTodoIntrusionRate)}`,
         `- Runtime evidence coverage delta: ${formatDelta(deltaSummary.runtimeEvidenceCoverage)}`
       ]
     : ["- Not enough benchmark runs to compute a delta window."]),
@@ -166,6 +174,8 @@ const md = [
       `- Reliability: ${item.reliability}`,
       `- Reliability breakdown: consistency ${item.reliabilityBreakdown.consistency}, retention ${item.reliabilityBreakdown.retention}, contradiction control ${item.reliabilityBreakdown.contradictionControl}, replay ${item.reliabilityBreakdown.replay}, runtime grounding ${item.reliabilityBreakdown.runtimeGrounding}`,
       `- Digest consistency: ${item.digestConsistency}`,
+      `- Digest omission warning rate: ${item.digestOmissionWarningRate}`,
+      `- Temporary todo intrusion rate: ${item.temporaryTodoIntrusionRate}`,
       `- Runtime evidence coverage: ${item.runtimeEvidenceCoverage}`,
       `- Runtime digest summary rate: ${item.runtimeDigestSummaryRate}`,
       `- Replay state match: ${item.replayStateMatch ? "yes" : "no"}`,

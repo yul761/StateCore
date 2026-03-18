@@ -81,6 +81,9 @@ function collectSummary(jsonPath) {
     retrieve: data.scores?.retrieve ?? 0,
     digest: data.scores?.digest ?? 0,
     reminder: data.scores?.reminder ?? 0,
+    digestConsistencyPassRate: data.metrics?.digest?.consistencyPassRate ?? 0,
+    digestOmissionWarningRate: data.metrics?.digest?.omissionWarningRate ?? 0,
+    temporaryTodoIntrusionRate: data.metrics?.digest?.goldRetention?.temporaryTodoIntrusionRate ?? 0,
     runtimeSuccess: data.metrics?.runtime?.success ?? 0,
     runtimeRuns: data.metrics?.runtime?.runs ?? 0,
     runtimeEvidenceCoverageRate: data.metrics?.runtime?.evidenceCoverageRate ?? 0,
@@ -106,6 +109,8 @@ function compareAgainstBaseline(baseline, item) {
   return {
     overall: roundDelta((item.overall ?? 0) - (baseline.overall ?? 0)),
     reliability: roundDelta((item.reliability ?? 0) - (baseline.reliability ?? 0)),
+    digestOmissionWarningRate: roundDelta((item.digestOmissionWarningRate ?? 0) - (baseline.digestOmissionWarningRate ?? 0)),
+    temporaryTodoIntrusionRate: roundDelta((item.temporaryTodoIntrusionRate ?? 0) - (baseline.temporaryTodoIntrusionRate ?? 0)),
     runtimeEvidenceCoverageRate: roundDelta((item.runtimeEvidenceCoverageRate ?? 0) - (baseline.runtimeEvidenceCoverageRate ?? 0)),
     runtimeEvidenceDigestSummaryRate: roundDelta((item.runtimeEvidenceDigestSummaryRate ?? 0) - (baseline.runtimeEvidenceDigestSummaryRate ?? 0)),
     runtimeEvidenceEventSnippetRate: roundDelta((item.runtimeEvidenceEventSnippetRate ?? 0) - (baseline.runtimeEvidenceEventSnippetRate ?? 0)),
@@ -131,6 +136,8 @@ function summarizeDeltas(cases) {
       baseline: baseline.name,
       bestReliability: null,
       worstReliability: null,
+      bestDigestOmission: null,
+      worstDigestOmission: null,
       bestRuntimeEvidenceCoverage: null,
       worstRuntimeEvidenceCoverage: null
     };
@@ -145,6 +152,8 @@ function summarizeDeltas(cases) {
     baseline: baseline.name,
     bestReliability: byMetric("reliability", "desc"),
     worstReliability: byMetric("reliability", "asc"),
+    bestDigestOmission: byMetric("digestOmissionWarningRate", "asc"),
+    worstDigestOmission: byMetric("digestOmissionWarningRate", "desc"),
     bestRuntimeEvidenceCoverage: byMetric("runtimeEvidenceCoverageRate", "desc"),
     worstRuntimeEvidenceCoverage: byMetric("runtimeEvidenceCoverageRate", "asc")
   };
@@ -204,6 +213,8 @@ const lines = [
   `- Baseline: ${deltaSummary?.baseline ?? "none"}`,
   formatDeltaEntry("Best reliability delta", deltaSummary?.bestReliability, "reliability"),
   formatDeltaEntry("Worst reliability delta", deltaSummary?.worstReliability, "reliability"),
+  formatDeltaEntry("Best omission warning delta", deltaSummary?.bestDigestOmission, "digestOmissionWarningRate"),
+  formatDeltaEntry("Worst omission warning delta", deltaSummary?.worstDigestOmission, "digestOmissionWarningRate"),
   formatDeltaEntry("Best runtime evidence delta", deltaSummary?.bestRuntimeEvidenceCoverage, "runtimeEvidenceCoverageRate"),
   formatDeltaEntry("Worst runtime evidence delta", deltaSummary?.worstRuntimeEvidenceCoverage, "runtimeEvidenceCoverageRate"),
   "",
@@ -218,10 +229,11 @@ const lines = [
       `- Reliability breakdown: consistency ${s.reliabilityBreakdown.consistency}, retention ${s.reliabilityBreakdown.retention}, contradiction-control ${s.reliabilityBreakdown.contradictionControl}, replay ${s.reliabilityBreakdown.replay}, runtime-grounding ${s.reliabilityBreakdown.runtimeGrounding}`,
       ...(s.name !== "baseline" && deltaSummary?.baseline
         ? [
-            `- Baseline deltas: overall ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).overall)}, reliability ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).reliability)}, evidence ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).runtimeEvidenceCoverageRate)}, digest-trigger ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).runtimeDigestTriggerRate)}`
+            `- Baseline deltas: overall ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).overall)}, reliability ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).reliability)}, omission-warning ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).digestOmissionWarningRate)}, temporary-todo-intrusion ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).temporaryTodoIntrusionRate)}, evidence ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).runtimeEvidenceCoverageRate)}, digest-trigger ${formatDelta(compareAgainstBaseline(summaries.find((item) => item.name === deltaSummary.baseline), s).runtimeDigestTriggerRate)}`
           ]
         : []),
       `- Component scores: ingest ${s.ingest}, retrieve ${s.retrieve}, digest ${s.digest}, reminder ${s.reminder}`,
+      `- Digest quality: consistency ${s.digestConsistencyPassRate}, omission-warning ${s.digestOmissionWarningRate}, temporary-todo-intrusion ${s.temporaryTodoIntrusionRate}`,
       `- Runtime: ${s.runtimeSuccess}/${s.runtimeRuns} success, evidence ${s.runtimeEvidenceCoverageRate}, digest-trigger ${s.runtimeDigestTriggerRate}`,
       `- Runtime evidence detail: digest-summary ${s.runtimeEvidenceDigestSummaryRate}, event-snippet ${s.runtimeEvidenceEventSnippetRate}, state-summary ${s.runtimeEvidenceStateSummaryRate}`,
       `- Runtime policy profile: ${s.runtimePolicyProfile}`,

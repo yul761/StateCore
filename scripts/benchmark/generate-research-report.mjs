@@ -98,7 +98,7 @@ const lines = [
   "## Results",
   `- Scores: overall ${benchmark.scores?.overall ?? 0}, reliability ${benchmark.scores?.reliability ?? 0}, ingest ${benchmark.scores?.ingest ?? 0}, retrieve ${benchmark.scores?.retrieve ?? 0}, digest ${benchmark.scores?.digest ?? 0}, reminder ${benchmark.scores?.reminder ?? 0}`,
   `- Reliability breakdown: consistency ${benchmark.scores?.reliabilityBreakdown?.consistency ?? 0}, retention ${benchmark.scores?.reliabilityBreakdown?.retention ?? 0}, contradiction control ${benchmark.scores?.reliabilityBreakdown?.contradictionControl ?? 0}, replay ${benchmark.scores?.reliabilityBreakdown?.replay ?? 0}, runtime grounding ${benchmark.scores?.reliabilityBreakdown?.runtimeGrounding ?? 0}`,
-  `- Digest metrics: success ${benchmark.metrics?.digest?.success ?? 0}/${benchmark.metrics?.digest?.runs ?? 0}, consistency ${benchmark.metrics?.digest?.consistencyPassRate ?? 0}, omission warning rate ${benchmark.metrics?.digest?.omissionWarningRate ?? 0}, avg latency ${benchmark.metrics?.digest?.avgLatencyMs ?? 0} ms`,
+  `- Digest metrics: success ${benchmark.metrics?.digest?.success ?? 0}/${benchmark.metrics?.digest?.runs ?? 0}, consistency ${benchmark.metrics?.digest?.consistencyPassRate ?? 0}, omission warning rate ${benchmark.metrics?.digest?.omissionWarningRate ?? 0}, temporary todo intrusion ${benchmark.metrics?.digest?.goldRetention?.temporaryTodoIntrusionRate ?? 0}, avg latency ${benchmark.metrics?.digest?.avgLatencyMs ?? 0} ms`,
   `- Replay metrics: state match ${benchmark.metrics?.replay?.stateMatch ? "yes" : "no"}, rebuild snapshots ${benchmark.metrics?.replay?.rebuildSnapshots ?? 0}`,
   `- Runtime metrics: success ${benchmark.metrics?.runtime?.success ?? 0}/${benchmark.metrics?.runtime?.runs ?? 0}, evidence coverage ${benchmark.metrics?.runtime?.evidenceCoverageRate ?? 0}, digest-summary ${benchmark.metrics?.runtime?.evidenceDigestSummaryRate ?? 0}, event-snippet ${benchmark.metrics?.runtime?.evidenceEventSnippetRate ?? 0}, state-summary ${benchmark.metrics?.runtime?.evidenceStateSummaryRate ?? 0}, digest trigger ${benchmark.metrics?.runtime?.digestTriggerRate ?? 0}`,
   `- Runtime write tiers: ${Object.entries(benchmark.metrics?.runtime?.writeTierCounts || {}).map(([name, count]) => `${name}=${count}`).join(", ") || "none"}`,
@@ -110,6 +110,8 @@ const lines = [
         `- Baseline: ${ablation.deltaSummary?.baseline || "baseline"}`,
         formatDeltaHighlight("Best reliability delta", ablation.deltaSummary?.bestReliability, "reliability"),
         formatDeltaHighlight("Worst reliability delta", ablation.deltaSummary?.worstReliability, "reliability"),
+        formatDeltaHighlight("Best omission warning delta", ablation.deltaSummary?.bestDigestOmission, "digestOmissionWarningRate"),
+        formatDeltaHighlight("Worst omission warning delta", ablation.deltaSummary?.worstDigestOmission, "digestOmissionWarningRate"),
         formatDeltaHighlight("Best runtime evidence delta", ablation.deltaSummary?.bestRuntimeEvidenceCoverage, "runtimeEvidenceCoverageRate"),
         formatDeltaHighlight("Worst runtime evidence delta", ablation.deltaSummary?.worstRuntimeEvidenceCoverage, "runtimeEvidenceCoverageRate"),
         "",
@@ -131,6 +133,8 @@ const lines = [
         `- Reliability delta: ${formatDelta(trend.deltaSummary?.reliability ?? 0)}`,
         `- Reliability breakdown delta: consistency ${formatDelta(trend.deltaSummary?.consistency ?? 0)}, retention ${formatDelta(trend.deltaSummary?.retention ?? 0)}, contradiction control ${formatDelta(trend.deltaSummary?.contradictionControl ?? 0)}, replay ${formatDelta(trend.deltaSummary?.replay ?? 0)}, runtime grounding ${formatDelta(trend.deltaSummary?.runtimeGrounding ?? 0)}`,
         `- Digest consistency delta: ${formatDelta(trend.deltaSummary?.digestConsistency ?? 0)}`,
+        `- Digest omission warning delta: ${formatDelta(trend.deltaSummary?.digestOmissionWarningRate ?? 0)}`,
+        `- Temporary todo intrusion delta: ${formatDelta(trend.deltaSummary?.temporaryTodoIntrusionRate ?? 0)}`,
         `- Runtime evidence coverage delta: ${formatDelta(trend.deltaSummary?.runtimeEvidenceCoverage ?? 0)}`,
         ""
       ]
