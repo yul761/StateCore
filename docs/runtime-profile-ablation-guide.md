@@ -84,7 +84,7 @@ Prefer comparing:
 - latest-document retention and superseded-document intrusion when comparing document-focused fixtures
 - runtime turn success
 - runtime evidence coverage rate
-- runtime digest-summary / event-snippet / state-summary evidence rates
+- runtime digest-summary / event-snippet / ranking-reason / event-score / state-summary evidence rates
 - runtime digest trigger rate
 - runtime write-tier distribution
 - runtime decision-note taxonomy

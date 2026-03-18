@@ -383,7 +383,13 @@ function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, r
 
   let runtimeScore = 0;
   if (runtimeMetrics?.enabled) {
-    runtimeScore = clamp(((runtimeMetrics.evidenceCoverageRate || 0) * 7.5) + ((1 - Math.max(0, 1 - (runtimeMetrics.success / Math.max(1, runtimeMetrics.runs)))) * 7.5));
+    const groundingQuality =
+      (
+        (runtimeMetrics.evidenceCoverageRate || 0) * 0.4 +
+        (runtimeMetrics.evidenceEventRankingReasonRate || 0) * 0.35 +
+        (runtimeMetrics.evidenceEventScoreRate || 0) * 0.25
+      );
+    runtimeScore = clamp((groundingQuality * 7.5) + ((1 - Math.max(0, 1 - (runtimeMetrics.success / Math.max(1, runtimeMetrics.runs)))) * 7.5));
   } else {
     runtimeScore = 15;
   }
@@ -928,6 +934,10 @@ async function run() {
     evidenceCoverageRate: 0,
     evidenceDigestSummaryRate: 0,
     evidenceEventSnippetRate: 0,
+    evidenceEventRankingReasonRate: 0,
+    evidenceEventScoreRate: 0,
+    evidenceEventEmbeddingReasonRate: 0,
+    evidenceEventDocumentSourceRate: 0,
     evidenceStateSummaryRate: 0,
     evidenceStateProvenanceRate: 0,
     evidenceRecentStateChangesRate: 0,
@@ -1168,9 +1178,16 @@ async function run() {
       });
       const evidence = res.json?.evidence ?? {};
       const stateDetails = evidence.stateDetails ?? null;
+      const eventSnippets = Array.isArray(evidence.eventSnippets) ? evidence.eventSnippets : [];
+      const snippetsWithRankingReason = eventSnippets.filter((snippet) => typeof snippet?.rankingReason === "string" && snippet.rankingReason.length > 0);
+      const snippetsWithScores = eventSnippets.filter((snippet) =>
+        typeof snippet?.heuristicScore === "number" &&
+        typeof snippet?.recencyScore === "number" &&
+        typeof snippet?.finalScore === "number"
+      );
       const evidenceCoverage = Boolean(
         (typeof evidence.digestSummary === "string" && evidence.digestSummary.length > 0) ||
-        (Array.isArray(evidence.eventSnippets) && evidence.eventSnippets.length > 0) ||
+        eventSnippets.length > 0 ||
         (typeof evidence.stateSummary === "string" && evidence.stateSummary.length > 0) ||
         Boolean(stateDetails)
       );
@@ -1179,7 +1196,11 @@ async function run() {
         latencyMs: res.latencyMs,
         evidenceCoverage,
         hasDigestSummary: typeof evidence.digestSummary === "string" && evidence.digestSummary.length > 0,
-        hasEventSnippets: Array.isArray(evidence.eventSnippets) && evidence.eventSnippets.length > 0,
+        hasEventSnippets: eventSnippets.length > 0,
+        hasEventRankingReasons: eventSnippets.length > 0 && snippetsWithRankingReason.length === eventSnippets.length,
+        hasEventScores: eventSnippets.length > 0 && snippetsWithScores.length === eventSnippets.length,
+        hasEmbeddingReason: snippetsWithRankingReason.some((snippet) => snippet.rankingReason.includes("embedding_rerank")),
+        hasDocumentSourceSnippet: eventSnippets.some((snippet) => snippet?.sourceType === "document"),
         hasStateSummary: typeof evidence.stateSummary === "string" && evidence.stateSummary.length > 0,
         hasStateProvenance: Array.isArray(stateDetails?.provenanceFields) && stateDetails.provenanceFields.length > 0,
         hasRecentStateChanges: Array.isArray(stateDetails?.recentChanges) && stateDetails.recentChanges.length > 0,
@@ -1205,6 +1226,10 @@ async function run() {
       evidenceCoverageRate: Number((runtimeResults.filter((result) => result.evidenceCoverage).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceDigestSummaryRate: Number((runtimeResults.filter((result) => result.hasDigestSummary).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceEventSnippetRate: Number((runtimeResults.filter((result) => result.hasEventSnippets).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      evidenceEventRankingReasonRate: Number((runtimeResults.filter((result) => result.hasEventRankingReasons).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      evidenceEventScoreRate: Number((runtimeResults.filter((result) => result.hasEventScores).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      evidenceEventEmbeddingReasonRate: Number((runtimeResults.filter((result) => result.hasEmbeddingReason).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      evidenceEventDocumentSourceRate: Number((runtimeResults.filter((result) => result.hasDocumentSourceSnippet).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceStateSummaryRate: Number((runtimeResults.filter((result) => result.hasStateSummary).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceStateProvenanceRate: Number((runtimeResults.filter((result) => result.hasStateProvenance).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceRecentStateChangesRate: Number((runtimeResults.filter((result) => result.hasRecentStateChanges).length / Math.max(1, runtimeResults.length)).toFixed(3)),
@@ -1360,6 +1385,10 @@ async function run() {
           `- Evidence coverage rate: ${report.metrics.runtime.evidenceCoverageRate}`,
           `- Evidence digest summary rate: ${report.metrics.runtime.evidenceDigestSummaryRate}`,
           `- Evidence event snippet rate: ${report.metrics.runtime.evidenceEventSnippetRate}`,
+          `- Evidence event ranking-reason rate: ${report.metrics.runtime.evidenceEventRankingReasonRate ?? 0}`,
+          `- Evidence event score rate: ${report.metrics.runtime.evidenceEventScoreRate ?? 0}`,
+          `- Evidence event embedding-reason rate: ${report.metrics.runtime.evidenceEventEmbeddingReasonRate ?? 0}`,
+          `- Evidence event document-source rate: ${report.metrics.runtime.evidenceEventDocumentSourceRate ?? 0}`,
           `- Evidence state summary rate: ${report.metrics.runtime.evidenceStateSummaryRate}`,
           `- Evidence state provenance rate: ${report.metrics.runtime.evidenceStateProvenanceRate ?? 0}`,
           `- Evidence recent state changes rate: ${report.metrics.runtime.evidenceRecentStateChangesRate ?? 0}`,

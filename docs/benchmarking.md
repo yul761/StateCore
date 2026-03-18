@@ -201,6 +201,10 @@ The benchmark now also emits state-backed counterparts for the latest protected 
 - evidence coverage rate
 - digest-summary evidence rate
 - event-snippet evidence rate
+- event ranking-reason evidence rate
+- event score evidence rate
+- event embedding-reason evidence rate
+- event document-source evidence rate
 - state-summary evidence rate
 - digest trigger rate
 - observed write-tier distribution
