@@ -190,6 +190,11 @@ Runtime-profile comparison example:
 BENCH_FIXTURE=benchmark-fixtures/document-heavy.json BENCH_RUNTIME_POLICY_PROFILE=document-heavy pnpm benchmark
 ```
 
+Runtime override comparison example:
+```bash
+BENCH_RUNTIME_POLICY_PROFILE=conservative BENCH_RUNTIME_PROMOTE_LONG_FORM=true BENCH_RUNTIME_RECALL_LIMIT=8 pnpm benchmark
+```
+
 Controlled ablations can now compare both digest-control settings and assistant runtime policy profiles:
 ```bash
 node scripts/benchmark/run-ablations.mjs

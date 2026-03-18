@@ -63,6 +63,11 @@ Document-heavy runtime benchmark:
 BENCH_FIXTURE=benchmark-fixtures/document-heavy.json BENCH_RUNTIME_POLICY_PROFILE=document-heavy pnpm benchmark
 ```
 
+Runtime override benchmark example:
+```bash
+BENCH_RUNTIME_POLICY_PROFILE=conservative BENCH_RUNTIME_PROMOTE_LONG_FORM=true BENCH_RUNTIME_RECALL_LIMIT=8 pnpm benchmark
+```
+
 Generate a research-report draft from the latest benchmark and ablation outputs:
 ```bash
 node scripts/benchmark/generate-research-report.mjs
@@ -160,6 +165,9 @@ Env values still override profile defaults.
 - `BENCH_RETRIEVE_QUERIES` (profile default)
 - `BENCH_RUNTIME_RUNS` (profile default)
 - `BENCH_RUNTIME_POLICY_PROFILE` (default `default`)
+- `BENCH_RUNTIME_RECALL_LIMIT` (optional override)
+- `BENCH_RUNTIME_PROMOTE_LONG_FORM` (`true|false`)
+- `BENCH_RUNTIME_DIGEST_ON_CANDIDATE` (`true|false`)
 - `BENCH_DIGEST_RUNS` (profile default)
 - `BENCH_TIMEOUT_MS` (default 180000)
 - `BENCH_USER_ID` (default benchmark-user)

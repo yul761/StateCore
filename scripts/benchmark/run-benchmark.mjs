@@ -31,6 +31,9 @@ const cfg = {
   retrieveQueries: Number(process.env.BENCH_RETRIEVE_QUERIES || 12),
   runtimeRuns: Number(process.env.BENCH_RUNTIME_RUNS || 4),
   runtimePolicyProfile: process.env.BENCH_RUNTIME_POLICY_PROFILE || "default",
+  runtimeRecallLimit: process.env.BENCH_RUNTIME_RECALL_LIMIT ? Number(process.env.BENCH_RUNTIME_RECALL_LIMIT) : null,
+  runtimePromoteLongForm: process.env.BENCH_RUNTIME_PROMOTE_LONG_FORM === "true",
+  runtimeDigestOnCandidate: process.env.BENCH_RUNTIME_DIGEST_ON_CANDIDATE === "true",
   digestRuns: Number(process.env.BENCH_DIGEST_RUNS || 2),
   timeoutMs: Number(process.env.BENCH_TIMEOUT_MS || 180000),
   outputDir: process.env.BENCH_OUTPUT_DIR || "benchmark-results",
@@ -752,7 +755,9 @@ async function run() {
     const runtimeCases = (fixture?.retrieveCases ?? retrieveCases)
       .slice(0, Math.max(1, cfg.runtimeRuns))
       .map((item, index) => ({
-        message: item.query,
+        message: cfg.runtimePromoteLongForm && index === 0
+          ? `${item.query}\nLong-form runtime note for profile benchmarking.\nThis text is intentionally extended to exercise documented promotion and runtime evidence handling.`
+          : item.query,
         digestMode: index === 0 ? "force" : "skip",
         writeTier: "candidate"
       }));
@@ -763,6 +768,15 @@ async function run() {
         message: item.message,
         source: "sdk",
         policyProfile: cfg.runtimePolicyProfile,
+        ...(cfg.runtimeRecallLimit || cfg.runtimePromoteLongForm || cfg.runtimeDigestOnCandidate
+          ? {
+              policyOverrides: {
+                ...(cfg.runtimeRecallLimit ? { recallLimit: cfg.runtimeRecallLimit } : {}),
+                ...(cfg.runtimePromoteLongForm ? { promoteLongFormToDocumented: true } : {}),
+                ...(cfg.runtimeDigestOnCandidate ? { digestOnCandidate: true } : {})
+              }
+            }
+          : {}),
         writeTier: item.writeTier,
         digestMode: item.digestMode
       });
@@ -795,7 +809,12 @@ async function run() {
       digestTriggerRate: Number((runtimeResults.filter((result) => result.digestTriggered).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       writeTierCounts,
       noteTaxonomy,
-      policyProfile: cfg.runtimePolicyProfile
+      policyProfile: cfg.runtimePolicyProfile,
+      overrides: {
+        recallLimit: cfg.runtimeRecallLimit,
+        promoteLongFormToDocumented: cfg.runtimePromoteLongForm,
+        digestOnCandidate: cfg.runtimeDigestOnCandidate
+      }
     };
   }
   report.metrics.runtime = runtimeMetrics;
@@ -915,6 +934,7 @@ async function run() {
       ? [
           `- Success: ${report.metrics.runtime.success}/${report.metrics.runtime.runs}`,
           `- Policy profile: ${report.metrics.runtime.policyProfile}`,
+          `- Overrides: recallLimit=${report.metrics.runtime.overrides?.recallLimit ?? "default"}, promoteLongForm=${report.metrics.runtime.overrides?.promoteLongFormToDocumented ? "yes" : "no"}, digestOnCandidate=${report.metrics.runtime.overrides?.digestOnCandidate ? "yes" : "no"}`,
           `- Avg latency: ${report.metrics.runtime.avgLatencyMs} ms`,
           `- Evidence coverage rate: ${report.metrics.runtime.evidenceCoverageRate}`,
           `- Digest trigger rate: ${report.metrics.runtime.digestTriggerRate}`,
