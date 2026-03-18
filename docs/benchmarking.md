@@ -169,6 +169,7 @@ This memory-first score is distinct from the overall performance score and combi
 - digest consistency
 - gold-backed retention
 - contradiction penalties
+- temporary todo intrusion penalties when available
 - replay consistency
 - runtime evidence coverage and runtime turn success
 

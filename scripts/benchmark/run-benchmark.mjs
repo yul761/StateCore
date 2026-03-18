@@ -165,6 +165,7 @@ function parseGoldFacts(events) {
   const constraints = [];
   const decisions = [];
   const todos = [];
+  const allTodos = [];
 
   for (const event of events) {
     const text = String(event.content || "");
@@ -172,10 +173,17 @@ function parseGoldFacts(events) {
     for (const line of lines) {
       if (/^goal\s*:/i.test(line)) goal.push(line.replace(/^goal\s*:\s*/i, "").trim());
       if (/^constraint\s*:/i.test(line)) constraints.push(line.replace(/^constraint\s*:\s*/i, "").trim());
-      if (/^todo\s*:/i.test(line)) todos.push(line.replace(/^todo\s*:\s*/i, "").trim());
+      if (/^todo\s*:/i.test(line)) {
+        const todo = line.replace(/^todo\s*:\s*/i, "").trim();
+        todos.push(todo);
+        allTodos.push(todo);
+      }
     }
     if (/\b(decide|decision|we will|agreed)\b/i.test(text)) {
       decisions.push(text.trim());
+    }
+    if (/^todo\s*:/i.test(text.trim())) {
+      allTodos.push(text.replace(/^todo\s*:\s*/i, "").trim());
     }
   }
 
@@ -185,6 +193,7 @@ function parseGoldFacts(events) {
     constraints: uniq(constraints),
     decisions: uniq(decisions),
     todos: uniq(todos),
+    transientTodos: uniq(allTodos.filter((item) => !todos.includes(item))),
     contradictions: { goal: [], constraints: [], decisions: [], todos: [] }
   };
 }
@@ -197,6 +206,7 @@ function loadGoldFacts(fixture) {
       constraints: Array.isArray(fixture.gold.constraints) ? fixture.gold.constraints : [],
       decisions: Array.isArray(fixture.gold.decisions) ? fixture.gold.decisions : [],
       todos: Array.isArray(fixture.gold.todos) ? fixture.gold.todos : [],
+      transientTodos: Array.isArray(fixture.gold.transientTodos) ? fixture.gold.transientTodos : [],
       contradictions: fixture.gold.contradictions && typeof fixture.gold.contradictions === "object"
         ? {
             goal: Array.isArray(fixture.gold.contradictions.goal) ? fixture.gold.contradictions.goal : [],
@@ -294,8 +304,9 @@ function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, r
         (digestMetrics.goldRetention.goalContradictionRate || 0) +
         (digestMetrics.goldRetention.constraintContradictionRate || 0) +
         (digestMetrics.goldRetention.decisionContradictionRate || 0) +
-        (digestMetrics.goldRetention.todoContradictionRate || 0)
-      ) / 4
+        (digestMetrics.goldRetention.todoContradictionRate || 0) +
+        (digestMetrics.goldRetention.temporaryTodoIntrusionRate || 0)
+      ) / 5
     : 0;
   const retentionScore = clamp(retention * 35);
   const contradictionScore = clamp((1 - contradiction) * 20);
@@ -722,6 +733,9 @@ async function run() {
           recallConstraints: factRecall(combined, goldFacts.constraints),
           recallDecisions: factRecall(combined, goldFacts.decisions),
           recallTodos: factRecall(combined, goldFacts.todos),
+          temporaryTodoIntrusionRate: goldFacts.transientTodos.length
+            ? Number((countMatches(combined, goldFacts.transientTodos) / goldFacts.transientTodos.length).toFixed(3))
+            : 0,
           goalContradictionRate: contradictionRate(combined, goldFacts.contradictions.goal),
           constraintContradictionRate: contradictionRate(combined, goldFacts.contradictions.constraints),
           decisionContradictionRate: contradictionRate(combined, goldFacts.contradictions.decisions),
@@ -735,6 +749,7 @@ async function run() {
           recallConstraints: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallConstraints, 0) / goldRetentionRuns.length).toFixed(3)),
           recallDecisions: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallDecisions, 0) / goldRetentionRuns.length).toFixed(3)),
           recallTodos: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallTodos, 0) / goldRetentionRuns.length).toFixed(3)),
+          temporaryTodoIntrusionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.temporaryTodoIntrusionRate, 0) / goldRetentionRuns.length).toFixed(3)),
           goalContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.goalContradictionRate, 0) / goldRetentionRuns.length).toFixed(3)),
           constraintContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.constraintContradictionRate, 0) / goldRetentionRuns.length).toFixed(3)),
           decisionContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.decisionContradictionRate, 0) / goldRetentionRuns.length).toFixed(3)),
@@ -960,7 +975,8 @@ async function run() {
     ...(report.metrics.digest.goldRetention
       ? [
           `- Digest gold recall: goal ${report.metrics.digest.goldRetention.recallGoal}, constraints ${report.metrics.digest.goldRetention.recallConstraints}, decisions ${report.metrics.digest.goldRetention.recallDecisions}, todos ${report.metrics.digest.goldRetention.recallTodos}`,
-          `- Digest contradiction rates: goal ${report.metrics.digest.goldRetention.goalContradictionRate}, constraints ${report.metrics.digest.goldRetention.constraintContradictionRate}, decisions ${report.metrics.digest.goldRetention.decisionContradictionRate}, todos ${report.metrics.digest.goldRetention.todoContradictionRate}`
+          `- Digest contradiction rates: goal ${report.metrics.digest.goldRetention.goalContradictionRate}, constraints ${report.metrics.digest.goldRetention.constraintContradictionRate}, decisions ${report.metrics.digest.goldRetention.decisionContradictionRate}, todos ${report.metrics.digest.goldRetention.todoContradictionRate}`,
+          `- Temporary todo intrusion rate: ${report.metrics.digest.goldRetention.temporaryTodoIntrusionRate ?? 0}`
         ]
       : []),
     "",
