@@ -155,6 +155,55 @@ makeFixture("noise-heavy", {
 {
   const payload = {
     gold: {
+      goal: ["keep working notes current by resolving answered questions and cleared risks"],
+      constraints: ["self-hosted first", "keep evaluation reproducible"],
+      decisions: [
+        "We decide to support Ollama first for local model setup"
+      ],
+      todos: [
+        "document runtime evidence output"
+      ],
+      openQuestions: [
+        "should we also support lm studio"
+      ],
+      risks: [
+        "drift metrics may regress during runtime refactors"
+      ],
+      resolvedOpenQuestions: [
+        "should we support ollama first"
+      ],
+      resolvedRisks: [
+        "blocked by provider setup"
+      ]
+    },
+    events: [
+      { type: "document", key: "doc:goal", content: "goal: keep working notes current by resolving answered questions and cleared risks" },
+      { type: "document", key: "doc:constraints", content: "constraint: self-hosted first\nconstraint: keep evaluation reproducible" },
+      { type: "stream", content: "Question: should we support Ollama first?" },
+      { type: "stream", content: "Blocked by provider setup" },
+      { type: "stream", content: "Question: should we also support LM Studio?" },
+      { type: "stream", content: "Risk: drift metrics may regress during runtime refactors" },
+      { type: "stream", content: "We decide to support Ollama first for local model setup" },
+      { type: "stream", content: "Status update: unblocked provider setup" },
+      { type: "document", key: "doc:plan", content: "todo: document runtime evidence output" },
+      { type: "stream", content: "Status update: working notes should only retain active questions and risks" },
+      { type: "stream", content: "noise ping 606" }
+    ],
+    retrieveCases: [
+      { query: "What questions are still open?", expected: "lm studio", aliases: ["open question", "working notes", "support"] },
+      { query: "What risks are still active?", expected: "drift metrics", aliases: ["risk", "regress", "runtime refactors"] },
+      { query: "What did we decide about local model support?", expected: "ollama", aliases: ["decision", "local model setup", "support ollama"] }
+    ]
+  };
+  const outPath = path.join(outDir, "working-notes-resolution.json");
+  writeFileSync(outPath, JSON.stringify(payload, null, 2));
+  // eslint-disable-next-line no-console
+  console.log(`Wrote ${outPath}`);
+}
+
+{
+  const payload = {
+    gold: {
       goal: ["preserve the latest document truth without reviving superseded versions"],
       constraints: ["self-hosted first", "keep api stable"],
       decisions: [

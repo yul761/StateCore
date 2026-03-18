@@ -29,6 +29,10 @@ Fixture files may include explicit `gold` labels for:
 - `constraints`
 - `decisions`
 - `todos`
+- `openQuestions`
+- `risks`
+- `resolvedOpenQuestions`
+- `resolvedRisks`
 - `latestDocumentFacts`
 - `supersededDocumentFacts`
 
@@ -191,6 +195,8 @@ When gold labels are available, benchmark JSON also emits retention-oriented ali
 - `constraintPreservationRate`
 - `decisionContinuityRate`
 - `todoContinuityRate`
+- `openQuestionContinuityRate`
+- `riskContinuityRate`
 
 The benchmark now also emits state-backed counterparts for the latest protected snapshot:
 - `stateFactRetentionRate`

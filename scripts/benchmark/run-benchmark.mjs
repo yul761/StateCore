@@ -228,6 +228,10 @@ function parseGoldFacts(events) {
     constraints: uniq(constraints),
     decisions: uniq(decisions),
     todos: uniq(todos),
+    openQuestions: [],
+    risks: [],
+    resolvedOpenQuestions: [],
+    resolvedRisks: [],
     transientTodos: uniq(allTodos.filter((item) => !todos.includes(item))),
     latestDocumentFacts: [],
     supersededDocumentFacts: [],
@@ -243,6 +247,10 @@ function loadGoldFacts(fixture) {
       constraints: Array.isArray(fixture.gold.constraints) ? fixture.gold.constraints : [],
       decisions: Array.isArray(fixture.gold.decisions) ? fixture.gold.decisions : [],
       todos: Array.isArray(fixture.gold.todos) ? fixture.gold.todos : [],
+      openQuestions: Array.isArray(fixture.gold.openQuestions) ? fixture.gold.openQuestions : [],
+      risks: Array.isArray(fixture.gold.risks) ? fixture.gold.risks : [],
+      resolvedOpenQuestions: Array.isArray(fixture.gold.resolvedOpenQuestions) ? fixture.gold.resolvedOpenQuestions : [],
+      resolvedRisks: Array.isArray(fixture.gold.resolvedRisks) ? fixture.gold.resolvedRisks : [],
       transientTodos: Array.isArray(fixture.gold.transientTodos) ? fixture.gold.transientTodos : [],
       latestDocumentFacts: Array.isArray(fixture.gold.latestDocumentFacts) ? fixture.gold.latestDocumentFacts : [],
       supersededDocumentFacts: Array.isArray(fixture.gold.supersededDocumentFacts) ? fixture.gold.supersededDocumentFacts : [],
@@ -491,14 +499,24 @@ function contradictionRate(text, contradictions) {
 
 function stateToFactText(state) {
   const stable = state?.stableFacts ?? {};
+  const working = state?.workingNotes ?? {};
   return [
     stable.goal || "",
     ...(stable.constraints ?? []),
     ...(stable.decisions ?? []),
-    ...(state?.todos ?? [])
+    ...(state?.todos ?? []),
+    ...(working.openQuestions ?? []),
+    ...(working.risks ?? [])
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function stateWorkingNoteIntrusionRate(values, excluded) {
+  if (!excluded.length) return 0;
+  const normalizedValues = (Array.isArray(values) ? values : []).map((item) => normalizeText(String(item)));
+  const hits = excluded.filter((item) => normalizedValues.includes(normalizeText(item))).length;
+  return Number((hits / excluded.length).toFixed(3));
 }
 
 function stateTodoIntrusionRate(state, transientTodos) {
@@ -1103,10 +1121,18 @@ async function run() {
           recallConstraints: factRecall(combined, goldFacts.constraints),
           recallDecisions: factRecall(combined, goldFacts.decisions),
           recallTodos: factRecall(combined, goldFacts.todos),
+          openQuestionContinuityRate: factRecall(combined, goldFacts.openQuestions),
+          riskContinuityRate: factRecall(combined, goldFacts.risks),
           stateGoalRetentionRate: stateText ? factRecall(stateText, goldFacts.goal) : null,
           stateConstraintPreservationRate: stateText ? factRecall(stateText, goldFacts.constraints) : null,
           stateDecisionContinuityRate: stateText ? factRecall(stateText, goldFacts.decisions) : null,
           stateTodoContinuityRate: stateText ? factRecall(stateText, goldFacts.todos) : null,
+          stateOpenQuestionContinuityRate: stateSnapshot.ok && stateSnapshot.json?.state
+            ? factRecall((stateSnapshot.json.state.workingNotes?.openQuestions ?? []).join("\n"), goldFacts.openQuestions)
+            : null,
+          stateRiskContinuityRate: stateSnapshot.ok && stateSnapshot.json?.state
+            ? factRecall((stateSnapshot.json.state.workingNotes?.risks ?? []).join("\n"), goldFacts.risks)
+            : null,
           latestDocumentRetentionRate: factRecall(combined, goldFacts.latestDocumentFacts),
           stateLatestDocumentRetentionRate: stateText ? factRecall(stateText, goldFacts.latestDocumentFacts) : null,
           supersededDocumentIntrusionRate: goldFacts.supersededDocumentFacts.length
@@ -1118,8 +1144,20 @@ async function run() {
           temporaryTodoIntrusionRate: goldFacts.transientTodos.length
             ? Number((countMatches(combined, goldFacts.transientTodos) / goldFacts.transientTodos.length).toFixed(3))
             : 0,
+          resolvedOpenQuestionIntrusionRate: goldFacts.resolvedOpenQuestions.length
+            ? Number((countMatches(combined, goldFacts.resolvedOpenQuestions) / goldFacts.resolvedOpenQuestions.length).toFixed(3))
+            : 0,
+          resolvedRiskIntrusionRate: goldFacts.resolvedRisks.length
+            ? Number((countMatches(combined, goldFacts.resolvedRisks) / goldFacts.resolvedRisks.length).toFixed(3))
+            : 0,
           stateTemporaryTodoIntrusionRate: stateSnapshot.ok && stateSnapshot.json?.state
             ? stateTodoIntrusionRate(stateSnapshot.json.state, goldFacts.transientTodos)
+            : null,
+          stateResolvedOpenQuestionIntrusionRate: stateSnapshot.ok && stateSnapshot.json?.state
+            ? stateWorkingNoteIntrusionRate(stateSnapshot.json.state.workingNotes?.openQuestions, goldFacts.resolvedOpenQuestions)
+            : null,
+          stateResolvedRiskIntrusionRate: stateSnapshot.ok && stateSnapshot.json?.state
+            ? stateWorkingNoteIntrusionRate(stateSnapshot.json.state.workingNotes?.risks, goldFacts.resolvedRisks)
             : null,
           goalContradictionRate: contradictionRate(combined, goldFacts.contradictions.goal),
           constraintContradictionRate: contradictionRate(combined, goldFacts.contradictions.constraints),
@@ -1138,10 +1176,14 @@ async function run() {
           constraintPreservationRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallConstraints, 0) / goldRetentionRuns.length).toFixed(3)),
           decisionContinuityRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallDecisions, 0) / goldRetentionRuns.length).toFixed(3)),
           todoContinuityRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.recallTodos, 0) / goldRetentionRuns.length).toFixed(3)),
+          openQuestionContinuityRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.openQuestionContinuityRate, 0) / goldRetentionRuns.length).toFixed(3)),
+          riskContinuityRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.riskContinuityRate, 0) / goldRetentionRuns.length).toFixed(3)),
           stateGoalRetentionRate: averageMetric(goldRetentionRuns, "stateGoalRetentionRate"),
           stateConstraintPreservationRate: averageMetric(goldRetentionRuns, "stateConstraintPreservationRate"),
           stateDecisionContinuityRate: averageMetric(goldRetentionRuns, "stateDecisionContinuityRate"),
           stateTodoContinuityRate: averageMetric(goldRetentionRuns, "stateTodoContinuityRate"),
+          stateOpenQuestionContinuityRate: averageMetric(goldRetentionRuns, "stateOpenQuestionContinuityRate"),
+          stateRiskContinuityRate: averageMetric(goldRetentionRuns, "stateRiskContinuityRate"),
           stateFactRetentionRate: averageMetric(
             goldRetentionRuns.map((run) => ({
               stateFactRetentionRate:
@@ -1186,6 +1228,10 @@ async function run() {
           ).toFixed(3)),
           temporaryTodoIntrusionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.temporaryTodoIntrusionRate, 0) / goldRetentionRuns.length).toFixed(3)),
           stateTemporaryTodoIntrusionRate: averageMetric(goldRetentionRuns, "stateTemporaryTodoIntrusionRate"),
+          resolvedOpenQuestionIntrusionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.resolvedOpenQuestionIntrusionRate, 0) / goldRetentionRuns.length).toFixed(3)),
+          resolvedRiskIntrusionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.resolvedRiskIntrusionRate, 0) / goldRetentionRuns.length).toFixed(3)),
+          stateResolvedOpenQuestionIntrusionRate: averageMetric(goldRetentionRuns, "stateResolvedOpenQuestionIntrusionRate"),
+          stateResolvedRiskIntrusionRate: averageMetric(goldRetentionRuns, "stateResolvedRiskIntrusionRate"),
           supersededDocumentIntrusionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.supersededDocumentIntrusionRate, 0) / goldRetentionRuns.length).toFixed(3)),
           stateSupersededDocumentIntrusionRate: averageMetric(goldRetentionRuns, "stateSupersededDocumentIntrusionRate"),
           goalContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.goalContradictionRate, 0) / goldRetentionRuns.length).toFixed(3)),
@@ -1522,11 +1568,12 @@ async function run() {
         ? [
           `- Digest gold recall: goal ${report.metrics.digest.goldRetention.recallGoal}, constraints ${report.metrics.digest.goldRetention.recallConstraints}, decisions ${report.metrics.digest.goldRetention.recallDecisions}, todos ${report.metrics.digest.goldRetention.recallTodos}`,
           `- Retention metrics: fact ${report.metrics.digest.goldRetention.factRetentionRate}, goal ${report.metrics.digest.goldRetention.goalRetentionRate}, constraints ${report.metrics.digest.goldRetention.constraintPreservationRate}, decisions ${report.metrics.digest.goldRetention.decisionContinuityRate}, todos ${report.metrics.digest.goldRetention.todoContinuityRate}`,
+          `- Working-note continuity: open-questions ${report.metrics.digest.goldRetention.openQuestionContinuityRate ?? "n/a"}, risks ${report.metrics.digest.goldRetention.riskContinuityRate ?? "n/a"}, state open-questions ${report.metrics.digest.goldRetention.stateOpenQuestionContinuityRate ?? "n/a"}, state risks ${report.metrics.digest.goldRetention.stateRiskContinuityRate ?? "n/a"}`,
           `- Latest document retention rate: digest ${report.metrics.digest.goldRetention.latestDocumentRetentionRate ?? "n/a"}, state ${report.metrics.digest.goldRetention.stateLatestDocumentRetentionRate ?? "n/a"}`,
           `- State retention metrics: fact ${report.metrics.digest.goldRetention.stateFactRetentionRate ?? "n/a"}, goal ${report.metrics.digest.goldRetention.stateGoalRetentionRate ?? "n/a"}, constraints ${report.metrics.digest.goldRetention.stateConstraintPreservationRate ?? "n/a"}, decisions ${report.metrics.digest.goldRetention.stateDecisionContinuityRate ?? "n/a"}, todos ${report.metrics.digest.goldRetention.stateTodoContinuityRate ?? "n/a"}`,
           `- Drift rates: digest ${report.metrics.digest.goldRetention.digestDriftRate ?? "n/a"}, state ${report.metrics.digest.goldRetention.stateDriftRate ?? "n/a"}`,
           `- Digest contradiction rates: goal ${report.metrics.digest.goldRetention.goalContradictionRate}, constraints ${report.metrics.digest.goldRetention.constraintContradictionRate}, decisions ${report.metrics.digest.goldRetention.decisionContradictionRate}, todos ${report.metrics.digest.goldRetention.todoContradictionRate}`,
-          `- Intrusion rates: temporary todos digest ${report.metrics.digest.goldRetention.temporaryTodoIntrusionRate ?? 0}, temporary todos state ${report.metrics.digest.goldRetention.stateTemporaryTodoIntrusionRate ?? "n/a"}, superseded docs digest ${report.metrics.digest.goldRetention.supersededDocumentIntrusionRate ?? 0}, superseded docs state ${report.metrics.digest.goldRetention.stateSupersededDocumentIntrusionRate ?? "n/a"}`
+          `- Intrusion rates: temporary todos digest ${report.metrics.digest.goldRetention.temporaryTodoIntrusionRate ?? 0}, temporary todos state ${report.metrics.digest.goldRetention.stateTemporaryTodoIntrusionRate ?? "n/a"}, resolved open-questions digest ${report.metrics.digest.goldRetention.resolvedOpenQuestionIntrusionRate ?? 0}, resolved open-questions state ${report.metrics.digest.goldRetention.stateResolvedOpenQuestionIntrusionRate ?? "n/a"}, resolved risks digest ${report.metrics.digest.goldRetention.resolvedRiskIntrusionRate ?? 0}, resolved risks state ${report.metrics.digest.goldRetention.stateResolvedRiskIntrusionRate ?? "n/a"}, superseded docs digest ${report.metrics.digest.goldRetention.supersededDocumentIntrusionRate ?? 0}, superseded docs state ${report.metrics.digest.goldRetention.stateSupersededDocumentIntrusionRate ?? "n/a"}`
         ]
       : []),
     "",
