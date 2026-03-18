@@ -153,9 +153,45 @@ export class DomainService {
     };
   }
 
-  async listDigestStates(scopeId: string, limit: number): Promise<Array<{ digestId: string; state: DigestState; createdAt: Date }>> {
+  async listDigests(scopeId: string, limit: number, cursor?: string | null, rebuildGroupId?: string | null) {
+    type DigestRow = {
+      id: string;
+      scopeId: string;
+      summary: string;
+      changes: string;
+      nextSteps: unknown;
+      createdAt: Date;
+      rebuildGroupId?: string | null;
+    };
+
+    const items = await prisma.digest.findMany({
+      where: { scopeId, ...(rebuildGroupId ? { rebuildGroupId } : {}) },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {})
+    });
+    const next = items.length > limit ? items.pop() : null;
+    return {
+      items: items.map((row: DigestRow) => ({
+        id: row.id,
+        scopeId: row.scopeId,
+        summary: row.summary,
+        changes: row.changes,
+        nextSteps: Array.isArray(row.nextSteps) ? (row.nextSteps as string[]) : [],
+        createdAt: row.createdAt,
+        rebuildGroupId: row.rebuildGroupId ?? null
+      })),
+      nextCursor: next ? next.id : null
+    };
+  }
+
+  async listDigestStates(
+    scopeId: string,
+    limit: number,
+    rebuildGroupId?: string | null
+  ): Promise<Array<{ digestId: string; state: DigestState; createdAt: Date }>> {
     const snapshots = await prisma.digestStateSnapshot.findMany({
-      where: { scopeId },
+      where: { scopeId, ...(rebuildGroupId ? { digest: { rebuildGroupId } } : {}) },
       orderBy: { createdAt: "desc" },
       take: limit
     });

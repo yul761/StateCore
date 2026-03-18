@@ -1,4 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Inject, Post, Query, Req } from "@nestjs/common";
+import { randomUUID } from "crypto";
 import {
   AnswerInput,
   DigestRebuildInput,
@@ -115,14 +116,16 @@ export class MemoryController {
     if (!scope) {
       return { error: "Scope not found" };
     }
+    const rebuildGroupId = randomUUID();
     const job = await digestQueue.add("rebuild_digest_chain", {
       userId: req.userId,
       scopeId: input.scopeId,
       from: input.from,
       to: input.to,
-      strategy: input.strategy ?? "full"
+      strategy: input.strategy ?? "full",
+      rebuildGroupId
     });
-    return { jobId: job.id };
+    return { jobId: job.id, rebuildGroupId };
   }
 
   @Get("/memory/digests")
@@ -130,7 +133,8 @@ export class MemoryController {
     @Req() req: RequestWithUser,
     @Query("scopeId") scopeId?: string,
     @Query("limit") limit?: string,
-    @Query("cursor") cursor?: string
+    @Query("cursor") cursor?: string,
+    @Query("rebuildGroupId") rebuildGroupId?: string
   ) {
     if (!scopeId) return { error: "scopeId required" };
     const scope = await this.domain.projectService.getScope(req.userId, scopeId);
@@ -139,7 +143,9 @@ export class MemoryController {
     }
     const parsed = Number(limit ?? 20);
     const take = Math.min(Number.isFinite(parsed) ? parsed : 20, 100);
-    const { items, nextCursor } = await this.domain.digestService.listDigests(scopeId, take, cursor ?? null);
+    const { items, nextCursor } = rebuildGroupId
+      ? await this.domain.listDigests(scopeId, take, cursor ?? null, rebuildGroupId)
+      : await this.domain.digestService.listDigests(scopeId, take, cursor ?? null);
     return {
       items: items.map((digest) => ({
         id: digest.id,
@@ -147,7 +153,8 @@ export class MemoryController {
         summary: digest.summary,
         changes: digest.changes,
         nextSteps: digest.nextSteps,
-        createdAt: digest.createdAt.toISOString()
+        createdAt: digest.createdAt.toISOString(),
+        rebuildGroupId: digest.rebuildGroupId ?? null
       })),
       nextCursor
     };
@@ -175,7 +182,8 @@ export class MemoryController {
   async getDigestStateHistory(
     @Req() req: RequestWithUser,
     @Query("scopeId") scopeId?: string,
-    @Query("limit") limit?: string
+    @Query("limit") limit?: string,
+    @Query("rebuildGroupId") rebuildGroupId?: string
   ) {
     if (!scopeId) return { error: "scopeId required" };
     const scope = await this.domain.projectService.getScope(req.userId, scopeId);
@@ -184,7 +192,7 @@ export class MemoryController {
     }
     const parsed = Number(limit ?? 10);
     const take = Math.min(Number.isFinite(parsed) ? parsed : 10, 50);
-    const items = await this.domain.listDigestStates(scopeId, take);
+    const items = await this.domain.listDigestStates(scopeId, take, rebuildGroupId ?? null);
     return {
       items: items.map((snapshot) => ({
         digestId: snapshot.digestId,

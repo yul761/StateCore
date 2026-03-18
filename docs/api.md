@@ -19,10 +19,11 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
 - **POST /memory/digest/rebuild**
   - body: `{ scopeId, from?, to?, strategy?: 'full'|'since_last_good' }`
   - enqueues `rebuild_digest_chain`
-- **GET /memory/digests?scopeId=&limit=&cursor=**
+  - returns `{ jobId, rebuildGroupId }`
+- **GET /memory/digests?scopeId=&limit=&cursor=&rebuildGroupId=**
 - **GET /memory/state?scopeId=**
   - returns latest `DigestStateSnapshot` for replay/audit use
-- **GET /memory/state/history?scopeId=&limit=**
+- **GET /memory/state/history?scopeId=&limit=&rebuildGroupId=**
   - returns recent `DigestStateSnapshot` items for replay/audit use
 
 ## Retrieve

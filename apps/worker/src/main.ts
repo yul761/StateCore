@@ -159,7 +159,7 @@ async function runDigestScopeJob(data: { userId: string; scopeId: string }) {
   }
 }
 
-async function runRebuildDigestChainJob(data: { userId: string; scopeId: string; from?: string; to?: string; strategy?: "full" | "since_last_good" }) {
+async function runRebuildDigestChainJob(data: { userId: string; scopeId: string; from?: string; to?: string; strategy?: "full" | "since_last_good"; rebuildGroupId?: string }) {
   if (!workerEnv.featureLlm || !llm) {
     throw new Error("FEATURE_LLM disabled or model provider not configured. Rebuild requires MODEL_* or OPENAI_* configuration.");
   }
@@ -194,7 +194,7 @@ async function runRebuildDigestChainJob(data: { userId: string; scopeId: string;
     throw new Error("No events found in rebuild range");
   }
 
-  const rebuildGroupId = randomUUID();
+  const rebuildGroupId = data.rebuildGroupId || randomUUID();
   let lastDigest = data.strategy === "full"
     ? null
     : await prisma.digest.findFirst({ where: { scopeId: data.scopeId }, orderBy: { createdAt: "desc" } });
@@ -263,7 +263,7 @@ new Worker(
     }
 
     if (job.name === "rebuild_digest_chain") {
-      await runRebuildDigestChainJob(job.data as { userId: string; scopeId: string; from?: string; to?: string; strategy?: "full" | "since_last_good" });
+      await runRebuildDigestChainJob(job.data as { userId: string; scopeId: string; from?: string; to?: string; strategy?: "full" | "since_last_good"; rebuildGroupId?: string });
       return { ok: true };
     }
   },
