@@ -152,6 +152,10 @@ function compareAgainstBaseline(baseline, item) {
     latestDocumentRetentionRate: roundDelta((item.latestDocumentRetentionRate ?? 0) - (baseline.latestDocumentRetentionRate ?? 0)),
     supersededDocumentIntrusionRate: roundDelta((item.supersededDocumentIntrusionRate ?? 0) - (baseline.supersededDocumentIntrusionRate ?? 0)),
     stateFactRetentionRate: roundDelta((item.stateFactRetentionRate ?? 0) - (baseline.stateFactRetentionRate ?? 0)),
+    groundedResponseEvidenceCoverageRate: roundDelta((item.groundedResponseEvidenceCoverageRate ?? 0) - (baseline.groundedResponseEvidenceCoverageRate ?? 0)),
+    groundedResponseRankingReasonRate: roundDelta((item.groundedResponseRankingReasonRate ?? 0) - (baseline.groundedResponseRankingReasonRate ?? 0)),
+    groundedResponseEventScoreRate: roundDelta((item.groundedResponseEventScoreRate ?? 0) - (baseline.groundedResponseEventScoreRate ?? 0)),
+    groundedResponseStateSummaryRate: roundDelta((item.groundedResponseStateSummaryRate ?? 0) - (baseline.groundedResponseStateSummaryRate ?? 0)),
     runtimeEvidenceCoverageRate: roundDelta((item.runtimeEvidenceCoverageRate ?? 0) - (baseline.runtimeEvidenceCoverageRate ?? 0)),
     runtimeEvidenceDigestSummaryRate: roundDelta((item.runtimeEvidenceDigestSummaryRate ?? 0) - (baseline.runtimeEvidenceDigestSummaryRate ?? 0)),
     runtimeEvidenceEventSnippetRate: roundDelta((item.runtimeEvidenceEventSnippetRate ?? 0) - (baseline.runtimeEvidenceEventSnippetRate ?? 0)),
@@ -191,6 +195,8 @@ function summarizeDeltas(cases) {
       worstLatestDocumentRetention: null,
       bestSupersededDocumentIntrusion: null,
       worstSupersededDocumentIntrusion: null,
+      bestGroundedResponseEvidence: null,
+      worstGroundedResponseEvidence: null,
       bestRuntimeEvidenceCoverage: null,
       worstRuntimeEvidenceCoverage: null
     };
@@ -213,6 +219,8 @@ function summarizeDeltas(cases) {
     worstLatestDocumentRetention: byMetric("latestDocumentRetentionRate", "asc"),
     bestSupersededDocumentIntrusion: byMetric("supersededDocumentIntrusionRate", "asc"),
     worstSupersededDocumentIntrusion: byMetric("supersededDocumentIntrusionRate", "desc"),
+    bestGroundedResponseEvidence: byMetric("groundedResponseEvidenceCoverageRate", "desc"),
+    worstGroundedResponseEvidence: byMetric("groundedResponseEvidenceCoverageRate", "asc"),
     bestRuntimeEvidenceCoverage: byMetric("runtimeEvidenceCoverageRate", "desc"),
     worstRuntimeEvidenceCoverage: byMetric("runtimeEvidenceCoverageRate", "asc")
   };
@@ -280,6 +288,8 @@ const lines = [
   formatDeltaEntry("Worst latest-document retention delta", deltaSummary?.worstLatestDocumentRetention, "latestDocumentRetentionRate"),
   formatDeltaEntry("Best superseded-doc intrusion delta", deltaSummary?.bestSupersededDocumentIntrusion, "supersededDocumentIntrusionRate"),
   formatDeltaEntry("Worst superseded-doc intrusion delta", deltaSummary?.worstSupersededDocumentIntrusion, "supersededDocumentIntrusionRate"),
+  formatDeltaEntry("Best grounded-response evidence delta", deltaSummary?.bestGroundedResponseEvidence, "groundedResponseEvidenceCoverageRate"),
+  formatDeltaEntry("Worst grounded-response evidence delta", deltaSummary?.worstGroundedResponseEvidence, "groundedResponseEvidenceCoverageRate"),
   formatDeltaEntry("Best runtime evidence delta", deltaSummary?.bestRuntimeEvidenceCoverage, "runtimeEvidenceCoverageRate"),
   formatDeltaEntry("Worst runtime evidence delta", deltaSummary?.worstRuntimeEvidenceCoverage, "runtimeEvidenceCoverageRate"),
   "",

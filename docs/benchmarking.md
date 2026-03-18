@@ -222,6 +222,7 @@ The benchmark now also emits state-backed counterparts for the latest protected 
 - combined success rate across runtime turns and answer calls
 - combined evidence coverage / ranking-reason / event-score / state-summary rates
 - intended as the top-level grounding view, with runtime and answer metrics as drill-downs
+- ablation and trend reports now surface this view directly in highlights so grounding regressions are easier to spot
 
 ## Scoring Model (0-100)
 

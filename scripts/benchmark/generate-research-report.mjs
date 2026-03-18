@@ -51,6 +51,16 @@ function formatRuntimeComparisons(cases = []) {
     .join("\n");
 }
 
+function formatGroundedResponseComparisons(cases = []) {
+  const groundedCases = cases.filter((item) => item.name === "baseline" || item.name.startsWith("runtime_"));
+  if (!groundedCases.length) return "- none";
+  return groundedCases
+    .map((item) =>
+      `- ${item.name}: grounded evidence ${item.groundedResponseEvidenceCoverageRate ?? 0}, ranking-reason ${item.groundedResponseRankingReasonRate ?? 0}, event-score ${item.groundedResponseEventScoreRate ?? 0}, state-summary ${item.groundedResponseStateSummaryRate ?? 0}, answer evidence ${item.answerEvidenceCoverageRate ?? 0}, runtime evidence ${item.runtimeEvidenceCoverageRate ?? 0}, profile ${item.runtimePolicyProfile}, overrides ${formatOverrideSummary(item.runtimeOverrides)}`
+    )
+    .join("\n");
+}
+
 const benchmarkName = process.env.RESEARCH_BENCHMARK_JSON || latestFile("benchmark-", ".json");
 if (!benchmarkName) {
   throw new Error("missing_benchmark_json");
@@ -123,11 +133,16 @@ const lines = [
         formatDeltaHighlight("Worst omission warning delta", ablation.deltaSummary?.worstDigestOmission, "digestOmissionWarningRate"),
         formatDeltaHighlight("Best state retention delta", ablation.deltaSummary?.bestStateRetention, "stateFactRetentionRate"),
         formatDeltaHighlight("Worst state retention delta", ablation.deltaSummary?.worstStateRetention, "stateFactRetentionRate"),
+        formatDeltaHighlight("Best grounded-response evidence delta", ablation.deltaSummary?.bestGroundedResponseEvidence, "groundedResponseEvidenceCoverageRate"),
+        formatDeltaHighlight("Worst grounded-response evidence delta", ablation.deltaSummary?.worstGroundedResponseEvidence, "groundedResponseEvidenceCoverageRate"),
         formatDeltaHighlight("Best runtime evidence delta", ablation.deltaSummary?.bestRuntimeEvidenceCoverage, "runtimeEvidenceCoverageRate"),
         formatDeltaHighlight("Worst runtime evidence delta", ablation.deltaSummary?.worstRuntimeEvidenceCoverage, "runtimeEvidenceCoverageRate"),
         "",
         "## Top Ablations",
         formatTopAblations(ablation.cases),
+        "",
+        "## Grounded Response Comparison",
+        formatGroundedResponseComparisons(ablation.cases),
         "",
         "## Runtime Profile Comparison",
         formatRuntimeComparisons(ablation.cases),
