@@ -5,9 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Latest Release](https://img.shields.io/github/v/release/yul761/ProjectMemory)](https://github.com/yul761/ProjectMemory/releases)
 
-An open-source **self-hosted long-term memory runtime**. It provides primitives to ingest events, produce layered digests, retrieve memory, and optionally answer questions grounded in that memory.
+An open-source **self-hosted long-term memory engine**. It provides primitives to ingest events, consolidate low-drift protected state, retrieve memory, and generate grounded answers for developer-built AI assistants.
 
-This is **not** a consumer assistant app, model hosting platform, or generic chat shell. You bring your own infrastructure and model endpoints. The primary goal is low-drift, reproducible long-term memory for developer-built assistants.
+This is **not** a consumer assistant app, model hosting platform, or generic chat shell. You bring your own infrastructure and model endpoints. The primary goal is replayable, low-drift long-term memory for developer-built assistants.
 
 ## Quickstart in 5 minutes
 
@@ -50,7 +50,7 @@ pnpm dev:cli -- scopes
 pnpm dev:cli -- state
 pnpm dev:cli -- state-history
 pnpm dev:cli -- turn "What changed in the project plan?"
-pnpm dev:cli -- turn "goal: ship a self-hosted memory runtime" --write-tier stable --digest-mode force
+pnpm dev:cli -- turn "goal: ship a self-hosted memory engine" --write-tier stable --digest-mode force
 pnpm dev:cli -- turn "spec update for retrieval" --policy-profile document-heavy --digest-mode force
 pnpm dev:cli -- turn "long form update" --policy-profile conservative --promote-long-form --recall-limit 8
 ```
@@ -152,12 +152,12 @@ flowchart LR
 ## How It Works (Technical)
 - API validates input with shared Zod contracts and scopes all requests by user identity.
 - Core engine (`packages/core`) performs selection/delta/state/consistency logic.
-- Core also includes an initial assistant runtime session abstraction in `packages/core/src/assistant-runtime.ts`.
+- Core also includes an assistant runtime session abstraction in `packages/core/src/assistant-runtime.ts`.
 - Worker executes digest and rebuild jobs asynchronously via BullMQ.
 - Digests are stored as first-class records, with optional `rebuildGroupId` for backfills.
 - Adapters call API only (no direct database coupling).
 
-## Research Benchmarks
+## Benchmarking
 Use the built-in benchmark runner to generate reproducible metrics and a score report:
 
 - Ingest throughput + p95 latency
@@ -179,7 +179,8 @@ Optional profile:
 BENCH_PROFILE=stress pnpm benchmark
 ```
 
-Reports are generated in `benchmark-results/` as JSON + Markdown.
+Reports are generated in `benchmark-results/` as JSON + Markdown during local runs.
+The full working directory is ignored from git; curated release snapshots are archived under `artifacts/releases/`.
 They include both the existing overall performance score and a separate long-term memory reliability score.
 The reliability score now reflects digest consistency, retention, contradiction and omission control, replay stability, and runtime evidence coverage.
 
@@ -213,7 +214,7 @@ Generate a trend report from recent benchmark artifacts:
 pnpm benchmark:trend
 ```
 
-## Research Artifacts
+## Docs
 - Vision and roadmap: `docs/vision-and-roadmap.md`
 - Drift definition: `docs/drift-definition.md`
 - Digest state specification: `docs/digest-state.md`
