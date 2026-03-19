@@ -65,6 +65,34 @@ describe("detectDeltas", () => {
 
     expect(deltas.map((item) => item.eventId)).toContain("e1");
   });
+
+  it("does not emit document events as delta candidates because documents are merged separately", () => {
+    const selected: SelectedEvent[] = [
+      {
+        event: event({
+          id: "doc-1",
+          scopeId: "sc",
+          userId: "u",
+          type: "document",
+          key: "doc:constraints",
+          content: "constraint: self-hosted first"
+        }),
+        features: { kind: "constraint", importanceScore: 0.9, noveltyScore: 0 }
+      },
+      {
+        event: event({ id: "e1", scopeId: "sc", userId: "u", type: "stream", content: "We decide to keep postgres" }),
+        features: { kind: "decision", importanceScore: 0.9, noveltyScore: 0 }
+      }
+    ];
+
+    const deltas = detectDeltas({
+      lastDigestText: "",
+      selectedEvents: selected,
+      noveltyThreshold: 0.5
+    });
+
+    expect(deltas.map((item) => item.eventId)).toEqual(["e1"]);
+  });
 });
 
 describe("protectedStateMerge", () => {
@@ -672,6 +700,150 @@ describe("protectedStateMerge", () => {
     expect(merged.workingNotes.risks).toEqual([]);
   });
 
+  it("applies stream deltas chronologically so older questions do not re-open after later decisions", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: [],
+          decisions: []
+        },
+        workingNotes: {},
+        todos: [],
+        volatileContext: [],
+        provenance: {},
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "evt-decision",
+          reason: "stable_fact_signal",
+          features: { kind: "decision", importanceScore: 0.9, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-decision",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "We decide to support Ollama first for local model setup",
+            createdAt: new Date("2026-03-19T00:00:10Z")
+          })
+        },
+        {
+          eventId: "evt-question",
+          reason: "working_note_signal",
+          features: { kind: "question", importanceScore: 0.6, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-question",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "Question: should we support Ollama first?",
+            createdAt: new Date("2026-03-19T00:00:01Z")
+          })
+        }
+      ]
+    });
+
+    expect(merged.workingNotes.openQuestions).toEqual([]);
+    expect(merged.recentChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "openQuestions", action: "add", value: "Question: should we support Ollama first?" }),
+        expect.objectContaining({ field: "openQuestions", action: "remove", value: "Question: should we support Ollama first?" })
+      ])
+    );
+  });
+
+  it("does not re-open a resolved question when the same question signal appears later in the merge pass", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: [],
+          decisions: []
+        },
+        workingNotes: {
+          openQuestions: ["Question: should we support Ollama first?"]
+        },
+        todos: [],
+        volatileContext: [],
+        provenance: {
+          openQuestions: [{ value: "Question: should we support Ollama first?", refs: [{ id: "evt-q-old", sourceType: "event", kind: "question" }] }]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "evt-decision",
+          reason: "stable_fact_signal",
+          features: { kind: "decision", importanceScore: 0.9, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-decision",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "We decide to support Ollama first for local model setup"
+          })
+        },
+        {
+          eventId: "evt-question-repeat",
+          reason: "working_note_signal",
+          features: { kind: "question", importanceScore: 0.6, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-question-repeat",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "Question: should we support Ollama first?"
+          })
+        }
+      ]
+    });
+
+    expect(merged.workingNotes.openQuestions).toEqual([]);
+  });
+
+  it("treats blocked events as risks instead of stable constraints", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: ["self-hosted first"],
+          decisions: []
+        },
+        workingNotes: {},
+        todos: [],
+        volatileContext: [],
+        provenance: {
+          constraints: [{ value: "self-hosted first", refs: [{ id: "doc-1", sourceType: "document", key: "doc:constraints" }] }]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "evt-blocked",
+          reason: "working_note_signal",
+          features: { kind: "note", importanceScore: 0.6, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-blocked",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "Blocked by provider setup"
+          })
+        }
+      ]
+    });
+
+    expect(merged.stableFacts.constraints).toEqual(["self-hosted first"]);
+    expect(merged.workingNotes.risks).toEqual(["Blocked by provider setup"]);
+  });
+
   it("removes matching todos when a stream event marks them done or cancelled", () => {
     const merged = protectedStateMerge({
       prevState: {
@@ -777,7 +949,7 @@ describe("protectedStateMerge", () => {
     expect(normalized.transitionSummary).toEqual({});
   });
 
-  it("treats recent changes as snapshot-local and keeps transition summary cumulative", () => {
+  it("treats recent changes and transition summary as snapshot-local", () => {
     const merged = protectedStateMerge({
       prevState: {
         stableFacts: { goal: "ship alpha", constraints: ["self-hosted first"], decisions: [] },
@@ -816,9 +988,7 @@ describe("protectedStateMerge", () => {
       expect.objectContaining({ field: "constraints", action: "reaffirm", value: "self-hosted first" })
     ]);
     expect(merged.transitionSummary).toEqual({
-      "constraints:add": 1,
-      "constraints:reaffirm": 1,
-      "goal:set": 1
+      "constraints:reaffirm": 1
     });
   });
 });

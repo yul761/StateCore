@@ -358,7 +358,7 @@ function extractKind(content: string): MemoryEventKind {
     return "noise";
   }
   if (/\b(decide|decision|we will|agreed|approved)\b/.test(text)) return "decision";
-  if (/\b(constraint|blocked|limitation|cannot|must not)\b/.test(text)) return "constraint";
+  if (/\b(constraint|limitation|cannot|must not)\b/.test(text)) return "constraint";
   if (/\b(todo|next step|action item|follow up|follow-up)\b/.test(text)) return "todo";
   if (/\b(question|\?)\b/.test(text)) return "question";
   if (/\b(progress|status|done|shipped|completed|finished)\b/.test(text)) return "status";
@@ -494,6 +494,7 @@ export function detectDeltas(input: {
   const lastDigestText = input.lastDigestText ?? "";
   const deltas: DeltaCandidate[] = [];
   for (const selected of input.selectedEvents) {
+    if (selected.event.type === "document") continue;
     const novelty = noveltyAgainstDigest(selected.event.content, lastDigestText);
     selected.features.noveltyScore = novelty;
     const keep =
@@ -647,13 +648,15 @@ function removeWorkingNoteValue(input: {
   if (!matched) {
     return {
       values: input.values ?? [],
-      provenance: input.provenance
+      provenance: input.provenance,
+      removedValue: null
     };
   }
   pushRecentChange(input.next, { field: input.field, action: "remove", value: matched, evidence: input.evidence });
   return {
     values: (input.values ?? []).filter((item) => item !== matched),
-    provenance: removeValueProvenance(input.provenance, matched)
+    provenance: removeValueProvenance(input.provenance, matched),
+    removedValue: matched
   };
 }
 
@@ -755,7 +758,10 @@ export function protectedStateMerge(input: {
   next.provenance = next.provenance ?? {};
   next.transitionSummary = next.transitionSummary ?? {};
   next.recentChanges = next.recentChanges ?? [];
+  next.transitionSummary = {};
   next.recentChanges = [];
+  const resolvedQuestionKeys = new Set<string>();
+  const resolvedRiskKeys = new Set<string>();
 
   const docText = input.documents.map((doc) => doc.content).join("\n");
   const docGoal = parseGoal(docText);
@@ -828,7 +834,11 @@ export function protectedStateMerge(input: {
     });
   }
 
-  for (const delta of input.deltaCandidates) {
+  const orderedDeltas = [...input.deltaCandidates].sort(
+    (a, b) => a.event.createdAt.getTime() - b.event.createdAt.getTime()
+  );
+
+  for (const delta of orderedDeltas) {
     const evidence = {
       id: delta.eventId,
       sourceType: "event" as const,
@@ -875,6 +885,9 @@ export function protectedStateMerge(input: {
       });
       next.workingNotes.openQuestions = resolvedQuestion.values.slice(-10);
       next.provenance.openQuestions = resolvedQuestion.provenance;
+      if (resolvedQuestion.removedValue) {
+        resolvedQuestionKeys.add(normalizeText(stripWorkingNoteResolutionPrefix(resolvedQuestion.removedValue) || resolvedQuestion.removedValue));
+      }
     }
 
     if (delta.features.kind === "constraint" && delta.features.importanceScore >= 0.75) {
@@ -912,6 +925,10 @@ export function protectedStateMerge(input: {
     }
 
     if (delta.features.kind === "question") {
+      const normalizedQuestion = normalizeText(stripWorkingNoteResolutionPrefix(text) || text);
+      if (resolvedQuestionKeys.has(normalizedQuestion)) {
+        continue;
+      }
       const existing = findBestSemanticMatch(next.workingNotes.openQuestions ?? [], text, 0.7);
       if (!existing) {
         next.workingNotes.openQuestions = [...(next.workingNotes.openQuestions ?? []), text].slice(-10);
@@ -951,9 +968,16 @@ export function protectedStateMerge(input: {
       });
       next.workingNotes.risks = resolvedRisk.values.slice(-10);
       next.provenance.risks = resolvedRisk.provenance;
+      if (resolvedRisk.removedValue) {
+        resolvedRiskKeys.add(normalizeText(stripWorkingNoteResolutionPrefix(resolvedRisk.removedValue) || resolvedRisk.removedValue));
+      }
     }
 
     if (/\b(risk|blocked|blocker)\b/.test(lowered)) {
+      const normalizedRisk = normalizeText(stripWorkingNoteResolutionPrefix(text) || text);
+      if (resolvedRiskKeys.has(normalizedRisk)) {
+        continue;
+      }
       const existing = findBestSemanticMatch(next.workingNotes.risks ?? [], text, 0.7);
       if (!existing) {
         next.workingNotes.risks = [...(next.workingNotes.risks ?? []), text].slice(-10);

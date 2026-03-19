@@ -873,6 +873,52 @@ async function waitForStateHistory(scopeId, rebuildGroupId) {
   return { ok: false, error: "state_history_timeout" };
 }
 
+async function createBenchmarkScope(name) {
+  const scopeResp = await apiFetch("POST", "/scopes", { name });
+  if (!scopeResp.ok || !scopeResp.json.id) {
+    throw new Error(`failed_create_scope:${scopeResp.status}:${JSON.stringify(scopeResp.json)}`);
+  }
+  return scopeResp.json.id;
+}
+
+async function ingestScopeEvents(scopeId, events, concurrency) {
+  const ingestStart = performance.now();
+  const ingestResults = await withConcurrency(events, concurrency, async (item) => {
+    const body = { scopeId, source: "sdk", ...item };
+    return apiFetch("POST", "/memory/events", body);
+  });
+  const ingestDurationSec = (performance.now() - ingestStart) / 1000;
+  const ingestLatencies = ingestResults.map((r) => r.latencyMs);
+  const ingestSuccess = ingestResults.filter((r) => r.ok).length;
+  const ingestThroughput = ingestSuccess / Math.max(0.001, ingestDurationSec);
+  return {
+    total: events.length,
+    success: ingestSuccess,
+    failure: events.length - ingestSuccess,
+    throughputEventsPerSec: Number(ingestThroughput.toFixed(2)),
+    p50Ms: Number(percentile(ingestLatencies, 50).toFixed(2)),
+    p95Ms: Number(percentile(ingestLatencies, 95).toFixed(2))
+  };
+}
+
+async function runBaselineDigest(scopeId) {
+  const before = await apiFetch("GET", `/memory/digests?scopeId=${scopeId}&limit=5`);
+  const beforeCount = (before.json.items || []).length;
+  const enqueue = await apiFetch("POST", "/memory/digest", { scopeId });
+  if (!enqueue.ok) {
+    return { ok: false, error: `baseline_digest_enqueue_failed:${enqueue.status}` };
+  }
+  const waited = await waitForNewDigest(scopeId, beforeCount);
+  if (!waited.ok) {
+    return { ok: false, error: waited.error || "baseline_digest_wait_failed" };
+  }
+  const stateSnapshot = await apiFetch("GET", `/memory/state?scopeId=${scopeId}`);
+  if (!stateSnapshot.ok || !stateSnapshot.json?.state) {
+    return { ok: false, error: `baseline_state_failed:${stateSnapshot.status}` };
+  }
+  return { ok: true, digest: waited.digest, state: stateSnapshot.json.state };
+}
+
 async function run() {
   const profiles = {
     quick: { events: 50, concurrency: 8, retrieveQueries: 8, digestRuns: 1 },
@@ -922,11 +968,7 @@ async function run() {
     report.notes.push(`Health check failed during benchmark setup (${health.status}); using local benchmark env metadata.`);
   }
 
-  const scopeResp = await apiFetch("POST", "/scopes", { name: `Benchmark ${Date.now()}` });
-  if (!scopeResp.ok || !scopeResp.json.id) {
-    throw new Error(`failed_create_scope:${scopeResp.status}:${JSON.stringify(scopeResp.json)}`);
-  }
-  const scopeId = scopeResp.json.id;
+  const scopeId = await createBenchmarkScope(`Benchmark ${Date.now()}`);
   report.metrics.scopeId = scopeId;
 
   const rng = mulberry32(cfg.seed);
@@ -940,23 +982,7 @@ async function run() {
     report.notes.push("Embedding rerank was requested for benchmark metadata, but MODEL_EMBEDDING_NAME is not configured.");
   }
   const events = fixture?.events ?? generateEvents(cfg.events, rng);
-  const ingestStart = performance.now();
-  const ingestResults = await withConcurrency(events, cfg.concurrency, async (item) => {
-    const body = { scopeId, source: "sdk", ...item };
-    return apiFetch("POST", "/memory/events", body);
-  });
-  const ingestDurationSec = (performance.now() - ingestStart) / 1000;
-  const ingestLatencies = ingestResults.map((r) => r.latencyMs);
-  const ingestSuccess = ingestResults.filter((r) => r.ok).length;
-  const ingestThroughput = ingestSuccess / Math.max(0.001, ingestDurationSec);
-  report.metrics.ingest = {
-    total: events.length,
-    success: ingestSuccess,
-    failure: events.length - ingestSuccess,
-    throughputEventsPerSec: Number(ingestThroughput.toFixed(2)),
-    p50Ms: Number(percentile(ingestLatencies, 50).toFixed(2)),
-    p95Ms: Number(percentile(ingestLatencies, 95).toFixed(2))
-  };
+  report.metrics.ingest = await ingestScopeEvents(scopeId, events, cfg.concurrency);
 
   const retrieveCases = fixture?.retrieveCases ?? [
     { query: "What did we decide?", expected: "decide", aliases: ["decision", "agreed", "we decide", "we will"] },
@@ -1277,13 +1303,19 @@ async function run() {
   report.metrics.digest = digestMetrics;
 
   if (cfg.featureLlm && cfg.includeReplay) {
-    const baselineState = await apiFetch("GET", `/memory/state?scopeId=${scopeId}`);
-    if (!baselineState.ok || !baselineState.json.state) {
-      replayMetrics.error = `baseline_state_failed:${baselineState.status}`;
+    const replayScopeId = await createBenchmarkScope(`Benchmark Replay ${Date.now()}`);
+    report.metrics.replayScopeId = replayScopeId;
+    const replayIngest = await ingestScopeEvents(replayScopeId, events, cfg.concurrency);
+    if (replayIngest.failure > 0) {
+      replayMetrics.error = `replay_ingest_failed:${replayIngest.failure}`;
     } else {
+      const baselineDigest = await runBaselineDigest(replayScopeId);
+      if (!baselineDigest.ok) {
+        replayMetrics.error = baselineDigest.error;
+      } else {
       const replayRuns = [];
       for (let i = 0; i < cfg.replayRuns; i += 1) {
-        const result = await runReplayRebuild(scopeId, baselineState.json.state);
+        const result = await runReplayRebuild(replayScopeId, baselineDigest.state);
         replayRuns.push({ run: i + 1, ...result });
       }
       const successfulRuns = replayRuns.filter((item) => item.ok);
@@ -1296,8 +1328,8 @@ async function run() {
         const mismatchedCategories = [...new Set(successfulRuns.flatMap((item) => item.mismatchedCategories || []))].sort();
         const crossRun = compareReplayRuns(successfulRuns);
         const baselineTransitionTaxonomy = summarizeTransitionTaxonomy(
-          baselineState.json.state?.recentChanges,
-          baselineState.json.state?.transitionSummary
+          baselineDigest.state?.recentChanges,
+          baselineDigest.state?.transitionSummary
         );
         replayMetrics = {
           enabled: true,
@@ -1317,6 +1349,7 @@ async function run() {
           diff: successfulRuns[successfulRuns.length - 1].diff,
           error: successfulRuns.length === cfg.replayRuns ? null : replayRuns.find((item) => !item.ok)?.error || null
         };
+      }
       }
     }
   } else if (!cfg.includeReplay) {
