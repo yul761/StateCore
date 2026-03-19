@@ -497,6 +497,11 @@ function contradictionRate(text, contradictions) {
   return hits / contradictions.length;
 }
 
+function countMatches(text, facts) {
+  const normalized = normalizeText(text);
+  return facts.filter((item) => normalized.includes(normalizeText(item))).length;
+}
+
 function stateToFactText(state) {
   const stable = state?.stableFacts ?? {};
   const working = state?.workingNotes ?? {};
