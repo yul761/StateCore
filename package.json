@@ -21,6 +21,7 @@
     "build": "pnpm -r --filter \"./apps/**\" --filter \"./packages/**\" build",
     "changeset": "pnpm dlx changeset",
     "release:status": "pnpm dlx changeset status",
+    "release:verify": "node ./scripts/release/verify-release.mjs",
     "benchmark": "node ./scripts/benchmark/run-benchmark.mjs",
     "benchmark:trend": "node ./scripts/benchmark/generate-trend-report.mjs",
     "smoke:no-llm": "./scripts/smoke-no-llm.sh",

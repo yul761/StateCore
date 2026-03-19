@@ -6,6 +6,23 @@ The format loosely follows Keep a Changelog and Semantic Versioning.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-18
+
+### Added
+- Assistant runtime turn flow with policy profiles, overrides, structured evidence, and grounded answer evidence.
+- Provider-neutral model configuration with role-specific chat, structured-output, and embedding endpoints.
+- Replay consistency analysis with transition taxonomy and confidence-aware state diffs.
+- Working-note continuity benchmarking, including open-question and risk retention / intrusion metrics.
+- Release verification command (`pnpm release:verify`) and v1.0.0 release notes draft.
+
+### Improved
+- Protected-state evolution for goals, constraints, decisions, todos, questions, risks, and volatile context.
+- Long-term memory reliability scoring with replay stability, grounded response quality, and state-confidence signals.
+- Benchmark, ablation, trend, and research-report outputs for working-note continuity and replay explainability.
+
+### Docs
+- Vision, drift, digest state, assistant runtime, evaluation, provider abstraction, and benchmarking docs now reflect the memory-first 1.0.0 positioning.
+
 ## [0.1.0] - 2026-02-04
 
 ### Added

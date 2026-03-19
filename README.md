@@ -252,7 +252,8 @@ See `docs/glossary.md` for term definitions.
 See `docs/technical-overview.md` for architecture and pipeline internals.
 See `docs/benchmarking.md` for benchmark methodology and scoring.
 See `docs/release.md` for release/versioning workflow.
-See `docs/release-v0.1.0.md` for the initial release notes draft.
+See `docs/release-v1.0.0.md` for the current release notes draft.
+See `docs/release-v0.1.0.md` for the initial OSS release notes.
 See `ROADMAP.md` for planned milestones.
 
 ## OSS Project Hygiene

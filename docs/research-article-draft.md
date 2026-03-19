@@ -49,26 +49,26 @@ flowchart LR
 
 The digest pipeline is intentionally not a single LLM call. It is a five-stage, constrained flow:
 
-1. **Event Selection**  
-   - Deduplicate near-identical events.  
-   - Always include the latest document per key.  
+1. **Event Selection**
+   - Deduplicate near-identical events.
+   - Always include the latest document per key.
    - Budget control across total events, docs, and streams.
 
-2. **Delta Detection**  
-   - Compute novelty against the prior digest.  
-   - Always keep decision/constraint events.  
+2. **Delta Detection**
+   - Compute novelty against the prior digest.
+   - Always keep decision/constraint events.
    - Drop low-novelty events below threshold.
 
-3. **Protected State Merge**  
-   - Deterministic merge into `DigestState`.  
+3. **Protected State Merge**
+   - Deterministic merge into `DigestState`.
    - Stabilize goals, constraints, decisions, and todos.
 
-4. **LLM Generation**  
-   - Structured JSON output.  
+4. **LLM Generation**
+   - Structured JSON output.
    - Optional classification stage.
 
-5. **Consistency Check + Retry**  
-   - Enforce constraints on length, bullets, and contradictions.  
+5. **Consistency Check + Retry**
+   - Enforce constraints on length, bullets, and contradictions.
    - Retry when failures are detected.
 
 Persisted digest state snapshots enable deterministic replay and reduce drift across runs. This is crucial for research settings: without snapshots, the system must reconstruct state from prior textual digests, introducing ambiguity and reducing experimental repeatability.
@@ -90,9 +90,9 @@ flowchart TD
 
 Experiments follow a fixed, reproducible protocol designed to minimize confounds. Each run records the code commit, environment metadata, and a fully specified benchmark configuration. This ensures that reported outcomes can be reproduced, compared, and audited.
 
-- **Environment capture**: commit hash, OS, CPU, and Node version are recorded.  
-- **Fixed seeds**: `BENCH_SEED` is used to control noise content.  
-- **Fixtures**: event and retrieval sets can be fixed via `BENCH_FIXTURE`.  
+- **Environment capture**: commit hash, OS, CPU, and Node version are recorded.
+- **Fixed seeds**: `BENCH_SEED` is used to control noise content.
+- **Fixtures**: event and retrieval sets can be fixed via `BENCH_FIXTURE`.
 - **Reports**: results are stored as JSON and Markdown with config metadata.
 
 This yields a consistent baseline for evaluating changes and ablations. In particular, the combination of fixed seeds and fixtures enables attribution of performance changes to algorithmic differences rather than to stochastic variations in input composition.
@@ -101,9 +101,9 @@ This yields a consistent baseline for evaluating changes and ablations. In parti
 
 We report four categories of metrics:
 
-- **Ingest**: throughput (events/s), p50/p95 latency, success rate.  
-- **Retrieve**: semantic hit rate (aliases), strict hit rate (exact match), p50/p95 latency.  
-- **Digest**: success rate, consistency pass rate, average end‑to‑end latency.  
+- **Ingest**: throughput (events/s), p50/p95 latency, success rate.
+- **Retrieve**: semantic hit rate (aliases), strict hit rate (exact match), p50/p95 latency.
+- **Digest**: success rate, consistency pass rate, average end‑to‑end latency.
 - **Reminder**: success rate, due‑to‑sent latency.
 
 The overall score is a weighted combination of these components. When `FEATURE_LLM=false`, digest scoring is skipped and weights are adjusted accordingly.
@@ -112,10 +112,10 @@ The overall score is a weighted combination of these components. When `FEATURE_L
 
 Using `benchmark-fixtures/basic.json` (seed 42, quick profile), the baseline report shows:
 
-- **Overall**: 88.75 / 100  
-- **Ingest**: 100 (p95 84.78 ms, 102.5 events/s)  
-- **Retrieve**: 100 (hit rate 1.0, p95 26.62 ms)  
-- **Digest**: 62.5 (consistency pass 0.5, avg latency ~52s)  
+- **Overall**: 88.75 / 100
+- **Ingest**: 100 (p95 84.78 ms, 102.5 events/s)
+- **Retrieve**: 100 (hit rate 1.0, p95 26.62 ms)
+- **Digest**: 62.5 (consistency pass 0.5, avg latency ~52s)
 - **Reminder**: 100 (delay ~35s)
 
 While ingest and retrieve are strong under this fixture, the digest component exhibits both latency and consistency variance, motivating ablation experiments. Digest latency is especially sensitive to LLM generation and retry behavior, underscoring the need for explicit constraints and empirical measurement.
@@ -128,24 +128,24 @@ The baseline indicates that deterministic selection and retrieval heuristics can
 
 We ran controlled ablations that change one variable at a time, holding the fixture, seed, and profile constant:
 
-- **no_classifier**: disables LLM classification  
-- **high_novelty / low_novelty**: changes novelty thresholds  
+- **no_classifier**: disables LLM classification
+- **high_novelty / low_novelty**: changes novelty thresholds
 - **small_budget / large_budget**: changes event budgets
 
 Key results (overall score):
 
-- **small_budget**: 96.49 (best)  
-- **no_classifier**: 94.00  
-- **low_novelty**: 88.75  
-- **baseline**: 82.78  
-- **high_novelty**: 83.50  
+- **small_budget**: 96.49 (best)
+- **no_classifier**: 94.00
+- **low_novelty**: 88.75
+- **baseline**: 82.78
+- **high_novelty**: 83.50
 - **large_budget**: 83.49
 
 Interpretation:
 
-- Smaller budgets reduce inconsistency and improve overall scores.  
-- The classifier did not help under the fixed fixture; disabling it improved outcomes.  
-- High novelty thresholds filtered too aggressively and degraded digest quality.  
+- Smaller budgets reduce inconsistency and improve overall scores.
+- The classifier did not help under the fixed fixture; disabling it improved outcomes.
+- High novelty thresholds filtered too aggressively and degraded digest quality.
 - Large budgets increased evidence volume and harmed digest consistency.
 
 These trends are consistent with a “minimal evidence” principle: narrower evidence sets reduce contradiction risk and stabilize summaries. In practice, this suggests that aggressive evidence pruning may improve stability more than increased model complexity (e.g., classifier use).
@@ -166,9 +166,9 @@ The results suggest that in controlled settings, digest quality is more sensitiv
 
 Planned extensions:
 
-- Evaluate `decision-heavy` and `noise-heavy` fixtures.  
-- Expand novelty thresholds into finer-grained sweeps.  
-- Compare snapshot-enabled vs snapshot-disabled runs.  
+- Evaluate `decision-heavy` and `noise-heavy` fixtures.
+- Expand novelty thresholds into finer-grained sweeps.
+- Compare snapshot-enabled vs snapshot-disabled runs.
 - Introduce multi-model evaluation (different LLM providers or settings).
 
 Project Memory is best viewed as a research testbed: a controlled, reproducible environment for exploring the design space of long‑term memory systems. The system is intentionally conservative and transparent, prioritizing reproducibility over maximum raw performance.
@@ -197,8 +197,8 @@ Some products maintain “memory summaries” that are periodically refreshed. T
 
 The research contributes three actionable levers:
 
-1. **Budget tuning**: Evidence budget is a dominant control knob. Teams can apply budget sweeps (small/medium/large) to find a stable operating point.  
-2. **Novelty thresholds**: High thresholds can remove important context; moderate values can improve stability while controlling noise.  
+1. **Budget tuning**: Evidence budget is a dominant control knob. Teams can apply budget sweeps (small/medium/large) to find a stable operating point.
+2. **Novelty thresholds**: High thresholds can remove important context; moderate values can improve stability while controlling noise.
 3. **Classifier necessity**: Optional classifiers may not always help; disabling them can reduce variance on smaller workloads.
 
 These levers are measurable, and the evaluation protocol makes it possible to test them under controlled fixtures before deploying to production workloads.
@@ -206,8 +206,8 @@ These levers are measurable, and the evaluation protocol makes it possible to te
 ### 10.4 Comparative Framing
 
 From a market comparison perspective:
-- Retrieval‑heavy systems may achieve high recall but can suffer instability when summarizing large evidence sets.  
-- Digest‑centric systems prioritize consistency and cost predictability, at the expense of fine‑grained recall.  
+- Retrieval‑heavy systems may achieve high recall but can suffer instability when summarizing large evidence sets.
+- Digest‑centric systems prioritize consistency and cost predictability, at the expense of fine‑grained recall.
 - Hybrid systems can use this research to determine *where* to apply summarization (e.g., on a curated subset) and *how much* evidence to include.
 
 In short, the research does not argue for a single “best” product architecture. Instead, it provides reproducible evidence that **evidence volume and novelty thresholds are primary determinants of stability**, and these parameters can be tuned to meet product goals such as trust, latency, and cost.
@@ -274,11 +274,11 @@ Record the commit hash, environment metadata, and the generated JSON/Markdown re
 
 ## Appendix: Reproducibility Pointers
 
-- Benchmark runner: `scripts/benchmark/run-benchmark.mjs`  
-- Ablation runner: `scripts/benchmark/run-ablations.mjs`  
-- Baseline report: `benchmark-results/benchmark-2026-02-08T05-59-35-302Z.md`  
-- Ablation summary: `benchmark-results/ablation-2026-02-08T06-34-38-713Z.md`  
-- Evaluation protocol: `docs/evaluation-protocol.md`  
+- Benchmark runner: `scripts/benchmark/run-benchmark.mjs`
+- Ablation runner: `scripts/benchmark/run-ablations.mjs`
+- Baseline report: `benchmark-results/benchmark-2026-02-08T05-59-35-302Z.md`
+- Ablation summary: `benchmark-results/ablation-2026-02-08T06-34-38-713Z.md`
+- Evaluation protocol: `docs/evaluation-protocol.md`
 
 ## References
 
