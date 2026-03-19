@@ -334,6 +334,26 @@ function omissionWarningRate(consistencyTaxonomy) {
   return Number((omissionTotal / warningTotal).toFixed(3));
 }
 
+function canonicalizeDigestOutput(digest) {
+  return {
+    summary: String(digest?.summary || "").replace(/\s+/g, " ").trim(),
+    changes: String(digest?.changes || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => line.replace(/^-\s*/, ""))
+      .sort(),
+    nextSteps: (Array.isArray(digest?.nextSteps) ? digest.nextSteps : [])
+      .map((line) => String(line).replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .sort()
+  };
+}
+
+function sameCanonicalDigest(a, b) {
+  return JSON.stringify(canonicalizeDigestOutput(a)) === JSON.stringify(canonicalizeDigestOutput(b));
+}
+
 function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, runtimeMetrics, answerMetrics) {
   if (!digestMetrics?.enabled) {
     return {
@@ -346,7 +366,8 @@ function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, r
     };
   }
 
-  const consistencyScore = clamp((digestMetrics.consistencyPassRate || 0) * 30);
+  const consistencyScore = clamp((digestMetrics.consistencyPassRate || 0) * 24);
+  const repeatabilityScore = clamp((digestMetrics.repeatabilityRate || 0) * 6);
   const retention = digestMetrics.goldRetention
     ? (
         [
@@ -423,12 +444,12 @@ function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, r
   }
 
   return {
-    consistency: Number(consistencyScore.toFixed(2)),
+    consistency: Number((consistencyScore + repeatabilityScore).toFixed(2)),
     retention: Number(retentionScore.toFixed(2)),
     contradictionControl: Number(contradictionScore.toFixed(2)),
     replay: Number(replayScore.toFixed(2)),
     runtimeGrounding: Number((runtimeScore - 15).toFixed(2)),
-    total: Number(clamp(consistencyScore + retentionScore + contradictionScore + replayScore + runtimeScore - 15).toFixed(2))
+    total: Number(clamp(consistencyScore + repeatabilityScore + retentionScore + contradictionScore + replayScore + runtimeScore - 15).toFixed(2))
   };
 }
 
@@ -1046,6 +1067,7 @@ async function run() {
     runs: 0,
     success: 0,
     consistencyPassRate: 0,
+    repeatabilityRate: 0,
     omissionWarningRate: 0,
     avgLatencyMs: 0,
     failureTaxonomy: {},
@@ -1118,6 +1140,7 @@ async function run() {
   if (cfg.featureLlm) {
     const durations = [];
     const consistencyPass = [];
+    const successfulDigests = [];
     const failureTaxonomy = {};
     const consistencyTaxonomy = { errors: {}, warnings: {} };
     const goldRetentionRuns = [];
@@ -1137,6 +1160,7 @@ async function run() {
         continue;
       }
       const digest = waited.digest;
+      successfulDigests.push(digest);
       const classified = classifyDigestIssues(digest);
       consistencyPass.push(classified.valid);
       if (!classified.valid) {
@@ -1286,11 +1310,20 @@ async function run() {
           todoContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.todoContradictionRate, 0) / goldRetentionRuns.length).toFixed(3))
         }
       : null;
+    const repeatabilityRate = successfulDigests.length > 1
+      ? Number((
+          successfulDigests
+            .slice(1)
+            .filter((digest) => sameCanonicalDigest(successfulDigests[0], digest)).length /
+          Math.max(1, successfulDigests.length - 1)
+        ).toFixed(3))
+      : successfulDigests.length === 1 ? 1 : 0;
     digestMetrics = {
       enabled: true,
       runs: cfg.digestRuns,
       success: durations.length,
       consistencyPassRate: Number((consistencyPass.filter(Boolean).length / Math.max(1, consistencyPass.length)).toFixed(3)),
+      repeatabilityRate,
       omissionWarningRate: omissionWarningRate(consistencyTaxonomy),
       avgLatencyMs: Number((durations.reduce((a, b) => a + b, 0) / Math.max(1, durations.length)).toFixed(2)),
       failureTaxonomy,
@@ -1616,7 +1649,7 @@ async function run() {
     `- Retrieve explainability: ranking reasons ${report.metrics.retrieve.explainabilityRate}, reranked queries ${report.metrics.retrieve.rerankedRate}, embedding top-match ${report.metrics.retrieve.embeddingTopMatchRate}, document top-match ${report.metrics.retrieve.documentTopMatchRate}, source diversity ${report.metrics.retrieve.sourceDiversityRate}`,
     `- Grounded response view: success ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.successRate : "n/a"}, evidence coverage ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.evidenceCoverageRate : "n/a"}, ranking reasons ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.rankingReasonRate : "n/a"}, event scores ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.eventScoreRate : "n/a"}, state summary ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.stateSummaryRate : "n/a"}, state confidence ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.stateConfidenceRate : "n/a"}, state transition taxonomy ${report.metrics.groundedResponse.enabled ? report.metrics.groundedResponse.stateTransitionTaxonomyRate : "n/a"}, avg latency ${report.metrics.groundedResponse.enabled ? `${report.metrics.groundedResponse.avgLatencyMs} ms` : "n/a"}`,
     `- Answer grounding: success ${report.metrics.answer.enabled ? `${report.metrics.answer.success}/${report.metrics.answer.runs}` : "skipped"}, evidence coverage ${report.metrics.answer.enabled ? report.metrics.answer.evidenceCoverageRate : "n/a"}, ranking reasons ${report.metrics.answer.enabled ? report.metrics.answer.evidenceEventRankingReasonRate : "n/a"}, event scores ${report.metrics.answer.enabled ? report.metrics.answer.evidenceEventScoreRate : "n/a"}, state summary ${report.metrics.answer.enabled ? report.metrics.answer.evidenceStateSummaryRate : "n/a"}, state confidence ${report.metrics.answer.enabled ? report.metrics.answer.evidenceStateConfidenceRate : "n/a"}, avg latency ${report.metrics.answer.enabled ? `${report.metrics.answer.avgLatencyMs} ms` : "n/a"}`,
-    `- Digest success: ${report.metrics.digest.success}/${report.metrics.digest.runs}, consistency pass ${report.metrics.digest.consistencyPassRate}, omission warning rate ${report.metrics.digest.omissionWarningRate ?? 0}, avg latency ${report.metrics.digest.avgLatencyMs} ms`,
+    `- Digest success: ${report.metrics.digest.success}/${report.metrics.digest.runs}, consistency pass ${report.metrics.digest.consistencyPassRate}, repeatability ${report.metrics.digest.repeatabilityRate ?? 0}, omission warning rate ${report.metrics.digest.omissionWarningRate ?? 0}, avg latency ${report.metrics.digest.avgLatencyMs} ms`,
     `- Replay state match: ${report.metrics.replay.enabled ? (report.metrics.replay.successfulRuns ? (report.metrics.replay.stateMatch ? "yes" : "no") : `error (${report.metrics.replay.error})`) : "skipped"}${report.metrics.replay.enabled && report.metrics.replay.successfulRuns ? `, successful rebuilds ${report.metrics.replay.successfulRuns}/${report.metrics.replay.rebuildRuns}, snapshots ${report.metrics.replay.rebuildSnapshots}` : ""}`,
     `- Runtime turn success: ${report.metrics.runtime.enabled ? `${report.metrics.runtime.success}/${report.metrics.runtime.runs}` : "skipped"}, evidence coverage ${report.metrics.runtime.enabled ? report.metrics.runtime.evidenceCoverageRate : "n/a"}, avg latency ${report.metrics.runtime.enabled ? `${report.metrics.runtime.avgLatencyMs} ms` : "n/a"}`,
     `- Reminder sent: ${report.metrics.reminder.success === 1 ? "yes" : "no"}, delay ${report.metrics.reminder.delayMs} ms`,

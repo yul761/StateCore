@@ -183,6 +183,7 @@ Outputs are written to `benchmark-results/`:
 - success rate
 - average end-to-end latency
 - consistency pass rate (summary/changes/nextSteps constraints)
+- repeatability rate across successful digest runs
 - omission warning rate from persisted digest consistency taxonomy
 - failure taxonomy histogram for digest benchmark runs
 - persisted consistency taxonomy histogram from accepted digest snapshots
