@@ -32,7 +32,7 @@ const llm = workerEnv.featureLlm
       embeddingApiKey: workerEnv.embeddingModelApiKey,
       embeddingBaseUrl: workerEnv.embeddingModelBaseUrl,
       embeddingModel: workerEnv.embeddingModelName || undefined,
-      timeoutMs: 20000
+      timeoutMs: workerEnv.modelTimeoutMs
     })?.structuredOutput ?? null
   : null;
 
@@ -79,10 +79,13 @@ async function runDigestScopeJob(data: { userId: string; scopeId: string }) {
   });
 
   const since = new Date(Date.now() - workerEnv.maxDaysLookback * 24 * 60 * 60 * 1000);
+  const streamEventQuery = {
+    where: { scopeId: data.scopeId, createdAt: { gte: since }, type: "stream" as const },
+    orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
+    ...(lastDigestRow ? { take: workerEnv.maxRecentEvents } : {})
+  };
   const recentStreamEvents = await prisma.memoryEvent.findMany({
-    where: { scopeId: data.scopeId, createdAt: { gte: since }, type: "stream" },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: workerEnv.maxRecentEvents
+    ...streamEventQuery
   });
   const recentDocumentEvents = await prisma.memoryEvent.findMany({
     where: { scopeId: data.scopeId, createdAt: { gte: since }, type: "document" },

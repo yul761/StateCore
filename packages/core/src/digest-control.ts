@@ -402,11 +402,22 @@ function makeFeatures(event: MemoryEvent): EventFeatures {
   };
 }
 
+function shouldPreserveDurablePair(existing: MemoryEvent, candidate: MemoryEvent) {
+  const existingKind = makeFeatures(existing).kind;
+  const candidateKind = makeFeatures(candidate).kind;
+  if (existingKind !== candidateKind) return false;
+  if (existingKind === "decision" || existingKind === "todo") {
+    return !decisionValuesAreComparable(existing.content, candidate.content);
+  }
+  return false;
+}
+
 function dedupeConsecutiveEvents(events: MemoryEvent[], rationale: string[]) {
   const output: MemoryEvent[] = [];
   let prev: MemoryEvent | null = null;
   for (const event of events) {
-    if (prev && sameDedupeGroup(prev, event) && jaccardSimilarity(prev.content, event.content) >= 0.92) {
+    const preserveDurablePair = prev ? shouldPreserveDurablePair(prev, event) : false;
+    if (!preserveDurablePair && prev && sameDedupeGroup(prev, event) && jaccardSimilarity(prev.content, event.content) >= 0.92) {
       rationale.push(`dedup:${event.id}`);
       continue;
     }
@@ -420,7 +431,12 @@ function dedupeNearDuplicateEvents(events: MemoryEvent[], rationale: string[]) {
   const kept: MemoryEvent[] = [];
   for (const event of events) {
     const duplicate = kept.find(
-      (existing) => sameDedupeGroup(existing, event) && jaccardSimilarity(existing.content, event.content) >= 0.92
+      (existing) => {
+        if (shouldPreserveDurablePair(existing, event)) {
+          return false;
+        }
+        return sameDedupeGroup(existing, event) && jaccardSimilarity(existing.content, event.content) >= 0.92;
+      }
     );
     if (duplicate) {
       rationale.push(`dedup_near:${event.id}`);
@@ -462,7 +478,7 @@ export function selectEventsForDigest(input: {
   const newestTs = deduped[0]?.createdAt.getTime() ?? Date.now();
   const oldestTs = deduped[deduped.length - 1]?.createdAt.getTime() ?? newestTs;
   const timeRange = Math.max(1, newestTs - oldestTs);
-  const streamCandidates = deduped
+  const scoredStreamCandidates = deduped
     .filter((event) => !docsById.has(event.id) && event.type === "stream")
     .map((event) => {
       const features = makeFeatures(event);
@@ -475,8 +491,15 @@ export function selectEventsForDigest(input: {
       const scoreDiff = b.score - a.score;
       if (scoreDiff !== 0) return scoreDiff;
       return compareEventDesc(a.event, b.event);
-    })
+    });
+
+  const durableKinds = new Set<MemoryEventKind>(["decision", "constraint", "todo"]);
+  const durableStreamCandidates = scoredStreamCandidates.filter((candidate) => durableKinds.has(candidate.features.kind));
+  const durableStreamIds = new Set(durableStreamCandidates.map((candidate) => candidate.event.id));
+  const contextualStreamCandidates = scoredStreamCandidates
+    .filter((candidate) => !durableStreamIds.has(candidate.event.id))
     .slice(0, input.eventBudgetStream);
+  const streamCandidates = [...durableStreamCandidates, ...contextualStreamCandidates];
 
   const docSelected = docs.map((event) => ({ event, features: makeFeatures(event), score: 1 }));
   const merged = [...docSelected, ...streamCandidates]
@@ -484,6 +507,7 @@ export function selectEventsForDigest(input: {
     .map(({ event, features }) => ({ event, features }));
 
   rationale.push(`selected_docs:${docSelected.length}`);
+  rationale.push(`selected_stream_durable:${durableStreamCandidates.length}`);
   rationale.push(`selected_stream:${Math.max(0, merged.length - docSelected.length)}`);
   if (input.lastDigest) {
     rationale.push("included_last_digest");
@@ -554,6 +578,36 @@ function findBestSemanticMatch(values: string[], candidate: string, threshold = 
     }
   }
   return best && best.score >= threshold ? best.value : null;
+}
+
+function extractNumberTokens(value: string) {
+  return normalizeText(value).match(/\b\d+\b/g) ?? [];
+}
+
+function decisionValuesAreComparable(existing: string, candidate: string) {
+  const existingNumbers = extractNumberTokens(existing);
+  const candidateNumbers = extractNumberTokens(candidate);
+  if (existingNumbers.length || candidateNumbers.length) {
+    return existingNumbers.join(",") === candidateNumbers.join(",");
+  }
+  return true;
+}
+
+function findBestDecisionMatch(values: string[], candidate: string, threshold = 0.8) {
+  const comparableValues = values.filter((value) => decisionValuesAreComparable(value, candidate));
+  return findBestSemanticMatch(comparableValues, candidate, threshold);
+}
+
+function findBestTodoMatch(values: string[], candidate: string, threshold = 0.8) {
+  const normalizedCandidate = normalizeTodoFactText(candidate);
+  const comparableValues = values.filter((value) =>
+    decisionValuesAreComparable(normalizeTodoFactText(value), normalizedCandidate)
+  );
+  return findBestSemanticMatch(comparableValues.map(normalizeTodoFactText), normalizedCandidate, threshold)
+    ? values.find((value) => normalizeText(normalizeTodoFactText(value)) === normalizeText(
+      findBestSemanticMatch(comparableValues.map(normalizeTodoFactText), normalizedCandidate, threshold) ?? ""
+    )) ?? null
+    : null;
 }
 
 function stripDecisionRevocationPrefix(text: string) {
@@ -765,7 +819,8 @@ function mergeDocumentBackedList(input: {
   }
 
   for (const value of incoming) {
-    const existing = existingByNormalized.get(normalizeText(value)) ?? findBestSemanticMatch(input.currentValues, value);
+    const existing = existingByNormalized.get(normalizeText(value))
+      ?? (input.field === "decisions" ? findBestDecisionMatch(input.currentValues, value) : findBestSemanticMatch(input.currentValues, value));
     if (!existing) {
       input.currentValues.push(value);
       pushRecentChange(input.next, { field: input.field, action: "add", value, evidence: input.evidence });
@@ -893,14 +948,14 @@ export function protectedStateMerge(input: {
     if (delta.features.kind === "decision") {
       if (/\b(revoke|undo|cancel decision)\b/.test(lowered)) {
         const revokeTarget = stripDecisionRevocationPrefix(text);
-        const matched = findBestSemanticMatch(next.stableFacts.decisions, revokeTarget, 0.45);
+        const matched = findBestDecisionMatch(next.stableFacts.decisions, revokeTarget, 0.45);
         if (matched) {
           next.stableFacts.decisions = next.stableFacts.decisions.filter((item) => item !== matched);
           next.provenance.decisions = removeValueProvenance(next.provenance.decisions, matched);
           pushRecentChange(next, { field: "decisions", action: "remove", value: matched, evidence });
         }
       } else {
-        const existing = findBestSemanticMatch(next.stableFacts.decisions, text);
+        const existing = findBestDecisionMatch(next.stableFacts.decisions, text);
         if (!existing) {
           next.stableFacts.decisions.push(text);
           pushRecentChange(next, { field: "decisions", action: "add", value: text, evidence });
@@ -947,14 +1002,14 @@ export function protectedStateMerge(input: {
     if (delta.features.kind === "todo") {
       if (/\b(done|completed|complete|cancel|remove|drop|close)\b/.test(lowered)) {
         const removalTarget = stripTodoRemovalPrefix(text);
-        const matched = findBestSemanticMatch(next.todos, removalTarget, 0.45);
+        const matched = findBestTodoMatch(next.todos, removalTarget, 0.45);
         if (matched) {
           next.todos = next.todos.filter((item) => item !== matched);
           next.provenance.todos = removeValueProvenance(next.provenance.todos, matched);
           pushRecentChange(next, { field: "todos", action: "remove", value: matched, evidence });
         }
       } else {
-        const existing = findBestSemanticMatch(next.todos, text);
+        const existing = findBestTodoMatch(next.todos, text);
         if (!existing) {
           next.todos.push(text);
           pushRecentChange(next, { field: "todos", action: "add", value: text, evidence });
@@ -1131,31 +1186,44 @@ function ensureSummaryGoal(summary: string, goal?: string) {
   return summary;
 }
 
+function appendSummarySentence(parts: string[], sentence: string) {
+  if (!sentence.trim()) return;
+  const candidate = [...parts, sentence].join(" ").trim();
+  if (wordsCount(candidate) <= 120) {
+    parts.push(sentence);
+  }
+}
+
 function buildProjectedSummary(state: DigestState, fallbackSummary: string) {
-  const required: string[] = [];
-  const optional: string[] = [];
+  const parts: string[] = [];
 
   if (state.stableFacts.goal) {
-    required.push(`Goal: ${state.stableFacts.goal}.`);
+    appendSummarySentence(parts, `Goal: ${state.stableFacts.goal}.`);
   }
   const constraints = (state.stableFacts.constraints ?? []).slice(0, 2);
   if (constraints.length) {
-    required.push(`Constraints: ${constraints.join("; ")}.`);
+    appendSummarySentence(parts, `Constraints: ${constraints.join("; ")}.`);
   }
-  const decision = state.stableFacts.decisions?.[state.stableFacts.decisions.length - 1];
-  if (decision) {
-    required.push(`Current decision: ${decision}.`);
+  const decisions = state.stableFacts.decisions ?? [];
+  if (decisions.length) {
+    const recentDecisions = decisions.slice(-8);
+    for (let count = recentDecisions.length; count >= 1; count -= 1) {
+      const sentence = `Decisions: ${recentDecisions.slice(-count).join("; ")}.`;
+      const before = parts.length;
+      appendSummarySentence(parts, sentence);
+      if (parts.length > before) break;
+    }
   }
 
   const openQuestion = state.workingNotes.openQuestions?.[0];
   if (openQuestion) {
-    optional.push(`Open question: ${openQuestion}.`);
+    appendSummarySentence(parts, `Open question: ${openQuestion}.`);
   }
   const risk = state.workingNotes.risks?.[0];
   if (risk) {
-    optional.push(`Active risk: ${risk}.`);
+    appendSummarySentence(parts, `Active risk: ${risk}.`);
   }
-  const projected = [...required, ...optional].join(" ").trim();
+  const projected = parts.join(" ").trim();
   if (projected) return projected;
 
   let summary = fallbackSummary.trim().replace(/\s+/g, " ");

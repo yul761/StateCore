@@ -42,6 +42,7 @@ const envSchema = z.object({
   MODEL_EMBEDDING_API_KEY: z.string().optional(),
   MODEL_EMBEDDING_BASE_URL: z.string().optional(),
   MODEL_EMBEDDING_NAME: z.string().optional(),
+  MODEL_TIMEOUT_MS: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
   OPENAI_MODEL: z.string().optional()
@@ -117,5 +118,6 @@ export const apiEnv = {
   structuredOutputModelName,
   embeddingModelApiKey,
   embeddingModelBaseUrl,
-  embeddingModelName
+  embeddingModelName,
+  modelTimeoutMs: Number(env.MODEL_TIMEOUT_MS || 20000)
 };

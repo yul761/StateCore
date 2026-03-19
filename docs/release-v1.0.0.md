@@ -1,6 +1,6 @@
 # Project Memory v1.0.0
 
-Project Memory v1.0.0 is the first release that clearly centers the project around a self-hosted, developer-facing long-term memory runtime rather than a generic chat memory API.
+Project Memory v1.0.0 is the first release that clearly centers the project around a self-hosted, developer-facing long-term memory engine rather than a generic chat memory API.
 
 ## Highlights
 
@@ -14,6 +14,7 @@ Project Memory v1.0.0 is the first release that clearly centers the project arou
   - document-backed supersede rules for durable state
   - semantic reaffirm / remove handling for stream updates
   - working-note resolution paths for answered questions and cleared risks
+  - durable stream fact preservation for numbered decisions and todos
 
 - Grounded assistant runtime
   - `POST /memory/runtime/turn`
@@ -24,6 +25,7 @@ Project Memory v1.0.0 is the first release that clearly centers the project arou
 - Developer-facing model abstraction
   - provider-neutral `MODEL_*` configuration
   - role-specific chat / structured-output / embedding model settings
+  - configurable `MODEL_TIMEOUT_MS` for slower hosted or local model backends
   - optional embedding rerank layered on top of heuristic retrieval
 
 - Research and evaluation story
@@ -36,6 +38,17 @@ Project Memory v1.0.0 is the first release that clearly centers the project arou
 - unified release verification command: `pnpm release:verify`
 - benchmark and report scripts included in release validation
 - changelog, roadmap, release process, and release notes all aligned to the current memory-first positioning
+- latest benchmark validation snapshot:
+  - replay state match: `true`
+  - rebuild consistency rate: `1`
+  - transition taxonomy match rate: `1`
+  - digest repeatability rate: `1`
+  - digest omission warning rate: `0`
+- latest drift validation snapshot:
+  - avg recall: `1`
+  - goal / constraint / decision / todo drift: `0`
+  - digest drift rate: `0`
+  - contradiction and omission taxonomy: `0`
 
 ## Notes
 

@@ -67,6 +67,48 @@ describe("detectDeltas", () => {
     expect(deltas.map((item) => item.eventId)).toContain("e1");
   });
 
+  it("prioritizes durable stream facts ahead of contextual stream budget", () => {
+    const baseTime = new Date("2026-03-19T00:00:00.000Z");
+    const selected = selectEventsForDigest({
+      recentEvents: [
+        event({
+          id: "doc-goal",
+          scopeId: "sc",
+          userId: "u",
+          type: "document",
+          key: "doc:goal",
+          content: "goal: maximize digest consistency"
+        }),
+        ...Array.from({ length: 6 }, (_, index) =>
+          event({
+            id: `evt-decision-${index}`,
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: `We decide to prioritize consistency batch ${index}`,
+            createdAt: new Date(baseTime.getTime() + index * 1000)
+          })
+        ),
+        event({
+          id: "evt-note",
+          scopeId: "sc",
+          userId: "u",
+          type: "stream",
+          content: "Status update: processed benchmark queue",
+          createdAt: new Date(baseTime.getTime() + 10_000)
+        })
+      ],
+      eventBudgetTotal: 8,
+      eventBudgetDocs: 1,
+      eventBudgetStream: 2
+    });
+
+    const contents = selected.selectedEvents.map((item) => item.event.content);
+    expect(contents).toContain("We decide to prioritize consistency batch 0");
+    expect(contents).toContain("We decide to prioritize consistency batch 5");
+    expect(contents.filter((value) => value.startsWith("We decide to prioritize consistency batch"))).toHaveLength(6);
+  });
+
   it("does not emit document events as delta candidates because documents are merged separately", () => {
     const selected: SelectedEvent[] = [
       {
@@ -455,6 +497,100 @@ describe("protectedStateMerge", () => {
     expect(merged.stableFacts.decisions).toEqual(["ship cli first"]);
     expect(merged.recentChanges).toContainEqual(
       expect.objectContaining({ field: "decisions", action: "remove", value: "use postgres for storage" })
+    );
+  });
+
+  it("keeps similarly worded numbered decisions as distinct durable facts", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: [],
+          decisions: ["We decide to prioritize consistency batch 0"]
+        },
+        workingNotes: {},
+        todos: [],
+        provenance: {
+          decisions: [
+            {
+              value: "We decide to prioritize consistency batch 0",
+              refs: [{ id: "evt-old", sourceType: "event", kind: "decision" }]
+            }
+          ]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "evt-new",
+          reason: "stable_fact_signal",
+          features: { kind: "decision", importanceScore: 0.9, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-new",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "We decide to prioritize consistency batch 3"
+          })
+        }
+      ]
+    });
+
+    expect(merged.stableFacts.decisions).toEqual([
+      "We decide to prioritize consistency batch 0",
+      "We decide to prioritize consistency batch 3"
+    ]);
+    expect(merged.recentChanges).toContainEqual(
+      expect.objectContaining({ field: "decisions", action: "add", value: "We decide to prioritize consistency batch 3" })
+    );
+  });
+
+  it("keeps similarly worded numbered todos as distinct durable facts", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: [],
+          decisions: []
+        },
+        workingNotes: {},
+        todos: ["TODO: validate consistency metric 1"],
+        provenance: {
+          todos: [
+            {
+              value: "TODO: validate consistency metric 1",
+              refs: [{ id: "evt-old", sourceType: "event", kind: "todo" }]
+            }
+          ]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "evt-new",
+          reason: "stable_fact_signal",
+          features: { kind: "todo", importanceScore: 0.9, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-new",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "TODO: validate consistency metric 8"
+          })
+        }
+      ]
+    });
+
+    expect(merged.todos).toEqual([
+      "TODO: validate consistency metric 1",
+      "TODO: validate consistency metric 8"
+    ]);
+    expect(merged.recentChanges).toContainEqual(
+      expect.objectContaining({ field: "todos", action: "add", value: "TODO: validate consistency metric 8" })
     );
   });
 
@@ -1460,6 +1596,52 @@ describe("generateDigestStage2", () => {
       "Add benchmark assertion for p95 latency group 54",
       "Investigate and resolve Blocked by queue visibility timeout around item 51"
     ]);
+  });
+
+  it("projects multiple durable decisions into the summary when they fit within budget", async () => {
+    const llm = {
+      chat: async () => JSON.stringify({
+        summary: "Worked on digest maintenance.",
+        changes: ["Updated digest notes"],
+        nextSteps: ["review metrics"]
+      })
+    };
+
+    const result = await generateDigestStage2({
+      scope: { id: "s", userId: "u", name: "Demo", goal: "ship alpha", stage: "build", createdAt: new Date() },
+      lastDigest: null,
+      protectedState: normalizeDigestState({
+        stableFacts: {
+          goal: "maximize digest consistency under noisy streams",
+          constraints: ["avoid hosted dependencies", "keep api stable"],
+          decisions: [
+            "We decide to prioritize consistency batch 0",
+            "We decide to prioritize consistency batch 3",
+            "We decide to prioritize consistency batch 5",
+            "We decide to prioritize consistency batch 7",
+            "We decide to prioritize consistency batch 10",
+            "We decide to prioritize consistency batch 13",
+            "We decide to prioritize consistency batch 16",
+            "We decide to prioritize consistency batch 19"
+          ]
+        },
+        workingNotes: {},
+        todos: [],
+        recentChanges: [],
+        evidenceRefs: []
+      }),
+      deltaCandidates: [],
+      documents: [],
+      llm,
+      systemPrompt: "system",
+      userPromptTemplate: "{{scopeName}} {{lastDigest}} {{protectedState}} {{deltaCandidates}} {{documents}}",
+      maxRetries: 0
+    });
+
+    const normalizedSummary = result.summary.toLowerCase();
+    expect(normalizedSummary).toContain("we decide to prioritize consistency batch 0");
+    expect(normalizedSummary).toContain("we decide to prioritize consistency batch 19");
+    expect(result.summary.trim().split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(120);
   });
 
   it("returns no-change digest when only repeated changes are detected", async () => {

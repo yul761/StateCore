@@ -43,7 +43,7 @@ export class MemoryController {
         embeddingApiKey: apiEnv.embeddingModelApiKey,
         embeddingBaseUrl: apiEnv.embeddingModelBaseUrl,
         embeddingModel: apiEnv.embeddingModelName || undefined,
-        timeoutMs: 20000
+        timeoutMs: apiEnv.modelTimeoutMs
       })?.chat ?? null;
     }
   }
