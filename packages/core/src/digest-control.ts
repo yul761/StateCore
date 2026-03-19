@@ -351,6 +351,18 @@ function sameDedupeGroup(a: MemoryEvent, b: MemoryEvent) {
   return a.type === b.type && (a.key ?? "") === (b.key ?? "");
 }
 
+function compareEventDesc(a: MemoryEvent, b: MemoryEvent) {
+  const timeDiff = b.createdAt.getTime() - a.createdAt.getTime();
+  if (timeDiff !== 0) return timeDiff;
+  return b.id.localeCompare(a.id);
+}
+
+function compareEventAsc(a: MemoryEvent, b: MemoryEvent) {
+  const timeDiff = a.createdAt.getTime() - b.createdAt.getTime();
+  if (timeDiff !== 0) return timeDiff;
+  return a.id.localeCompare(b.id);
+}
+
 function extractKind(content: string): MemoryEventKind {
   const text = content.toLowerCase();
   if (/^assistant reply\s*:/i.test(content.trim())) return "noise";
@@ -438,12 +450,12 @@ export function selectEventsForDigest(input: {
   eventBudgetStream: number;
 }): SelectionResult {
   const rationale: string[] = [];
-  const sorted = [...input.recentEvents].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  const sorted = [...input.recentEvents].sort(compareEventDesc);
   const dedupedConsecutive = dedupeConsecutiveEvents(sorted, rationale);
   const deduped = dedupeNearDuplicateEvents(dedupedConsecutive, rationale);
 
   const docs = latestDocumentsByKey(deduped)
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .sort(compareEventDesc)
     .slice(0, input.eventBudgetDocs);
 
   const docsById = new Set(docs.map((doc) => doc.id));
@@ -459,7 +471,11 @@ export function selectEventsForDigest(input: {
       const score = features.importanceScore * 0.7 + recency * 0.3 + keywordBoost;
       return { event, features, score };
     })
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => {
+      const scoreDiff = b.score - a.score;
+      if (scoreDiff !== 0) return scoreDiff;
+      return compareEventDesc(a.event, b.event);
+    })
     .slice(0, input.eventBudgetStream);
 
   const docSelected = docs.map((event) => ({ event, features: makeFeatures(event), score: 1 }));
@@ -550,6 +566,10 @@ function stripTodoRemovalPrefix(text: string) {
   return text
     .replace(/^\s*(done|completed|complete|cancel|remove|drop|close)\s+/i, "")
     .trim();
+}
+
+function normalizeTodoFactText(text: string) {
+  return text.replace(/^\s*todo\s*:\s*/i, "").trim();
 }
 
 function stripWorkingNoteResolutionPrefix(text: string) {
@@ -857,7 +877,7 @@ export function protectedStateMerge(input: {
   }
 
   const orderedDeltas = [...input.deltaCandidates].sort(
-    (a, b) => a.event.createdAt.getTime() - b.event.createdAt.getTime()
+    (a, b) => compareEventAsc(a.event, b.event)
   );
 
   for (const delta of orderedDeltas) {
@@ -1316,7 +1336,7 @@ export function consistencyCheck(input: {
   const stableTodos = input.protectedState.todos ?? [];
   if (
     stableTodos.length > 0 &&
-    stableTodos.every((todo) => !mentionsFact(combinedText, todo, 2))
+    stableTodos.every((todo) => !mentionsFact(combinedText, normalizeTodoFactText(todo), 2))
   ) {
     warnings.push("todo_omission");
   }
@@ -1340,7 +1360,7 @@ export function consistencyCheck(input: {
 
   const todoNegation = /\b(remove|delete|drop|cancel|skip|ignore|defer|deprioritize)\b/;
   for (const todo of stableTodos) {
-    if (mentionsFactWithNegation(combinedText, todo, todoNegation)) {
+    if (mentionsFactWithNegation(combinedText, normalizeTodoFactText(todo), todoNegation)) {
       errors.push("todo_contradiction");
       break;
     }

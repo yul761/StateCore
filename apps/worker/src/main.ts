@@ -70,23 +70,23 @@ async function runDigestScopeJob(data: { userId: string; scopeId: string }) {
 
   const lastDigestRow = await prisma.digest.findFirst({
     where: { scopeId: data.scopeId },
-    orderBy: { createdAt: "desc" }
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }]
   });
 
   const lastStateRow = await prisma.digestStateSnapshot.findFirst({
     where: { scopeId: data.scopeId },
-    orderBy: { createdAt: "desc" }
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }]
   });
 
   const since = new Date(Date.now() - workerEnv.maxDaysLookback * 24 * 60 * 60 * 1000);
   const recentStreamEvents = await prisma.memoryEvent.findMany({
     where: { scopeId: data.scopeId, createdAt: { gte: since }, type: "stream" },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: workerEnv.maxRecentEvents
   });
   const recentDocumentEvents = await prisma.memoryEvent.findMany({
     where: { scopeId: data.scopeId, createdAt: { gte: since }, type: "document" },
-    orderBy: { createdAt: "desc" }
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }]
   });
   const recentEvents = [...recentStreamEvents, ...recentDocumentEvents];
 
@@ -186,7 +186,7 @@ async function runRebuildDigestChainJob(data: { userId: string; scopeId: string;
   const toDate = data.to ? new Date(data.to) : undefined;
 
   if (data.strategy === "since_last_good" && !fromDate) {
-    const latest = await prisma.digest.findFirst({ where: { scopeId: data.scopeId }, orderBy: { createdAt: "desc" } });
+    const latest = await prisma.digest.findFirst({ where: { scopeId: data.scopeId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
     if (latest) fromDate = latest.createdAt;
   }
 
@@ -202,7 +202,7 @@ async function runRebuildDigestChainJob(data: { userId: string; scopeId: string;
           }
         : {})
     },
-    orderBy: { createdAt: "asc" }
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }]
   });
 
   if (!events.length) {
@@ -212,7 +212,7 @@ async function runRebuildDigestChainJob(data: { userId: string; scopeId: string;
   const rebuildGroupId = data.rebuildGroupId || randomUUID();
   let lastDigest = data.strategy === "full"
     ? null
-    : await prisma.digest.findFirst({ where: { scopeId: data.scopeId }, orderBy: { createdAt: "desc" } });
+    : await prisma.digest.findFirst({ where: { scopeId: data.scopeId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
   let lastState: DigestState | null = null;
   if (lastDigest && data.strategy !== "full") {
     const snapshot = await prisma.digestStateSnapshot.findUnique({ where: { digestId: lastDigest.id } });

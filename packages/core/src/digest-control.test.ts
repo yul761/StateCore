@@ -1225,6 +1225,27 @@ describe("consistencyCheck", () => {
     expect(result.warnings).toContain("decision_omission");
     expect(result.warnings).toContain("todo_omission");
   });
+
+  it("does not flag todo omission when next steps mention the todo without the TODO prefix", () => {
+    const result = consistencyCheck({
+      output: {
+        summary: "Worked on benchmark polish and queue cleanup.",
+        changes: ["Updated benchmark markdown output"],
+        nextSteps: ["Add benchmark assertion for p95 latency group 54"]
+      },
+      protectedState: {
+        stableFacts: {
+          goal: "ship low drift memory runtime",
+          constraints: [],
+          decisions: []
+        },
+        workingNotes: {},
+        todos: ["TODO: add benchmark assertion for p95 latency group 54"]
+      }
+    });
+
+    expect(result.warnings).not.toContain("todo_omission");
+  });
 });
 
 describe("generateDigestStage2", () => {
