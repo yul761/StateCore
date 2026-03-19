@@ -6,7 +6,7 @@ This summary captures the validation snapshot used to release Project Memory as 
 
 - Release verification: `pnpm release:verify` passed
 - Main benchmark:
-  - artifact: `benchmark-results/benchmark-2026-03-19T21-38-17-892Z.json`
+  - artifact: `artifacts/releases/v1.0.0/benchmark-2026-03-19T21-38-17-892Z.json`
   - overall: `81.2`
   - long-term memory reliability: `100`
   - digest repeatability: `1`
@@ -16,7 +16,7 @@ This summary captures the validation snapshot used to release Project Memory as 
   - transition taxonomy match rate: `1`
   - grounded response evidence coverage: `1`
 - Drift benchmark:
-  - artifact: `benchmark-results/drift-2026-03-19T21-31-01-938Z.json`
+  - artifact: `artifacts/releases/v1.0.0/drift-2026-03-19T21-31-01-938Z.json`
   - avg recall: `1`
   - goal drift rate: `0`
   - constraint drift rate: `0`
@@ -25,7 +25,7 @@ This summary captures the validation snapshot used to release Project Memory as 
   - digest drift rate: `0`
   - contradiction and omission taxonomy: `0`
 - Ablation matrix:
-  - artifact: `benchmark-results/ablation-2026-03-19T22-35-53-185Z.json`
+  - artifact: `artifacts/releases/v1.0.0/ablation-2026-03-19T22-35-53-185Z.json`
   - baseline reliability: `100`
   - baseline digest repeatability: `1`
   - baseline digest omission warning rate: `0`
