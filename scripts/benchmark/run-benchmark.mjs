@@ -761,7 +761,7 @@ async function runReplayRebuild(scopeId, baselineState) {
   return {
     ok: true,
     rebuildSnapshots: rebuildHistory.items.length,
-          stateMatch: JSON.stringify(baselineCanonical) === JSON.stringify(rebuildCanonical),
+    stateMatch: diffSummary.stateMatch,
     matchedCategories: diffSummary.matchedCategories,
     mismatchedCategories: diffSummary.mismatchedCategories,
     diff,

@@ -1280,8 +1280,63 @@ describe("generateDigestStage2", () => {
 
     expect(result.summary).toContain("self-hosted first");
     expect(result.summary).toContain("keep evaluation reproducible");
+    expect(result.summary).toContain("ship low drift memory runtime");
     expect(result.summary.toLowerCase()).toContain("active risk");
     expect(result.summary).toContain("drift metrics may regress during runtime refactors");
+  });
+
+  it("projects recent state transitions back into digest changes", async () => {
+    const llm = {
+      chat: async () => "{\"summary\":\"We are making progress.\",\"changes\":[],\"nextSteps\":[\"document runtime evidence output\"]}"
+    };
+
+    const result = await generateDigestStage2({
+      scope: { id: "s", userId: "u", name: "Demo", goal: "ship alpha", stage: "build", createdAt: new Date() },
+      lastDigest: null,
+      protectedState: normalizeDigestState({
+        stableFacts: {
+          goal: "ship low drift memory runtime",
+          constraints: ["self-hosted first"],
+          decisions: ["We decide to support Ollama first for local model setup"]
+        },
+        workingNotes: {
+          openQuestions: ["Question: should we also support LM Studio?"],
+          risks: ["Risk: drift metrics may regress during runtime refactors"]
+        },
+        todos: ["document runtime evidence output"],
+        recentChanges: [
+          {
+            field: "decisions",
+            action: "add",
+            value: "We decide to support Ollama first for local model setup",
+            evidence: { id: "evt-decision", sourceType: "event", kind: "decision" }
+          },
+          {
+            field: "openQuestions",
+            action: "add",
+            value: "Question: should we also support LM Studio?",
+            evidence: { id: "evt-question", sourceType: "event", kind: "question" }
+          },
+          {
+            field: "risks",
+            action: "add",
+            value: "Risk: drift metrics may regress during runtime refactors",
+            evidence: { id: "evt-risk", sourceType: "event", kind: "note" }
+          }
+        ],
+        evidenceRefs: []
+      }),
+      deltaCandidates: [],
+      documents: [],
+      llm,
+      systemPrompt: "system",
+      userPromptTemplate: "{{scopeName}} {{lastDigest}} {{protectedState}} {{deltaCandidates}} {{documents}}",
+      maxRetries: 0
+    });
+
+    const combinedChanges = result.changes.join("\n");
+    expect(combinedChanges).toContain("Decision: We decide to support Ollama first for local model setup");
+    expect(combinedChanges).toContain("Open question: Question: should we also support LM Studio?");
   });
 
   it("returns no-change digest when only repeated changes are detected", async () => {

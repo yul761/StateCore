@@ -345,7 +345,6 @@ async function run() {
   const latestRebuildState = rebuildHistory.items[0]?.state ?? null;
   const baselineCanonical = canonicalizeReplayState(baselineState.json.state);
   const rebuildCanonical = canonicalizeReplayState(latestRebuildState);
-  const stateMatch = JSON.stringify(baselineCanonical) === JSON.stringify(rebuildCanonical);
   const stateDiff = buildStateDiff(baselineState.json.state, latestRebuildState);
   const diffSummary = summarizeStateDiff(stateDiff);
 
@@ -354,7 +353,7 @@ async function run() {
     scopeId,
     rebuildGroupId: rebuild.json.rebuildGroupId,
     rebuildSnapshots: rebuildHistory.items.length,
-    stateMatch,
+    stateMatch: diffSummary.stateMatch,
     matchedCategories: diffSummary.matchedCategories,
     mismatchedCategories: diffSummary.mismatchedCategories,
     transitionTaxonomy: summarizeTransitionTaxonomy(baselineState.json.state?.recentChanges, baselineState.json.state?.transitionSummary),

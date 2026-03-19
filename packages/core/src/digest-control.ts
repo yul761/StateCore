@@ -1110,36 +1110,101 @@ function ensureSummaryGoal(summary: string, goal?: string) {
   return summary;
 }
 
-function ensureSummaryState(summary: string, state: DigestState) {
-  const additions: string[] = [];
+function buildProjectedSummary(state: DigestState, fallbackSummary: string) {
+  const required: string[] = [];
+  const optional: string[] = [];
+
+  if (state.stableFacts.goal) {
+    required.push(`Goal: ${state.stableFacts.goal}.`);
+  }
   const constraints = (state.stableFacts.constraints ?? []).slice(0, 2);
-  if (constraints.length && !constraints.every((value) => mentionsValue(summary, value, 2))) {
-    additions.push(`Constraints: ${constraints.join("; ")}.`);
+  if (constraints.length) {
+    required.push(`Constraints: ${constraints.join("; ")}.`);
+  }
+  const decision = state.stableFacts.decisions?.[state.stableFacts.decisions.length - 1];
+  if (decision) {
+    required.push(`Current decision: ${decision}.`);
+  }
+
+  const openQuestion = state.workingNotes.openQuestions?.[0];
+  if (openQuestion) {
+    optional.push(`Open question: ${openQuestion}.`);
   }
   const risk = state.workingNotes.risks?.[0];
-  if (risk && !mentionsValue(summary, risk, 2)) {
-    additions.push(`Active risk: ${risk}.`);
+  if (risk) {
+    optional.push(`Active risk: ${risk}.`);
   }
-  const openQuestion = state.workingNotes.openQuestions?.[0];
-  if (openQuestion && !mentionsValue(summary, openQuestion, 2)) {
-    additions.push(`Open question: ${openQuestion}.`);
+  if (fallbackSummary.trim()) {
+    optional.push(fallbackSummary.trim().replace(/\s+/g, " "));
   }
-  if (!additions.length) return summary;
-  const merged = `${summary.trim()} ${additions.join(" ")}`.trim();
-  if (wordsCount(merged) <= 120) return merged;
-  return summary;
+
+  let summary = [...required, ...optional].join(" ").trim();
+  while (wordsCount(summary) > 120 && optional.length > 0) {
+    optional.pop();
+    summary = [...required, ...optional].join(" ").trim();
+  }
+
+  if (summary) return summary;
+  const summaryWithGoal = ensureSummaryGoal(fallbackSummary, state.stableFacts.goal);
+  return summaryWithGoal.trim();
+}
+
+function projectRecentChange(change: DigestStateChange) {
+  switch (change.field) {
+    case "decisions":
+      return `Decision: ${change.value}`;
+    case "constraints":
+      return `Constraint: ${change.value}`;
+    case "openQuestions":
+      return change.action === "remove" ? `Resolved question: ${change.value}` : `Open question: ${change.value}`;
+    case "risks":
+      return change.action === "remove" ? `Risk cleared: ${change.value}` : `Risk: ${change.value}`;
+    case "goal":
+      return `Goal: ${change.value}`;
+    case "todos":
+      return change.action === "remove" ? `Todo completed: ${change.value}` : `Todo: ${change.value}`;
+    default:
+      return null;
+  }
 }
 
 function selectAlignedChanges(output: DigestOutput, state: DigestState) {
   const existing = output.changes.map((value) => ({ value, priority: 1, key: normalizeBullet(value) }));
   const combined = [output.summary, ...output.changes, ...output.nextSteps].join("\n");
-  const stateCandidates = [
-    ...(state.stableFacts.decisions ?? []).slice(-2).map((value) => ({ value: `Decision: ${value}`, priority: 4 })),
-    ...(state.workingNotes.openQuestions ?? []).slice(-1).map((value) => ({ value: `Open question: ${value}`, priority: 3 })),
-    ...(state.stableFacts.constraints ?? []).slice(-1).map((value) => ({ value: `Constraint: ${value}`, priority: 2 }))
-  ].filter((item) => !mentionsValue(combined, item.value.replace(/^[^:]+:\s*/, ""), 3));
+  const recentCandidates = (state.recentChanges ?? [])
+    .slice(-6)
+    .reverse()
+    .map((change) => {
+      const value = projectRecentChange(change);
+      if (!value) return null;
+      const priorityMap: Record<DigestStateChange["field"], number> = {
+        goal: 6,
+        decisions: 5,
+        constraints: 4,
+        openQuestions: 4,
+        risks: 3,
+        todos: 2,
+        volatileContext: 1
+      };
+      return {
+        value,
+        priority: priorityMap[change.field],
+        key: normalizeBullet(value)
+      };
+    })
+    .filter((item): item is { value: string; priority: number; key: string } => Boolean(item))
+    .filter((item) => !mentionsValue(combined, item.value.replace(/^[^:]+:\s*/, ""), 3));
 
-  const merged = [...existing, ...stateCandidates.map((item) => ({ ...item, key: normalizeBullet(item.value) }))];
+  const stateCandidates = [
+    ...(state.stableFacts.decisions ?? []).slice(-1).map((value) => ({ value: `Decision: ${value}`, priority: 4 })),
+    ...(state.workingNotes.openQuestions ?? []).slice(-1).map((value) => ({ value: `Open question: ${value}`, priority: 3 })),
+    ...(state.workingNotes.risks ?? []).slice(-1).map((value) => ({ value: `Risk: ${value}`, priority: 3 })),
+    ...(state.stableFacts.constraints ?? []).slice(-1).map((value) => ({ value: `Constraint: ${value}`, priority: 2 }))
+  ]
+    .map((item) => ({ ...item, key: normalizeBullet(item.value) }))
+    .filter((item) => !mentionsValue(combined, item.value.replace(/^[^:]+:\s*/, ""), 3));
+
+  const merged = [...recentCandidates, ...stateCandidates, ...existing];
   return [...new Map(merged
     .sort((a, b) => b.priority - a.priority)
     .map((item) => [item.key, item.value])
@@ -1154,9 +1219,8 @@ function selectAlignedNextSteps(output: DigestOutput, state: DigestState) {
 }
 
 function alignDigestWithState(output: DigestOutput, state: DigestState): DigestOutput {
-  const summaryWithGoal = ensureSummaryGoal(output.summary, state.stableFacts.goal);
   return {
-    summary: ensureSummaryState(summaryWithGoal, state),
+    summary: buildProjectedSummary(state, output.summary),
     changes: selectAlignedChanges(output, state),
     nextSteps: selectAlignedNextSteps(output, state)
   };
