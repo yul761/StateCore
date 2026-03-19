@@ -618,6 +618,60 @@ describe("protectedStateMerge", () => {
     );
   });
 
+  it("resolves working notes even when decisions and statuses include conversational prefixes", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: [],
+          decisions: []
+        },
+        workingNotes: {
+          openQuestions: ["Question: should we support Ollama first?"],
+          risks: ["Blocked by provider setup"]
+        },
+        todos: [],
+        volatileContext: [],
+        provenance: {
+          openQuestions: [{ value: "Question: should we support Ollama first?", refs: [{ id: "evt-q-old", sourceType: "event", kind: "question" }] }],
+          risks: [{ value: "Blocked by provider setup", refs: [{ id: "evt-r-old", sourceType: "event", kind: "constraint" }] }]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "evt-decision",
+          reason: "stable_fact_signal",
+          features: { kind: "decision", importanceScore: 0.9, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-decision",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "We decide to support Ollama first for local model setup"
+          })
+        },
+        {
+          eventId: "evt-status",
+          reason: "working_note_signal",
+          features: { kind: "status", importanceScore: 0.8, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-status",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "Status update: unblocked provider setup"
+          })
+        }
+      ]
+    });
+
+    expect(merged.workingNotes.openQuestions).toEqual([]);
+    expect(merged.workingNotes.risks).toEqual([]);
+  });
+
   it("removes matching todos when a stream event marks them done or cancelled", () => {
     const merged = protectedStateMerge({
       prevState: {
@@ -720,6 +774,52 @@ describe("protectedStateMerge", () => {
         score: 0.7
       }
     ]);
+    expect(normalized.transitionSummary).toEqual({});
+  });
+
+  it("treats recent changes as snapshot-local and keeps transition summary cumulative", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: { goal: "ship alpha", constraints: ["self-hosted first"], decisions: [] },
+        workingNotes: {},
+        todos: [],
+        volatileContext: [],
+        evidenceRefs: [],
+        transitionSummary: { "goal:set": 1, "constraints:add": 1 },
+        recentChanges: [
+          {
+            field: "goal",
+            action: "set",
+            value: "ship alpha",
+            evidence: { id: "doc-old", sourceType: "document", key: "doc:goal" }
+          }
+        ],
+        provenance: {
+          goal: [{ id: "doc-old", sourceType: "document", key: "doc:goal" }],
+          constraints: [{ value: "self-hosted first", refs: [{ id: "doc-old", sourceType: "document", key: "doc:plan" }] }]
+        }
+      },
+      documents: [
+        event({
+          id: "doc-new",
+          scopeId: "sc",
+          userId: "u",
+          type: "document",
+          key: "doc:plan",
+          content: "constraint: self-hosted first"
+        })
+      ],
+      deltaCandidates: []
+    });
+
+    expect(merged.recentChanges).toEqual([
+      expect.objectContaining({ field: "constraints", action: "reaffirm", value: "self-hosted first" })
+    ]);
+    expect(merged.transitionSummary).toEqual({
+      "constraints:add": 1,
+      "constraints:reaffirm": 1,
+      "goal:set": 1
+    });
   });
 });
 
@@ -848,6 +948,39 @@ describe("generateDigestStage2", () => {
     });
 
     expect(result.nextSteps[0]).toContain("Write benchmark script");
+  });
+
+  it("aligns digest output back to protected state for decisions, open questions, and todos", async () => {
+    const llm = {
+      chat: async () => "{\"summary\":\"Worked on benchmark polish.\",\"changes\":[\"Updated benchmark markdown output\"],\"nextSteps\":[\"Write queue latency notes\"]}"
+    };
+
+    const result = await generateDigestStage2({
+      scope: { id: "s", userId: "u", name: "Demo", goal: "ship alpha", stage: "build", createdAt: new Date() },
+      lastDigest: null,
+      protectedState: {
+        stableFacts: {
+          goal: "ship low drift memory runtime",
+          constraints: [],
+          decisions: ["use postgres for storage"]
+        },
+        workingNotes: {
+          openQuestions: ["should we support ollama first"]
+        },
+        todos: ["define drift metrics"]
+      },
+      deltaCandidates: [],
+      documents: [],
+      llm,
+      systemPrompt: "system",
+      userPromptTemplate: "{{scopeName}} {{lastDigest}} {{protectedState}} {{deltaCandidates}} {{documents}}",
+      maxRetries: 0
+    });
+
+    const combined = [result.summary, ...result.changes, ...result.nextSteps].join("\n").toLowerCase();
+    expect(combined).toContain("use postgres for storage");
+    expect(combined).toContain("should we support ollama first");
+    expect(result.nextSteps.join("\n").toLowerCase()).toContain("define drift metrics");
   });
 
   it("returns no-change digest when only repeated changes are detected", async () => {

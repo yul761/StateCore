@@ -43,6 +43,7 @@ export interface DigestState {
     openQuestions?: DigestStateValueProvenance[];
     risks?: DigestStateValueProvenance[];
   };
+  transitionSummary?: Record<string, number>;
   recentChanges?: DigestStateChange[];
 }
 
@@ -125,6 +126,7 @@ const DEFAULT_DIGEST_STATE: DigestState = {
   evidenceRefs: [],
   confidence: {},
   provenance: {},
+  transitionSummary: {},
   recentChanges: []
 };
 
@@ -150,6 +152,7 @@ function deriveStateFromDigest(digest?: Digest | null): DigestState | null {
     evidenceRefs: [],
     confidence: {},
     provenance: {},
+    transitionSummary: {},
     recentChanges: []
   };
 }
@@ -231,8 +234,18 @@ export function normalizeDigestState(state?: DigestState | null): DigestState {
       openQuestions: normalizeValueProvenanceList(base.provenance?.openQuestions),
       risks: normalizeValueProvenanceList(base.provenance?.risks)
     },
+    transitionSummary: normalizeTransitionSummary((base as { transitionSummary?: Record<string, number> }).transitionSummary),
     recentChanges: normalizeRecentChanges(base.recentChanges)
   };
+}
+
+function normalizeTransitionSummary(summary?: Record<string, number> | null) {
+  return Object.fromEntries(
+    Object.entries(summary ?? {})
+      .filter((entry): entry is [string, number] => typeof entry[0] === "string" && entry[0].length > 0 && Number.isFinite(entry[1]) && entry[1] > 0)
+      .map(([key, count]): [string, number] => [key, Number(count)])
+      .sort(([a], [b]) => a.localeCompare(b))
+  );
 }
 
 function normalizeValueProvenanceList(entries?: Array<{ value?: string; refs?: Array<string | DigestEvidenceRef> }> | null) {
@@ -312,8 +325,7 @@ function evidenceWeight(ref: DigestEvidenceRef) {
 function scoreEvidenceConfidence(refs?: DigestEvidenceRef[] | null) {
   const unique = [...new Map((refs ?? []).map((ref) => [`${ref.sourceType}:${ref.id}:${ref.key ?? ""}:${ref.kind ?? ""}`, ref])).values()];
   if (!unique.length) return 0;
-  const residual = unique.reduce((product, ref) => product * (1 - evidenceWeight(ref)), 1);
-  return Number((1 - residual).toFixed(3));
+  return Number(Math.max(...unique.map((ref) => evidenceWeight(ref))).toFixed(3));
 }
 
 function computeGoalConfidence(refs?: Array<string | DigestEvidenceRef> | null) {
@@ -341,6 +353,10 @@ function sameDedupeGroup(a: MemoryEvent, b: MemoryEvent) {
 
 function extractKind(content: string): MemoryEventKind {
   const text = content.toLowerCase();
+  if (/^assistant reply\s*:/i.test(content.trim())) return "noise";
+  if (/^(what|which)\b.*\b(open question|questions|risks|risk|decide|decision|remembered|state|context)\b/i.test(content.trim())) {
+    return "noise";
+  }
   if (/\b(decide|decision|we will|agreed|approved)\b/.test(text)) return "decision";
   if (/\b(constraint|blocked|limitation|cannot|must not)\b/.test(text)) return "constraint";
   if (/\b(todo|next step|action item|follow up|follow-up)\b/.test(text)) return "todo";
@@ -536,9 +552,26 @@ function stripTodoRemovalPrefix(text: string) {
 
 function stripWorkingNoteResolutionPrefix(text: string) {
   return text
+    .replace(/^\s*(status update|status|question|note|risk)\s*[:\-]?\s*/i, "")
+    .replace(/^\s*(we decide to|we decided to|we will|decision)\s+/i, "")
     .replace(/^\s*(resolved|answer(?:ed)?|clarified|decided|decision|fixed|mitigated|unblocked|cleared)\s*[:\-]?\s*/i, "")
     .replace(/\b(is now|now)\s+(resolved|fixed|mitigated|unblocked|cleared)\b/gi, "")
     .trim();
+}
+
+function findBestWorkingNoteMatch(values: string[] | undefined, candidate: string, threshold = 0.45) {
+  const normalizedCandidate = stripWorkingNoteResolutionPrefix(candidate);
+  let best: { value: string; score: number } | null = null;
+  for (const value of values ?? []) {
+    const normalizedValue = stripWorkingNoteResolutionPrefix(value);
+    const score = normalizeText(normalizedValue) === normalizeText(normalizedCandidate)
+      ? 1
+      : jaccardSimilarity(normalizedValue, normalizedCandidate);
+    if (!best || score > best.score) {
+      best = { value, score };
+    }
+  }
+  return best && best.score >= threshold ? best.value : null;
 }
 
 function upsertValueProvenance(
@@ -561,6 +594,25 @@ function setGoalProvenance(refs: DigestEvidenceRef[] | undefined, evidence: Dige
   return [...new Map([...(refs ?? []), evidence].map((ref) => [`${ref.sourceType}:${ref.id}:${ref.key ?? ""}:${ref.kind ?? ""}`, ref])).values()];
 }
 
+function hasEvidenceRef(refs: DigestEvidenceRef[] | undefined, evidence: DigestEvidenceRef) {
+  return (refs ?? []).some((ref) =>
+    ref.id === evidence.id &&
+    ref.sourceType === evidence.sourceType &&
+    (ref.key ?? "") === (evidence.key ?? "") &&
+    (ref.kind ?? "") === (evidence.kind ?? "")
+  );
+}
+
+function valueHasEvidence(
+  entries: DigestStateValueProvenance[] | undefined,
+  value: string,
+  evidence: DigestEvidenceRef
+) {
+  const normalizedValue = normalizeText(value);
+  const existing = (entries ?? []).find((entry) => normalizeText(entry.value) === normalizedValue);
+  return hasEvidenceRef(existing?.refs, evidence);
+}
+
 function replaceGoalProvenance(evidence: DigestEvidenceRef) {
   return [evidence];
 }
@@ -574,6 +626,11 @@ function removeValueProvenance(
 }
 
 function pushRecentChange(next: DigestState, change: DigestStateChange) {
+  const transitionKey = `${change.field}:${change.action}`;
+  next.transitionSummary = {
+    ...(next.transitionSummary ?? {}),
+    [transitionKey]: (next.transitionSummary?.[transitionKey] ?? 0) + 1
+  };
   next.recentChanges = [...(next.recentChanges ?? []), change].slice(-25);
 }
 
@@ -586,7 +643,7 @@ function removeWorkingNoteValue(input: {
   candidate: string;
   threshold?: number;
 }) {
-  const matched = findBestSemanticMatch(input.values ?? [], input.candidate, input.threshold ?? 0.45);
+  const matched = findBestWorkingNoteMatch(input.values ?? [], input.candidate, input.threshold ?? 0.45);
   if (!matched) {
     return {
       values: input.values ?? [],
@@ -614,8 +671,10 @@ function mergeGoalUpdate(next: DigestState, goal: string, evidence: DigestEviden
     jaccardSimilarity(previousGoal, goal) >= 0.8;
 
   if (sameGoal) {
-    next.provenance!.goal = setGoalProvenance(next.provenance?.goal, evidence);
-    pushRecentChange(next, { field: "goal", action: "reaffirm", value: previousGoal, evidence });
+    if (!hasEvidenceRef(next.provenance?.goal, evidence)) {
+      next.provenance!.goal = setGoalProvenance(next.provenance?.goal, evidence);
+      pushRecentChange(next, { field: "goal", action: "reaffirm", value: previousGoal, evidence });
+    }
     return;
   }
 
@@ -670,7 +729,7 @@ function mergeDocumentBackedList(input: {
     }
 
     const sameValue = normalizeText(existing) === normalizeText(value) || jaccardSimilarity(existing, value) >= 0.8;
-    if (sameValue) {
+    if (sameValue && !valueHasEvidence(input.currentProvenance, existing, input.evidence)) {
       input.currentProvenance = upsertValueProvenance(input.currentProvenance, existing, input.evidence);
       pushRecentChange(input.next, { field: input.field, action: "reaffirm", value: existing, evidence: input.evidence });
     }
@@ -694,7 +753,9 @@ export function protectedStateMerge(input: {
   next.volatileContext = next.volatileContext ?? [];
   next.evidenceRefs = next.evidenceRefs ?? [];
   next.provenance = next.provenance ?? {};
+  next.transitionSummary = next.transitionSummary ?? {};
   next.recentChanges = next.recentChanges ?? [];
+  next.recentChanges = [];
 
   const docText = input.documents.map((doc) => doc.content).join("\n");
   const docGoal = parseGoal(docText);
@@ -792,7 +853,7 @@ export function protectedStateMerge(input: {
           next.stableFacts.decisions.push(text);
           pushRecentChange(next, { field: "decisions", action: "add", value: text, evidence });
           next.provenance.decisions = upsertValueProvenance(next.provenance.decisions, text, evidence);
-        } else {
+        } else if (!valueHasEvidence(next.provenance.decisions, existing, evidence)) {
           pushRecentChange(next, { field: "decisions", action: "reaffirm", value: existing, evidence });
           next.provenance.decisions = upsertValueProvenance(next.provenance.decisions, existing, evidence);
         }
@@ -810,7 +871,7 @@ export function protectedStateMerge(input: {
         next,
         evidence,
         candidate: stripWorkingNoteResolutionPrefix(text) || text,
-        threshold: 0.45
+        threshold: 0.35
       });
       next.workingNotes.openQuestions = resolvedQuestion.values.slice(-10);
       next.provenance.openQuestions = resolvedQuestion.provenance;
@@ -822,7 +883,7 @@ export function protectedStateMerge(input: {
         next.stableFacts.constraints.push(text);
         pushRecentChange(next, { field: "constraints", action: "add", value: text, evidence });
         next.provenance.constraints = upsertValueProvenance(next.provenance.constraints, text, evidence);
-      } else {
+      } else if (!valueHasEvidence(next.provenance.constraints, existing, evidence)) {
         pushRecentChange(next, { field: "constraints", action: "reaffirm", value: existing, evidence });
         next.provenance.constraints = upsertValueProvenance(next.provenance.constraints, existing, evidence);
       }
@@ -843,7 +904,7 @@ export function protectedStateMerge(input: {
           next.todos.push(text);
           pushRecentChange(next, { field: "todos", action: "add", value: text, evidence });
           next.provenance.todos = upsertValueProvenance(next.provenance.todos, text, evidence);
-        } else {
+        } else if (!valueHasEvidence(next.provenance.todos, existing, evidence)) {
           pushRecentChange(next, { field: "todos", action: "reaffirm", value: existing, evidence });
           next.provenance.todos = upsertValueProvenance(next.provenance.todos, existing, evidence);
         }
@@ -856,7 +917,7 @@ export function protectedStateMerge(input: {
         next.workingNotes.openQuestions = [...(next.workingNotes.openQuestions ?? []), text].slice(-10);
         next.provenance.openQuestions = upsertValueProvenance(next.provenance.openQuestions, text, evidence);
         pushRecentChange(next, { field: "openQuestions", action: "add", value: text, evidence });
-      } else {
+      } else if (!valueHasEvidence(next.provenance.openQuestions, existing, evidence)) {
         next.provenance.openQuestions = upsertValueProvenance(next.provenance.openQuestions, existing, evidence);
         pushRecentChange(next, { field: "openQuestions", action: "reaffirm", value: existing, evidence });
       }
@@ -868,7 +929,7 @@ export function protectedStateMerge(input: {
         next.volatileContext = [...(next.volatileContext ?? []), text].slice(-10);
         next.provenance.volatileContext = upsertValueProvenance(next.provenance.volatileContext, text, evidence);
         pushRecentChange(next, { field: "volatileContext", action: "add", value: text, evidence });
-      } else {
+      } else if (!valueHasEvidence(next.provenance.volatileContext, existing, evidence)) {
         next.provenance.volatileContext = upsertValueProvenance(next.provenance.volatileContext, existing, evidence);
         pushRecentChange(next, { field: "volatileContext", action: "reaffirm", value: existing, evidence });
       }
@@ -886,7 +947,7 @@ export function protectedStateMerge(input: {
         next,
         evidence,
         candidate: resolutionCandidate,
-        threshold: 0.45
+        threshold: 0.35
       });
       next.workingNotes.risks = resolvedRisk.values.slice(-10);
       next.provenance.risks = resolvedRisk.provenance;
@@ -898,7 +959,7 @@ export function protectedStateMerge(input: {
         next.workingNotes.risks = [...(next.workingNotes.risks ?? []), text].slice(-10);
         next.provenance.risks = upsertValueProvenance(next.provenance.risks, text, evidence);
         pushRecentChange(next, { field: "risks", action: "add", value: text, evidence });
-      } else {
+      } else if (!valueHasEvidence(next.provenance.risks, existing, evidence)) {
         next.provenance.risks = upsertValueProvenance(next.provenance.risks, existing, evidence);
         pushRecentChange(next, { field: "risks", action: "reaffirm", value: existing, evidence });
       }
@@ -911,7 +972,9 @@ export function protectedStateMerge(input: {
   next.volatileContext = [...new Set(next.volatileContext ?? [])].slice(-10);
   const normalized = normalizeDigestState(next);
   next.evidenceRefs = normalized.evidenceRefs;
+  next.confidence = normalized.confidence;
   next.provenance = normalized.provenance;
+  next.transitionSummary = normalized.transitionSummary;
   next.recentChanges = normalized.recentChanges;
 
   return next as DigestState;
@@ -976,6 +1039,49 @@ function wordsCount(text: string) {
 
 function normalizeBullet(text: string) {
   return normalizeText(text.replace(/^-\s*/, ""));
+}
+
+function mentionsValue(text: string, value: string, tokenCount = 3) {
+  return mentionsFact(text, value, tokenCount);
+}
+
+function ensureSummaryGoal(summary: string, goal?: string) {
+  if (!goal || mentionsValue(summary, goal, 3)) return summary;
+  const prefix = `Goal: ${goal}. `;
+  const merged = `${prefix}${summary}`.trim();
+  if (wordsCount(merged) <= 120) return merged;
+  return summary;
+}
+
+function selectAlignedChanges(output: DigestOutput, state: DigestState) {
+  const existing = output.changes.map((value) => ({ value, priority: 1, key: normalizeBullet(value) }));
+  const combined = [output.summary, ...output.changes, ...output.nextSteps].join("\n");
+  const stateCandidates = [
+    ...(state.stableFacts.decisions ?? []).slice(-2).map((value) => ({ value: `Decision: ${value}`, priority: 4 })),
+    ...(state.workingNotes.openQuestions ?? []).slice(-1).map((value) => ({ value: `Open question: ${value}`, priority: 3 })),
+    ...(state.stableFacts.constraints ?? []).slice(-1).map((value) => ({ value: `Constraint: ${value}`, priority: 2 }))
+  ].filter((item) => !mentionsValue(combined, item.value.replace(/^[^:]+:\s*/, ""), 3));
+
+  const merged = [...existing, ...stateCandidates.map((item) => ({ ...item, key: normalizeBullet(item.value) }))];
+  return [...new Map(merged
+    .sort((a, b) => b.priority - a.priority)
+    .map((item) => [item.key, item.value])
+  ).values()].slice(0, 3);
+}
+
+function selectAlignedNextSteps(output: DigestOutput, state: DigestState) {
+  const stateTodos = (state.todos ?? []).slice(0, 3);
+  if (!stateTodos.length) return output.nextSteps.slice(0, 3);
+  const merged = [...stateTodos, ...output.nextSteps];
+  return [...new Map(merged.map((value) => [normalizeText(value), value])).values()].slice(0, 3);
+}
+
+function alignDigestWithState(output: DigestOutput, state: DigestState): DigestOutput {
+  return {
+    summary: ensureSummaryGoal(output.summary, state.stableFacts.goal),
+    changes: selectAlignedChanges(output, state),
+    nextSteps: selectAlignedNextSteps(output, state)
+  };
 }
 
 function mentionsFactWithNegation(text: string, fact: string, negationPattern: RegExp) {
@@ -1169,13 +1275,15 @@ export async function generateDigestStage2(input: {
       nextSteps: validated.data.nextSteps.map((n) => n.trim()).filter(Boolean).slice(0, 3)
     };
 
+    const aligned = alignDigestWithState(normalized, input.protectedState);
+
     const check = consistencyCheck({
-      output: normalized,
+      output: aligned,
       previousDigest: input.lastDigest,
       protectedState: input.protectedState
     });
 
-    if (check.ok) return normalized;
+    if (check.ok) return aligned;
 
     if (
       input.lastDigest &&

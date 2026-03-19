@@ -567,6 +567,13 @@ function canonicalize(value) {
   return value;
 }
 
+function canonicalizeReplayState(state) {
+  if (!state || typeof state !== "object") return canonicalize(state);
+  const clone = { ...state };
+  delete clone.recentChanges;
+  return canonicalize(clone);
+}
+
 function toStringList(value) {
   if (!Array.isArray(value)) return [];
   return value
@@ -647,7 +654,14 @@ function flattenRecentChanges(changes) {
     .filter(Boolean);
 }
 
-function summarizeTransitionTaxonomy(changes) {
+function summarizeTransitionTaxonomy(changes, transitionSummary) {
+  if (transitionSummary && typeof transitionSummary === "object" && Object.keys(transitionSummary).length > 0) {
+    return Object.fromEntries(
+      Object.entries(transitionSummary)
+        .filter(([, count]) => Number.isFinite(count) && count > 0)
+        .sort(([a], [b]) => a.localeCompare(b))
+    );
+  }
   const counts = {};
   if (!Array.isArray(changes)) return counts;
   for (const change of changes) {
@@ -661,9 +675,9 @@ function summarizeTransitionTaxonomy(changes) {
   return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
 }
 
-function diffTransitionTaxonomy(beforeChanges, afterChanges) {
-  const baseline = summarizeTransitionTaxonomy(beforeChanges);
-  const rebuilt = summarizeTransitionTaxonomy(afterChanges);
+function diffTransitionTaxonomy(beforeState, afterState) {
+  const baseline = summarizeTransitionTaxonomy(beforeState?.recentChanges, beforeState?.transitionSummary);
+  const rebuilt = summarizeTransitionTaxonomy(afterState?.recentChanges, afterState?.transitionSummary);
   const keys = [...new Set([...Object.keys(baseline), ...Object.keys(rebuilt)])].sort();
   const mismatchedKeys = keys.filter((key) => (baseline[key] || 0) !== (rebuilt[key] || 0));
   const matchedKeys = keys.filter((key) => !mismatchedKeys.includes(key));
@@ -706,7 +720,7 @@ function buildStateDiff(baselineState, rebuiltState) {
     openQuestionConfidence: diffStringLists(flattenConfidenceList(baselineConfidence.openQuestions), flattenConfidenceList(rebuiltConfidence.openQuestions)),
     riskConfidence: diffStringLists(flattenConfidenceList(baselineConfidence.risks), flattenConfidenceList(rebuiltConfidence.risks)),
     recentChanges: diffStringLists(flattenRecentChanges(baselineState?.recentChanges), flattenRecentChanges(rebuiltState?.recentChanges)),
-    transitionTaxonomy: diffTransitionTaxonomy(baselineState?.recentChanges, rebuiltState?.recentChanges),
+    transitionTaxonomy: diffTransitionTaxonomy(baselineState, rebuiltState),
     openQuestions: diffStringLists(baselineWorking.openQuestions, rebuiltWorking.openQuestions),
     risks: diffStringLists(baselineWorking.risks, rebuiltWorking.risks),
     workingContext: diffScalar(baselineWorking.context ?? null, rebuiltWorking.context ?? null)
@@ -714,11 +728,12 @@ function buildStateDiff(baselineState, rebuiltState) {
 }
 
 function summarizeStateDiff(diff) {
+  const ignoredCategories = new Set(["recentChanges"]);
   const mismatchedCategories = Object.entries(diff)
-    .filter(([, value]) => !value.match)
+    .filter(([key, value]) => !ignoredCategories.has(key) && !value.match)
     .map(([key]) => key);
   const matchedCategories = Object.entries(diff)
-    .filter(([, value]) => value.match)
+    .filter(([key, value]) => !ignoredCategories.has(key) && value.match)
     .map(([key]) => key);
   return {
     stateMatch: mismatchedCategories.length === 0,
@@ -738,15 +753,15 @@ async function runReplayRebuild(scopeId, baselineState) {
   }
 
   const latestRebuildState = rebuildHistory.items[0]?.state ?? null;
-  const baselineCanonical = canonicalize(baselineState);
-  const rebuildCanonical = canonicalize(latestRebuildState);
+  const baselineCanonical = canonicalizeReplayState(baselineState);
+  const rebuildCanonical = canonicalizeReplayState(latestRebuildState);
   const diff = buildStateDiff(baselineState, latestRebuildState);
   const diffSummary = summarizeStateDiff(diff);
 
   return {
     ok: true,
     rebuildSnapshots: rebuildHistory.items.length,
-    stateMatch: JSON.stringify(baselineCanonical) === JSON.stringify(rebuildCanonical),
+          stateMatch: JSON.stringify(baselineCanonical) === JSON.stringify(rebuildCanonical),
     matchedCategories: diffSummary.matchedCategories,
     mismatchedCategories: diffSummary.mismatchedCategories,
     diff,
@@ -1280,7 +1295,10 @@ async function run() {
           .reduce((acc, items) => acc.filter((key) => items.includes(key)), successfulRuns[0].matchedCategories || []);
         const mismatchedCategories = [...new Set(successfulRuns.flatMap((item) => item.mismatchedCategories || []))].sort();
         const crossRun = compareReplayRuns(successfulRuns);
-        const baselineTransitionTaxonomy = summarizeTransitionTaxonomy(baselineState.json.state?.recentChanges);
+        const baselineTransitionTaxonomy = summarizeTransitionTaxonomy(
+          baselineState.json.state?.recentChanges,
+          baselineState.json.state?.transitionSummary
+        );
         replayMetrics = {
           enabled: true,
           rebuildRuns: cfg.replayRuns,

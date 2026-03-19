@@ -112,6 +112,7 @@ export interface RuntimeStateSnapshot {
       decisions?: Array<{ value?: string; refs?: Array<{ id?: string; sourceType?: "document" | "event"; key?: string; kind?: "decision" | "constraint" | "todo" | "note" | "status" | "question" | "noise" }> }>;
       todos?: Array<{ value?: string; refs?: Array<{ id?: string; sourceType?: "document" | "event"; key?: string; kind?: "decision" | "constraint" | "todo" | "note" | "status" | "question" | "noise" }> }>;
     };
+    transitionSummary?: Record<string, number>;
     recentChanges?: Array<{
       field?: "goal" | "constraints" | "decisions" | "todos" | "volatileContext" | "openQuestions" | "risks";
       action?: "set" | "add" | "remove" | "reaffirm";
@@ -272,16 +273,22 @@ export function buildGroundingStateDetails(snapshot?: RuntimeStateSnapshot | nul
     Array.isArray(provenance?.decisions) && provenance.decisions.length ? "decisions" : null,
     Array.isArray(provenance?.todos) && provenance.todos.length ? "todos" : null
   ].filter((value): value is string => Boolean(value));
-  const transitionTaxonomy = Object.fromEntries(
-    Object.entries(
-      recentChanges.reduce<Record<string, number>>((acc, change) => {
-        if (!change?.field || !change?.action) return acc;
-        const key = `${change.field}:${change.action}`;
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-      }, {})
-    ).sort(([a], [b]) => a.localeCompare(b))
-  );
+  const transitionTaxonomy = Object.keys(snapshot.state?.transitionSummary ?? {}).length
+    ? Object.fromEntries(
+        Object.entries(snapshot.state?.transitionSummary ?? {})
+          .filter((entry): entry is [string, number] => typeof entry[0] === "string" && typeof entry[1] === "number")
+          .sort(([a], [b]) => a.localeCompare(b))
+      )
+    : Object.fromEntries(
+        Object.entries(
+          recentChanges.reduce<Record<string, number>>((acc, change) => {
+            if (!change?.field || !change?.action) return acc;
+            const key = `${change.field}:${change.action}`;
+            acc[key] = (acc[key] || 0) + 1;
+            return acc;
+          }, {})
+        ).sort(([a], [b]) => a.localeCompare(b))
+      );
 
   return {
     digestId: snapshot.digestId,

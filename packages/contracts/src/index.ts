@@ -350,6 +350,7 @@ export const DigestState = z.object({
       }))
     })).optional()
   }).optional(),
+  transitionSummary: z.record(z.string(), z.number()).optional(),
   recentChanges: z.array(z.object({
     field: z.enum(["goal", "constraints", "decisions", "todos", "volatileContext", "openQuestions", "risks"]),
     action: z.enum(["set", "add", "remove", "reaffirm"]),
