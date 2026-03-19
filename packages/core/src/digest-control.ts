@@ -660,6 +660,27 @@ function removeWorkingNoteValue(input: {
   };
 }
 
+function removeVolatileContextValue(input: {
+  values: string[] | undefined;
+  provenance: DigestStateValueProvenance[] | undefined;
+  candidate: string;
+  threshold?: number;
+}) {
+  const matched = findBestWorkingNoteMatch(input.values ?? [], input.candidate, input.threshold ?? 0.45);
+  if (!matched) {
+    return {
+      values: input.values ?? [],
+      provenance: input.provenance,
+      removedValue: null
+    };
+  }
+  return {
+    values: (input.values ?? []).filter((item) => item !== matched),
+    provenance: removeValueProvenance(input.provenance, matched),
+    removedValue: matched
+  };
+}
+
 function mergeGoalUpdate(next: DigestState, goal: string, evidence: DigestEvidenceRef) {
   const previousGoal = next.stableFacts.goal?.trim();
   if (!previousGoal) {
@@ -941,6 +962,10 @@ export function protectedStateMerge(input: {
     }
 
     if (delta.features.kind === "status" || delta.features.kind === "note") {
+      const normalizedVolatile = normalizeText(stripWorkingNoteResolutionPrefix(text) || text);
+      if (resolvedRiskKeys.has(normalizedVolatile)) {
+        continue;
+      }
       const existing = findBestSemanticMatch(next.volatileContext ?? [], text, 0.7);
       if (!existing) {
         next.volatileContext = [...(next.volatileContext ?? []), text].slice(-10);
@@ -970,6 +995,14 @@ export function protectedStateMerge(input: {
       next.provenance.risks = resolvedRisk.provenance;
       if (resolvedRisk.removedValue) {
         resolvedRiskKeys.add(normalizeText(stripWorkingNoteResolutionPrefix(resolvedRisk.removedValue) || resolvedRisk.removedValue));
+        const trimmedVolatile = removeVolatileContextValue({
+          values: next.volatileContext,
+          provenance: next.provenance.volatileContext,
+          candidate: resolvedRisk.removedValue,
+          threshold: 0.35
+        });
+        next.volatileContext = trimmedVolatile.values.slice(-10);
+        next.provenance.volatileContext = trimmedVolatile.provenance;
       }
     }
 
@@ -1077,6 +1110,26 @@ function ensureSummaryGoal(summary: string, goal?: string) {
   return summary;
 }
 
+function ensureSummaryState(summary: string, state: DigestState) {
+  const additions: string[] = [];
+  const constraints = (state.stableFacts.constraints ?? []).slice(0, 2);
+  if (constraints.length && !constraints.every((value) => mentionsValue(summary, value, 2))) {
+    additions.push(`Constraints: ${constraints.join("; ")}.`);
+  }
+  const risk = state.workingNotes.risks?.[0];
+  if (risk && !mentionsValue(summary, risk, 2)) {
+    additions.push(`Active risk: ${risk}.`);
+  }
+  const openQuestion = state.workingNotes.openQuestions?.[0];
+  if (openQuestion && !mentionsValue(summary, openQuestion, 2)) {
+    additions.push(`Open question: ${openQuestion}.`);
+  }
+  if (!additions.length) return summary;
+  const merged = `${summary.trim()} ${additions.join(" ")}`.trim();
+  if (wordsCount(merged) <= 120) return merged;
+  return summary;
+}
+
 function selectAlignedChanges(output: DigestOutput, state: DigestState) {
   const existing = output.changes.map((value) => ({ value, priority: 1, key: normalizeBullet(value) }));
   const combined = [output.summary, ...output.changes, ...output.nextSteps].join("\n");
@@ -1101,8 +1154,9 @@ function selectAlignedNextSteps(output: DigestOutput, state: DigestState) {
 }
 
 function alignDigestWithState(output: DigestOutput, state: DigestState): DigestOutput {
+  const summaryWithGoal = ensureSummaryGoal(output.summary, state.stableFacts.goal);
   return {
-    summary: ensureSummaryGoal(output.summary, state.stableFacts.goal),
+    summary: ensureSummaryState(summaryWithGoal, state),
     changes: selectAlignedChanges(output, state),
     nextSteps: selectAlignedNextSteps(output, state)
   };

@@ -844,6 +844,104 @@ describe("protectedStateMerge", () => {
     expect(merged.workingNotes.risks).toEqual(["Blocked by provider setup"]);
   });
 
+  it("removes resolved blocker context from volatile context when the risk is cleared", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: [],
+          decisions: []
+        },
+        workingNotes: {
+          risks: ["Blocked by provider setup"]
+        },
+        todos: [],
+        volatileContext: ["Blocked by provider setup", "Status update: queue is stable"],
+        provenance: {
+          risks: [{ value: "Blocked by provider setup", refs: [{ id: "evt-risk", sourceType: "event", kind: "note" }] }],
+          volatileContext: [
+            { value: "Blocked by provider setup", refs: [{ id: "evt-risk", sourceType: "event", kind: "note" }] },
+            { value: "Status update: queue is stable", refs: [{ id: "evt-status-old", sourceType: "event", kind: "status" }] }
+          ]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "evt-status",
+          reason: "working_note_signal",
+          features: { kind: "status", importanceScore: 0.8, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-status",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "Status update: unblocked provider setup"
+          })
+        }
+      ]
+    });
+
+    expect(merged.workingNotes.risks).toEqual([]);
+    expect(merged.volatileContext).toEqual(["Status update: queue is stable", "Status update: unblocked provider setup"]);
+  });
+
+  it("does not re-add resolved blocker notes into volatile context later in the same merge", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: [],
+          decisions: []
+        },
+        workingNotes: {
+          risks: ["Blocked by provider setup"]
+        },
+        todos: [],
+        volatileContext: [],
+        provenance: {
+          risks: [{ value: "Blocked by provider setup", refs: [{ id: "evt-risk", sourceType: "event", kind: "note" }] }]
+        },
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "evt-status",
+          reason: "working_note_signal",
+          features: { kind: "status", importanceScore: 0.8, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-status",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "Status update: unblocked provider setup",
+            createdAt: new Date("2026-03-19T00:00:01Z")
+          })
+        },
+        {
+          eventId: "evt-blocked-late",
+          reason: "working_note_signal",
+          features: { kind: "note", importanceScore: 0.6, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-blocked-late",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "Blocked by provider setup",
+            createdAt: new Date("2026-03-19T00:00:02Z")
+          })
+        }
+      ]
+    });
+
+    expect(merged.workingNotes.risks).toEqual([]);
+    expect(merged.volatileContext ?? []).not.toContain("Blocked by provider setup");
+  });
+
   it("removes matching todos when a stream event marks them done or cancelled", () => {
     const merged = protectedStateMerge({
       prevState: {
@@ -1151,6 +1249,39 @@ describe("generateDigestStage2", () => {
     expect(combined).toContain("use postgres for storage");
     expect(combined).toContain("should we support ollama first");
     expect(result.nextSteps.join("\n").toLowerCase()).toContain("define drift metrics");
+  });
+
+  it("aligns digest summary with active constraints and risks from protected state", async () => {
+    const llm = {
+      chat: async () => "{\"summary\":\"We are making progress.\",\"changes\":[],\"nextSteps\":[\"document runtime evidence output\"]}"
+    };
+
+    const result = await generateDigestStage2({
+      scope: { id: "s", userId: "u", name: "Demo", goal: "ship alpha", stage: "build", createdAt: new Date() },
+      lastDigest: null,
+      protectedState: {
+        stableFacts: {
+          goal: "ship low drift memory runtime",
+          constraints: ["self-hosted first", "keep evaluation reproducible"],
+          decisions: []
+        },
+        workingNotes: {
+          risks: ["drift metrics may regress during runtime refactors"]
+        },
+        todos: ["document runtime evidence output"]
+      },
+      deltaCandidates: [],
+      documents: [],
+      llm,
+      systemPrompt: "system",
+      userPromptTemplate: "{{scopeName}} {{lastDigest}} {{protectedState}} {{deltaCandidates}} {{documents}}",
+      maxRetries: 0
+    });
+
+    expect(result.summary).toContain("self-hosted first");
+    expect(result.summary).toContain("keep evaluation reproducible");
+    expect(result.summary.toLowerCase()).toContain("active risk");
+    expect(result.summary).toContain("drift metrics may regress during runtime refactors");
   });
 
   it("returns no-change digest when only repeated changes are detected", async () => {
