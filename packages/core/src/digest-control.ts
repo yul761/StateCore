@@ -495,6 +495,7 @@ export function detectDeltas(input: {
   const deltas: DeltaCandidate[] = [];
   for (const selected of input.selectedEvents) {
     if (selected.event.type === "document") continue;
+    if (selected.features.kind === "noise") continue;
     const novelty = noveltyAgainstDigest(selected.event.content, lastDigestText);
     selected.features.noveltyScore = novelty;
     const keep =

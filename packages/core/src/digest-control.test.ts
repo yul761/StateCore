@@ -94,6 +94,39 @@ describe("detectDeltas", () => {
 
     expect(deltas.map((item) => item.eventId)).toEqual(["e1"]);
   });
+
+  it("does not emit assistant reply noise even when novelty is high", () => {
+    const selected: SelectedEvent[] = [
+      {
+        event: event({
+          id: "assistant-1",
+          scopeId: "sc",
+          userId: "u",
+          type: "stream",
+          content: "Assistant reply: We decided to prioritize ingestion throughput batch 50."
+        }),
+        features: { kind: "noise", importanceScore: 0.05, noveltyScore: 0 }
+      },
+      {
+        event: event({
+          id: "risk-1",
+          scopeId: "sc",
+          userId: "u",
+          type: "stream",
+          content: "Blocked by queue visibility timeout around item 51"
+        }),
+        features: { kind: "note", importanceScore: 0.6, noveltyScore: 0 }
+      }
+    ];
+
+    const deltas = detectDeltas({
+      lastDigestText: "",
+      selectedEvents: selected,
+      noveltyThreshold: 0.1
+    });
+
+    expect(deltas.map((item) => item.eventId)).toEqual(["risk-1"]);
+  });
 });
 
 describe("protectedStateMerge", () => {

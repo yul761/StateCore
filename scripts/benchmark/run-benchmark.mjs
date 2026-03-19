@@ -355,10 +355,14 @@ function sameCanonicalDigest(a, b) {
 }
 
 function isMaterialDigest(digest) {
+  const changes = String(digest?.changes || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^-\s*/, ""));
   return Boolean(
     digest &&
-    Array.isArray(digest.changes) &&
-    digest.changes.some((value) => String(value || "").trim().length > 0)
+    changes.some((value) => String(value || "").trim().length > 0)
   );
 }
 
