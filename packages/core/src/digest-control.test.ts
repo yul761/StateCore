@@ -5,6 +5,7 @@ import {
   generateDigestStage2,
   normalizeDigestState,
   protectedStateMerge,
+  runDigestControlPipeline,
   selectEventsForDigest,
   type DigestState,
   type SelectedEvent
@@ -1339,6 +1340,74 @@ describe("generateDigestStage2", () => {
     expect(combinedChanges).toContain("Open question: Question: should we also support LM Studio?");
   });
 
+  it("prefers state-projected summary and next steps over model wording variance", async () => {
+    const llm = {
+      chat: async () => JSON.stringify({
+        summary: "Assistant reply: we made progress on a hosted deployment path and may revisit the queue issue later.",
+        changes: [
+          "Assistant reply: We decided to focus on throughput",
+          "Random reformulation of the risk"
+        ],
+        nextSteps: [
+          "TODO: add benchmark assertion for p95 latency group 54",
+          "monitor queue later"
+        ]
+      })
+    };
+
+    const result = await generateDigestStage2({
+      scope: { id: "s", userId: "u", name: "Demo", goal: "ship alpha", stage: "build", createdAt: new Date() },
+      lastDigest: null,
+      protectedState: normalizeDigestState({
+        stableFacts: {
+          goal: "ship benchmarkable memory engine v1",
+          constraints: ["no hosted dependency", "keep api stable"],
+          decisions: ["We decide to prioritize ingestion throughput batch 50"]
+        },
+        workingNotes: {
+          risks: ["Blocked by queue visibility timeout around item 51"]
+        },
+        todos: ["TODO: add benchmark assertion for p95 latency group 54"],
+        recentChanges: [
+          {
+            field: "decisions",
+            action: "add",
+            value: "We decide to prioritize ingestion throughput batch 50",
+            evidence: { id: "evt-decision", sourceType: "event", kind: "decision" }
+          },
+          {
+            field: "risks",
+            action: "add",
+            value: "Blocked by queue visibility timeout around item 51",
+            evidence: { id: "evt-risk", sourceType: "event", kind: "note" }
+          }
+        ],
+        evidenceRefs: []
+      }),
+      deltaCandidates: [],
+      documents: [],
+      llm,
+      systemPrompt: "system",
+      userPromptTemplate: "{{scopeName}} {{lastDigest}} {{protectedState}} {{deltaCandidates}} {{documents}}",
+      maxRetries: 0
+    });
+
+    expect(result.summary).toContain("Goal: ship benchmarkable memory engine v1.");
+    expect(result.summary).toContain("Constraints: no hosted dependency; keep api stable.");
+    expect(result.summary).not.toContain("hosted deployment path");
+    expect(result.changes).toEqual(
+      expect.arrayContaining([
+        "Decision: We decide to prioritize ingestion throughput batch 50",
+        "Risk: Blocked by queue visibility timeout around item 51"
+      ])
+    );
+    expect(result.changes.join("\n")).not.toContain("Assistant reply:");
+    expect(result.nextSteps).toEqual([
+      "Add benchmark assertion for p95 latency group 54",
+      "Investigate and resolve Blocked by queue visibility timeout around item 51"
+    ]);
+  });
+
   it("returns no-change digest when only repeated changes are detected", async () => {
     const llm = {
       chat: async () => "{\"summary\":\"ok\",\"changes\":[\"same change\"],\"nextSteps\":[\"Test pipeline\"]}"
@@ -1365,5 +1434,72 @@ describe("generateDigestStage2", () => {
 
     expect(result.changes.length).toBe(0);
     expect(result.summary).toContain("goal: ship alpha");
+  });
+});
+
+describe("runDigestControlPipeline", () => {
+  it("returns a no-change digest when no events are newer than the last digest", async () => {
+    const lastDigestCreatedAt = new Date("2026-03-19T00:00:10Z");
+    const result = await runDigestControlPipeline({
+      scope: { id: "s", userId: "u", name: "Demo", goal: "ship alpha", stage: "build", createdAt: new Date() },
+      lastDigest: {
+        id: "d1",
+        scopeId: "s",
+        summary: "Goal: ship alpha.",
+        changes: "- Decision: use postgres",
+        nextSteps: ["Add benchmark assertion"],
+        createdAt: lastDigestCreatedAt
+      },
+      prevState: normalizeDigestState({
+        stableFacts: { goal: "ship alpha", constraints: [], decisions: ["use postgres"] },
+        workingNotes: {},
+        todos: ["Add benchmark assertion"],
+        recentChanges: [
+          {
+            field: "decisions",
+            action: "add",
+            value: "use postgres",
+            evidence: { id: "evt-1", sourceType: "event", kind: "decision" }
+          }
+        ],
+        evidenceRefs: [{ id: "evt-1", sourceType: "event", kind: "decision" }]
+      }),
+      recentEvents: [
+        event({
+          id: "evt-old",
+          scopeId: "s",
+          userId: "u",
+          type: "stream",
+          content: "We decide to use postgres",
+          createdAt: new Date("2026-03-19T00:00:01Z")
+        })
+      ],
+      llm: {
+        chat: async () => {
+          throw new Error("llm should not be called");
+        }
+      },
+      prompts: {
+        digestStage2SystemPrompt: "system",
+        digestStage2UserPrompt: "{{scopeName}}"
+      },
+      config: {
+        eventBudgetTotal: 10,
+        eventBudgetDocs: 5,
+        eventBudgetStream: 5,
+        noveltyThreshold: 0.5,
+        maxRetries: 1,
+        useLlmClassifier: false,
+        debug: false
+      }
+    });
+
+    expect(result.digest).toEqual({
+      summary: "Goal: ship alpha.",
+      changes: [],
+      nextSteps: ["Add benchmark assertion"]
+    });
+    expect(result.selection.rationale).toContain("no_new_events_since_last_digest");
+    expect(result.metrics.generationMs).toBe(0);
   });
 });

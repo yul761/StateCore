@@ -79,11 +79,16 @@ async function runDigestScopeJob(data: { userId: string; scopeId: string }) {
   });
 
   const since = new Date(Date.now() - workerEnv.maxDaysLookback * 24 * 60 * 60 * 1000);
-  const recentEvents = await prisma.memoryEvent.findMany({
-    where: { scopeId: data.scopeId, createdAt: { gte: since } },
+  const recentStreamEvents = await prisma.memoryEvent.findMany({
+    where: { scopeId: data.scopeId, createdAt: { gte: since }, type: "stream" },
     orderBy: { createdAt: "desc" },
     take: workerEnv.maxRecentEvents
   });
+  const recentDocumentEvents = await prisma.memoryEvent.findMany({
+    where: { scopeId: data.scopeId, createdAt: { gte: since }, type: "document" },
+    orderBy: { createdAt: "desc" }
+  });
+  const recentEvents = [...recentStreamEvents, ...recentDocumentEvents];
 
   const result = await runDigestControlPipeline({
     scope,

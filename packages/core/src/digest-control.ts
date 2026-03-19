@@ -1134,17 +1134,13 @@ function buildProjectedSummary(state: DigestState, fallbackSummary: string) {
   if (risk) {
     optional.push(`Active risk: ${risk}.`);
   }
-  if (fallbackSummary.trim()) {
-    optional.push(fallbackSummary.trim().replace(/\s+/g, " "));
-  }
+  const projected = [...required, ...optional].join(" ").trim();
+  if (projected) return projected;
 
-  let summary = [...required, ...optional].join(" ").trim();
-  while (wordsCount(summary) > 120 && optional.length > 0) {
-    optional.pop();
-    summary = [...required, ...optional].join(" ").trim();
+  let summary = fallbackSummary.trim().replace(/\s+/g, " ");
+  while (wordsCount(summary) > 120 && summary.includes(". ")) {
+    summary = summary.split(". ").slice(0, -1).join(". ").trim();
   }
-
-  if (summary) return summary;
   const summaryWithGoal = ensureSummaryGoal(fallbackSummary, state.stableFacts.goal);
   return summaryWithGoal.trim();
 }
@@ -1169,7 +1165,6 @@ function projectRecentChange(change: DigestStateChange) {
 }
 
 function selectAlignedChanges(output: DigestOutput, state: DigestState) {
-  const existing = output.changes.map((value) => ({ value, priority: 1, key: normalizeBullet(value) }));
   const combined = [output.summary, ...output.changes, ...output.nextSteps].join("\n");
   const recentCandidates = (state.recentChanges ?? [])
     .slice(-6)
@@ -1204,17 +1199,37 @@ function selectAlignedChanges(output: DigestOutput, state: DigestState) {
     .map((item) => ({ ...item, key: normalizeBullet(item.value) }))
     .filter((item) => !mentionsValue(combined, item.value.replace(/^[^:]+:\s*/, ""), 3));
 
-  const merged = [...recentCandidates, ...stateCandidates, ...existing];
-  return [...new Map(merged
-    .sort((a, b) => b.priority - a.priority)
+  const projected = [...recentCandidates, ...stateCandidates];
+  if (projected.length > 0) {
+    return [...new Map(projected
+      .sort((a, b) => b.priority - a.priority)
+      .map((item) => [item.key, item.value])
+    ).values()].slice(0, 3);
+  }
+
+  return [...new Map(output.changes.map((value) => ({ value, key: normalizeBullet(value) }))
     .map((item) => [item.key, item.value])
   ).values()].slice(0, 3);
 }
 
+function canonicalizeNextStep(step: string) {
+  const trimmed = step.trim().replace(/\.$/, "");
+  const withoutPrefix = trimmed.replace(/^todo\s*:\s*/i, "").trim();
+  return withoutPrefix ? withoutPrefix[0].toUpperCase() + withoutPrefix.slice(1) : "";
+}
+
 function selectAlignedNextSteps(output: DigestOutput, state: DigestState) {
-  const stateTodos = (state.todos ?? []).slice(0, 3);
-  if (!stateTodos.length) return output.nextSteps.slice(0, 3);
-  const merged = [...stateTodos, ...output.nextSteps];
+  const steps: string[] = [];
+  for (const todo of state.todos ?? []) {
+    const normalized = canonicalizeNextStep(todo);
+    if (normalized) steps.push(normalized);
+  }
+  const activeRisk = state.workingNotes.risks?.[0];
+  if (activeRisk) {
+    steps.push(`Investigate and resolve ${activeRisk}`);
+  }
+  const fallback = output.nextSteps.map(canonicalizeNextStep).filter(Boolean);
+  const merged = steps.length ? steps : fallback;
   return [...new Map(merged.map((value) => [normalizeText(value), value])).values()].slice(0, 3);
 }
 
@@ -1470,6 +1485,40 @@ export async function runDigestControlPipeline(input: {
   consistency: DigestConsistencyResult;
 }> {
   const metrics: Record<string, number> = {};
+
+  if (input.lastDigest) {
+    const hasNewEvents = input.recentEvents.some((event) => event.createdAt.getTime() > input.lastDigest!.createdAt.getTime());
+    if (!hasNewEvents) {
+      const state = normalizeDigestState(input.prevState ?? deriveStateFromDigest(input.lastDigest));
+      const digest: DigestOutput = {
+        summary: input.lastDigest.summary,
+        changes: [],
+        nextSteps: input.lastDigest.nextSteps?.slice(0, 3) ?? []
+      };
+      const consistency = consistencyCheck({
+        output: digest,
+        previousDigest: input.lastDigest,
+        protectedState: state
+      });
+      metrics.selectionMs = 0;
+      metrics.deltaMs = 0;
+      metrics.mergeMs = 0;
+      metrics.generationMs = 0;
+      return {
+        digest,
+        state,
+        selection: {
+          selectedEvents: [],
+          documents: [],
+          includeLastDigest: true,
+          rationale: ["no_new_events_since_last_digest"]
+        },
+        deltas: [],
+        metrics,
+        consistency
+      };
+    }
+  }
 
   const tSelect = Date.now();
   const selection = selectEventsForDigest({

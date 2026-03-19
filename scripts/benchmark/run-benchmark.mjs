@@ -354,6 +354,14 @@ function sameCanonicalDigest(a, b) {
   return JSON.stringify(canonicalizeDigestOutput(a)) === JSON.stringify(canonicalizeDigestOutput(b));
 }
 
+function isMaterialDigest(digest) {
+  return Boolean(
+    digest &&
+    Array.isArray(digest.changes) &&
+    digest.changes.some((value) => String(value || "").trim().length > 0)
+  );
+}
+
 function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, runtimeMetrics, answerMetrics) {
   if (!digestMetrics?.enabled) {
     return {
@@ -851,6 +859,19 @@ async function waitForNewDigest(scopeId, previousCount) {
   return { ok: false, error: "digest_timeout" };
 }
 
+async function waitForStateSnapshot(scopeId, digestId) {
+  const start = Date.now();
+  while (Date.now() - start <= cfg.timeoutMs) {
+    const result = await apiFetch("GET", `/memory/state?scopeId=${scopeId}`);
+    if (!result.ok) return { ok: false, error: `state_failed:${result.status}` };
+    if (result.json?.digestId === digestId && result.json?.state) {
+      return { ok: true, state: result.json.state };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+  return { ok: false, error: "state_snapshot_timeout" };
+}
+
 async function waitForReminderSent(reminderId, dueAtIso) {
   const start = Date.now();
   while (Date.now() - start <= cfg.timeoutMs) {
@@ -933,11 +954,11 @@ async function runBaselineDigest(scopeId) {
   if (!waited.ok) {
     return { ok: false, error: waited.error || "baseline_digest_wait_failed" };
   }
-  const stateSnapshot = await apiFetch("GET", `/memory/state?scopeId=${scopeId}`);
-  if (!stateSnapshot.ok || !stateSnapshot.json?.state) {
-    return { ok: false, error: `baseline_state_failed:${stateSnapshot.status}` };
+  const stateSnapshot = await waitForStateSnapshot(scopeId, waited.digest.id);
+  if (!stateSnapshot.ok || !stateSnapshot.state) {
+    return { ok: false, error: stateSnapshot.error || "baseline_state_failed" };
   }
-  return { ok: true, digest: waited.digest, state: stateSnapshot.json.state };
+  return { ok: true, digest: waited.digest, state: stateSnapshot.state };
 }
 
 async function run() {
@@ -1310,14 +1331,15 @@ async function run() {
           todoContradictionRate: Number((goldRetentionRuns.reduce((sum, run) => sum + run.todoContradictionRate, 0) / goldRetentionRuns.length).toFixed(3))
         }
       : null;
-    const repeatabilityRate = successfulDigests.length > 1
+    const materialDigests = successfulDigests.filter(isMaterialDigest);
+    const repeatabilityRate = materialDigests.length > 1
       ? Number((
-          successfulDigests
+          materialDigests
             .slice(1)
-            .filter((digest) => sameCanonicalDigest(successfulDigests[0], digest)).length /
-          Math.max(1, successfulDigests.length - 1)
+            .filter((digest) => sameCanonicalDigest(materialDigests[0], digest)).length /
+          Math.max(1, materialDigests.length - 1)
         ).toFixed(3))
-      : successfulDigests.length === 1 ? 1 : 0;
+      : materialDigests.length === 1 ? 1 : successfulDigests.length === 1 ? 1 : 0;
     digestMetrics = {
       enabled: true,
       runs: cfg.digestRuns,
