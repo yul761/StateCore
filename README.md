@@ -5,139 +5,198 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Latest Release](https://img.shields.io/github/v/release/yul761/ProjectMemory)](https://github.com/yul761/ProjectMemory/releases)
 
-An open-source **self-hosted long-term memory engine**. It provides primitives to ingest events, consolidate low-drift protected state, retrieve memory, and generate grounded answers for developer-built AI assistants.
+LLM memory systems don't fail because of prompts.
+They fail because memory is treated as uncontrolled text.
 
-This is **not** a consumer assistant app, model hosting platform, or generic chat shell. You bring your own infrastructure and model endpoints. The primary goal is replayable, low-drift long-term memory for developer-built assistants.
+Project Memory is a self-hosted control layer for long-term memory in AI systems.
 
-## Quickstart in 5 minutes
+It treats memory as controlled state instead of accumulated context:
+- replayable state instead of opaque history
+- a digest control pipeline instead of a single LLM call
+- consistency gates and retry before commit
+- grounded recall and answers instead of blind retrieval
 
-1) **Start infra**
+This is not a chatbot.
+This is not a RAG wrapper.
+This is not a prompt tool.
+
+It is a low-drift, replayable memory system for developers building AI assistants with local models or BYOM endpoints.
+
+## What Problem It Solves
+
+Most LLM applications accumulate memory in one of two ways:
+- append more text to context
+- store text in retrieval systems and hope similarity search brings back the right facts
+
+That breaks down over time:
+- goals drift
+- constraints get dropped
+- decisions get overwritten
+- todos turn into noisy summaries
+- memory state becomes hard to replay or debug
+
+Project Memory solves that by treating memory as state transitions with explicit control over how information is selected, consolidated, checked, and committed.
+
+## Why Not RAG Memory?
+
+Most "memory" systems today:
+- store text in a vector database
+- retrieve by similarity
+- append summaries over time
+
+That helps recall, but it does not solve:
+- drift
+- contradictions
+- unstable long-term state
+- non-replayable memory evolution
+
+Project Memory instead:
+- models memory as protected state
+- uses a controlled digest pipeline
+- enforces consistency before commit
+- supports replay and rebuild
+
+## Key Concepts
+
+- Replayable state
+  - the same history can be rebuilt into the same protected state and transition taxonomy
+- Digest control pipeline
+  - memory is consolidated through selection, merge, validation, and retry rather than one free-form LLM response
+- Consistency gate
+  - proposed digests are checked for contradictions, omissions, repeated changes, and low-signal outputs before acceptance
+- Grounded recall
+  - answers and runtime turns return evidence from digests, events, and protected state
+
+## Comparison
+
+|                       | Traditional RAG Memory | Project Memory     |
+| --------------------- | ---------------------- | ----------------- |
+| Model                 | Text accumulation      | State transitions |
+| Drift control         | ❌                     | ✅                |
+| Replayable            | ❌                     | ✅                |
+| Deterministic updates | ❌                     | Partial           |
+
+## Example
+
+Command:
+
 ```bash
-cd project-memory
+pnpm dev:cli -- turn "goal: ship a memory engine"
+```
+
+Output:
+- summary: project goal defined and stored in protected state
+- next steps: define architecture, implement digest pipeline, add consistency checks
+
+## Quickstart
+
+1. Start infra
+
+```bash
 docker-compose up -d
 ```
-This starts Postgres + Redis only.
 
-2) **Install deps**
+2. Install deps
+
 ```bash
 pnpm install
 ```
 
-3) **Set env**
+3. Set env
+
 ```bash
 cp .env.example .env
 ```
-Apps will auto-load the repo root `.env` on startup.
-You can override per app by creating `apps/<app>/.env` (for example `apps/worker/.env`).
 
-4) **DB migrate + seed**
+4. Prepare the database
+
 ```bash
 pnpm db:generate
 pnpm db:migrate
 pnpm seed
 ```
 
-5) **Run services**
+5. Run the services
+
 ```bash
 pnpm dev:api
 pnpm dev:worker
-pnpm dev:telegram
 ```
 
-Optional CLI:
+Optional:
+
 ```bash
-pnpm dev:cli -- scopes
 pnpm dev:cli -- state
-pnpm dev:cli -- state-history
 pnpm dev:cli -- turn "What changed in the project plan?"
-pnpm dev:cli -- turn "goal: ship a self-hosted memory engine" --write-tier stable --digest-mode force
-pnpm dev:cli -- turn "spec update for retrieval" --policy-profile document-heavy --digest-mode force
-pnpm dev:cli -- turn "long form update" --policy-profile conservative --promote-long-form --recall-limit 8
 ```
 
-No-LLM smoke test:
-```bash
-./scripts/smoke-no-llm.sh
-```
+## Why This Exists
 
-LLM smoke test:
-```bash
-FEATURE_LLM=true MODEL_API_KEY=... ./scripts/smoke-llm.sh
-```
+Memory drift is inevitable when memory is treated as text.
 
-Reminder smoke test:
-```bash
-./scripts/smoke-reminders.sh
-```
+Prompt engineering can improve formatting, but it cannot make long-term memory stable on its own.
+If memory matters, it has to be treated as state:
+- selected deliberately
+- merged conservatively
+- validated before commit
+- rebuildable from history
 
-All smoke tests:
-```bash
-pnpm smoke
-```
+That is the core bet behind Project Memory.
 
-Core unit tests (digest control layer):
-```bash
-pnpm --filter @project-memory/core test
-```
+## Design Philosophy
 
-Benchmark (performance + reliability score):
-```bash
-pnpm benchmark
-```
+- The LLM is not the source of truth
+  - it proposes digests and answers, but the system owns state
+- The system enforces correctness
+  - consistency checks, retries, and protected merges exist to constrain drift
+- Memory must be rebuildable
+  - replay and rebuild are first-class so memory can be audited instead of trusted blindly
 
-## Config matrix
+## Config Matrix
 
 Required for all:
-- `DATABASE_URL`, `REDIS_URL`
+- `DATABASE_URL`
+- `REDIS_URL`
 
 API (`apps/api`):
-- `PORT`, `LOCAL_USER_TOKEN` (dev)
-- Optional LLM: `FEATURE_LLM=true` + `MODEL_*` (legacy `OPENAI_*` still supported)
+- `PORT`
+- `LOCAL_USER_TOKEN`
+- optional LLM config with `FEATURE_LLM=true` and `MODEL_*`
 
 Worker (`apps/worker`):
-- `FEATURE_LLM=true` + `MODEL_*` for digests
-- Optional Telegram reminder delivery: `FEATURE_TELEGRAM=true` + `TELEGRAM_BOT_TOKEN`
-- Digest control vars:
-  - `DIGEST_EVENT_BUDGET_TOTAL`, `DIGEST_EVENT_BUDGET_DOCS`, `DIGEST_EVENT_BUDGET_STREAM`
-  - `DIGEST_NOVELTY_THRESHOLD`, `DIGEST_MAX_RETRIES`
-  - `DIGEST_USE_LLM_CLASSIFIER`, `DIGEST_DEBUG`, `DIGEST_REBUILD_CHUNK_SIZE`
-  - `DIGEST_CONCURRENCY` (default 2)
-- Reminder tuning:
-  - `REMINDER_CONCURRENCY` (default 1)
-  - `REMINDER_BATCH_SIZE` (default 50)
-  - `REMINDER_MAX_BATCHES` (default 4)
-
-Telegram adapter (`apps/adapter-telegram`):
-- `FEATURE_TELEGRAM=true`
-- `TELEGRAM_BOT_TOKEN`, `PUBLIC_BASE_URL`, `TELEGRAM_WEBHOOK_PATH`, `API_BASE_URL`
-- `ADAPTER_PORT` (optional)
+- `FEATURE_LLM=true` and `MODEL_*`
+- digest tuning with `DIGEST_*`
+- optional reminder delivery with `FEATURE_TELEGRAM=true` and `TELEGRAM_BOT_TOKEN`
 
 CLI (`apps/cli`):
 - `API_BASE_URL`
 
-## Telegram webhook setup
+## Model Setup
 
-Set `PUBLIC_BASE_URL` and call the adapter:
-```bash
-curl -X POST "http://localhost:3001/telegram/webhook/set"
-```
+Set `FEATURE_LLM=true` and configure:
+- `MODEL_PROVIDER`
+- `MODEL_BASE_URL`
+- `MODEL_NAME`
+- `MODEL_API_KEY`
 
-## FEATURE_LLM
-Set `FEATURE_LLM=true` and configure `MODEL_PROVIDER`, `MODEL_BASE_URL`, `MODEL_NAME`, and `MODEL_API_KEY` to enable `/memory/answer` and digest jobs. If needed, `MODEL_CHAT_*`, `MODEL_STRUCTURED_OUTPUT_*`, and `MODEL_EMBEDDING_*` can override the shared defaults for answer/runtime, digest, and future embedding workloads. `MODEL_TIMEOUT_MS` can be raised for slower hosted or local model backends. Legacy `OPENAI_*` variables are still accepted. If disabled, the API returns a clear error and worker jobs fail fast.
+Optional role-specific overrides:
+- `MODEL_CHAT_*`
+- `MODEL_STRUCTURED_OUTPUT_*`
+- `MODEL_EMBEDDING_*`
 
-Optional hybrid retrieval can be enabled with `RETRIEVE_USE_EMBEDDINGS=true`. When enabled and an embedding provider role is configured, `/memory/retrieve` keeps the existing heuristic candidate selection but reranks top candidates with embeddings.
-For benchmark reproducibility, `BENCH_RETRIEVE_USE_EMBEDDINGS` and `BENCH_RETRIEVE_EMBEDDING_CANDIDATE_LIMIT` can be set alongside the API retrieval env so reports record the intended retrieval mode.
+Useful for slower local or hosted backends:
+- `MODEL_TIMEOUT_MS`
 
-## Digest Control Layer
-Digest is processed as a controlled pipeline (not a single LLM call):
-- Event selection with dedupe and per-type budgets
-- Delta detection with novelty threshold
-- Protected deterministic state merge for stable facts
-- LLM stage with strict JSON schema
-- Consistency checks + retry (`DIGEST_MAX_RETRIES`)
-- Rebuild/backfill endpoint: `POST /memory/digest/rebuild`
+Legacy `OPENAI_*` variables are still accepted.
 
-## Workflow Diagram
+Optional hybrid retrieval can be enabled with:
+- `RETRIEVE_USE_EMBEDDINGS=true`
+
+## Architecture
+
+Project Memory sits between your interaction layer and your model endpoint.
+It owns memory state, digest control, replay, and grounded answer generation.
+
 ```mermaid
 flowchart LR
   U[Adapter / CLI] --> A[API]
@@ -149,124 +208,70 @@ flowchart LR
   A --> U
 ```
 
-## How It Works (Technical)
-- API validates input with shared Zod contracts and scopes all requests by user identity.
-- Core engine (`packages/core`) performs selection/delta/state/consistency logic.
-- Core also includes an assistant runtime session abstraction in `packages/core/src/assistant-runtime.ts`.
-- Worker executes digest and rebuild jobs asynchronously via BullMQ.
-- Digests are stored as first-class records, with optional `rebuildGroupId` for backfills.
-- Adapters call API only (no direct database coupling).
+Core responsibilities:
+- ingest events and document updates
+- maintain protected memory state
+- consolidate memory through digest control
+- retrieve grounded evidence
+- run replay and rebuild workflows
 
 ## Benchmarking
-Use the built-in benchmark runner to generate reproducible metrics and a score report:
 
-- Ingest throughput + p95 latency
-- Retrieve semantic/strict hit-rate + p95 latency
-- Digest success/consistency/latency (when `FEATURE_LLM=true`)
-- Persisted digest consistency taxonomy from state snapshots
-- Replay consistency and category-level state diffs
-- Assistant runtime turn success, evidence coverage, and write-tier distribution
-- Assistant runtime policy profile and decision-note taxonomy
-- Reminder due-to-sent delay
+Project Memory includes built-in evaluation for:
+- ingest and retrieval performance
+- digest consistency and repeatability
+- replay consistency and transition matching
+- grounded answer coverage
+- long-term memory reliability
+- drift and ablation runs
 
 Run:
+
 ```bash
 pnpm benchmark
 ```
 
-Optional profile:
-```bash
-BENCH_PROFILE=stress pnpm benchmark
-```
+More detail lives in:
+- `docs/benchmarking.md`
+- `artifacts/releases/v1.0.0/`
 
-Reports are generated in `benchmark-results/` as JSON + Markdown during local runs.
-The full working directory is ignored from git; curated release snapshots are archived under `artifacts/releases/`.
-They include both the existing overall performance score and a separate long-term memory reliability score.
-The reliability score now reflects digest consistency, retention, contradiction and omission control, replay stability, and runtime evidence coverage.
-
-Reproducible run example:
-```bash
-BENCH_SEED=42 BENCH_FIXTURE=benchmark-fixtures/basic.json pnpm benchmark
-```
-
-Runtime-profile comparison example:
-```bash
-BENCH_FIXTURE=benchmark-fixtures/document-heavy.json BENCH_RUNTIME_POLICY_PROFILE=document-heavy pnpm benchmark
-```
-
-Runtime override comparison example:
-```bash
-BENCH_RUNTIME_POLICY_PROFILE=conservative BENCH_RUNTIME_PROMOTE_LONG_FORM=true BENCH_RUNTIME_RECALL_LIMIT=8 pnpm benchmark
-```
-
-Controlled ablations can now compare both digest-control settings and assistant runtime policy profiles:
-```bash
-node scripts/benchmark/run-ablations.mjs
-```
-
-Generate a draft research report from recent benchmark artifacts:
-```bash
-node scripts/benchmark/generate-research-report.mjs
-```
-
-Generate a trend report from recent benchmark artifacts:
-```bash
-pnpm benchmark:trend
-```
+Local benchmark outputs are written to `benchmark-results/`.
+That working directory is ignored from git.
+Curated release snapshots are archived under `artifacts/releases/`.
 
 ## Docs
+
 - Vision and roadmap: `docs/vision-and-roadmap.md`
 - Drift definition: `docs/drift-definition.md`
 - Digest state specification: `docs/digest-state.md`
 - Assistant runtime specification: `docs/assistant-runtime.md`
 - Evaluation metrics specification: `docs/evaluation-metrics.md`
 - Provider abstraction specification: `docs/provider-abstraction.md`
-- Runtime profile ablation guide: `docs/runtime-profile-ablation-guide.md`
-- Research overview: `docs/research-overview.md`
-- Evaluation protocol: `docs/evaluation-protocol.md`
-- Research questions: `docs/research-questions.md`
-- Report template: `docs/research-report-template.md`
-- Ablation results (2026-02-08): `docs/ablation-results-2026-02-08.md`
+- Benchmark methodology: `docs/benchmarking.md`
+- API reference: `docs/api.md`
+- Release notes: `docs/release-v1.0.0.md`
+- Release summary: `docs/release-v1.0.0-summary.md`
 
 ## Troubleshooting
-- Prisma runs from `packages/db`, so copy `.env` to `packages/db/.env` before `pnpm db:migrate`.
-- If API or worker says `FEATURE_LLM disabled` but `.env` is set, restart the process after updating `.env`.
-- Ensure Postgres port mapping matches `DATABASE_URL` (e.g. `5433:5432` in `docker-compose.yml`).
-- Reminder smoke test depends on the worker’s 60s scheduler; keep the worker running and allow ~1–2 minutes.
-- Digest and rebuild endpoints require `FEATURE_LLM=true`; otherwise API returns an actionable 400 message.
 
-## Repo structure
+- Prisma runs from `packages/db`, so copy `.env` to `packages/db/.env` before `pnpm db:migrate`
+- If API or worker says `FEATURE_LLM disabled` but `.env` is set, restart the process
+- Ensure Postgres port mapping matches `DATABASE_URL`
+- Digest and rebuild endpoints require `FEATURE_LLM=true`
+
+## Repo Structure
+
 - `apps/api` NestJS REST API
 - `apps/worker` BullMQ workers
 - `apps/adapter-telegram` Telegram reference adapter
-- `apps/cli` Developer CLI
-- `packages/core` domain services + pipelines
-- `packages/contracts` Zod schemas + shared enums
+- `apps/cli` developer CLI
+- `packages/core` memory engine logic
+- `packages/contracts` shared schemas and enums
 - `packages/prompts` prompt templates
-- `packages/db` Prisma schema + client
+- `packages/db` Prisma schema and client
 
 Runtime entrypoint:
-- `POST /memory/runtime/turn` runs a memory-aware assistant turn with write-tier classification, recall, grounded answer generation, and optional digest triggering.
+- `POST /memory/runtime/turn`
 
-See `docs/api.md` for endpoint details.
-See `docs/glossary.md` for term definitions.
-See `docs/technical-overview.md` for architecture and pipeline internals.
-See `docs/benchmarking.md` for benchmark methodology and scoring.
-See `docs/release.md` for release/versioning workflow.
-See `docs/release-v1.0.0.md` for the current release notes draft.
-See `docs/release-v0.1.0.md` for the initial OSS release notes.
-See `ROADMAP.md` for planned milestones.
-
-## OSS Project Hygiene
-- Contribution guide: `CONTRIBUTING.md`
-- Code of conduct: `CODE_OF_CONDUCT.md`
-- Security policy: `SECURITY.md`
-- Changelog: `CHANGELOG.md`
-- CI workflow: `.github/workflows/ci.yml`
-
-## Quality Gates
-- `pnpm format:check` for formatting checks
-- `pnpm lint` for strict TypeScript checks across workspaces
-- `pnpm build` for full workspace compilation
-- `pnpm --filter @project-memory/core test` for core unit tests
-- `.github/workflows/integration-smoke.yml` runs API + worker smoke tests (no LLM)
+See `docs/technical-overview.md` for architecture internals.
+See `docs/release.md` for release workflow.
