@@ -23,8 +23,10 @@ Project Memory uses the normal control path instead:
 
 The script writes a markdown report that shows:
 
-- the checkpoint in the sequence
-- the direct model's rolling summary at that point
+- the total number of rounds and the total number of questions evaluated
+- the round number and checkpoint in the sequence
+- the exact input events introduced in that round
+- the direct model's rolling summary at that point, split into goal / constraints / decisions / todos / status / noise
 - the same question asked to both systems
 - required facts each answer should include
 - whether the answer needed one specific phrase or all of several facts

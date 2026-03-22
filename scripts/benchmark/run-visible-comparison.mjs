@@ -167,6 +167,82 @@ function renderEvent(event, index) {
   return `${prefix} ${event.content}`;
 }
 
+function parseRollingSummary(summary) {
+  const lines = String(summary || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const sections = {
+    goal: [],
+    constraints: [],
+    decisions: [],
+    todos: [],
+    status: [],
+    noise: [],
+    other: []
+  };
+
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    if (lower.startsWith("goal:")) {
+      sections.goal.push(line.replace(/^goal:\s*/i, "").trim());
+      continue;
+    }
+    if (lower.startsWith("constraints:")) {
+      sections.constraints.push(
+        ...line
+          .replace(/^constraints:\s*/i, "")
+          .split(";")
+          .map((item) => item.trim())
+          .filter(Boolean)
+      );
+      continue;
+    }
+    if (lower.startsWith("decisions:")) {
+      sections.decisions.push(
+        ...line
+          .replace(/^decisions:\s*/i, "")
+          .split(";")
+          .map((item) => item.trim())
+          .filter(Boolean)
+      );
+      continue;
+    }
+    if (lower.startsWith("open todos:")) {
+      sections.todos.push(
+        ...line
+          .replace(/^open todos:\s*/i, "")
+          .split(";")
+          .map((item) => item.trim())
+          .filter(Boolean)
+      );
+      continue;
+    }
+    if (lower.startsWith("status:") || lower.startsWith("status update:")) {
+      sections.status.push(line.replace(/^status(?: update)?:\s*/i, "").trim());
+      continue;
+    }
+    if (lower.startsWith("noise:")) {
+      sections.noise.push(line.replace(/^noise:\s*/i, "").trim());
+      continue;
+    }
+    sections.other.push(line);
+  }
+
+  return sections;
+}
+
+function pushSection(lines, title, items) {
+  if (!items.length) return;
+  lines.push(`**${title}**`);
+  lines.push("");
+  for (const item of items) {
+    lines.push(`- ${item}`);
+  }
+  lines.push("");
+}
+
 async function updateRollingSummary(previousSummary, event, wordBudget) {
   return chat([
     {
@@ -320,6 +396,7 @@ async function run() {
 
   report.endedAt = msNow();
   report.summary = {
+    totalRounds: report.checkpoints.length,
     totalQuestions: flattened.length,
     projectMemoryScore,
     directModelScore,
@@ -346,6 +423,8 @@ async function run() {
     "",
     "## Score",
     "",
+    `- Rounds evaluated: ${report.checkpoints.length}`,
+    `- Questions evaluated: ${flattened.length}`,
     `- Project Memory passed: ${projectMemoryScore}/${flattened.length}`,
     `- Direct model passed: ${directModelScore}/${flattened.length}`,
     `- Project Memory wins: ${projectMemoryWins}`,
@@ -354,18 +433,43 @@ async function run() {
     ""
   ];
 
-  for (const checkpoint of report.checkpoints) {
-    lines.push(`## ${checkpoint.label}`);
+  let previousAfterEvent = 0;
+  for (let index = 0; index < report.checkpoints.length; index += 1) {
+    const checkpoint = report.checkpoints[index];
+    const roundNumber = index + 1;
+    const roundEvents = fixture.events
+      .slice(previousAfterEvent, checkpoint.afterEvent)
+      .map((event, eventIndex) => renderEvent(event, previousAfterEvent + eventIndex));
+    const rollingSummarySections = parseRollingSummary(checkpoint.rollingSummary);
+
+    lines.push(`## Round ${roundNumber}: ${checkpoint.label}`);
     lines.push("");
-    lines.push(`- After event: ${checkpoint.afterEvent}`);
+    lines.push(`- Checkpoint: after event ${checkpoint.afterEvent}`);
+    lines.push(`- This round covers events ${previousAfterEvent + 1}-${checkpoint.afterEvent}`);
     lines.push(`- Digest: ${checkpoint.digestId}`);
-    lines.push(`- Direct-model rolling summary: ${checkpoint.rollingSummary}`);
     lines.push("");
+    lines.push("**Input In This Round**");
+    lines.push("");
+    for (const event of roundEvents) {
+      lines.push(`- ${event}`);
+    }
+    lines.push("");
+    lines.push("**Direct-Model Rolling Summary At This Point**");
+    lines.push("");
+    pushSection(lines, "Goal", rollingSummarySections.goal);
+    pushSection(lines, "Constraints", rollingSummarySections.constraints);
+    pushSection(lines, "Decisions", rollingSummarySections.decisions);
+    pushSection(lines, "Open Todos", rollingSummarySections.todos);
+    pushSection(lines, "Status", rollingSummarySections.status);
+    pushSection(lines, "Noise", rollingSummarySections.noise);
+    pushSection(lines, "Other", rollingSummarySections.other);
 
     for (const answer of checkpoint.answers) {
       const pmVerdict = answer.projectMemory.evaluation.pass ? "pass" : "fail";
       const directVerdict = answer.directModel.evaluation.pass ? "pass" : "fail";
-      lines.push(`### ${answer.question}`);
+      lines.push(`### Question: ${answer.question}`);
+      lines.push("");
+      lines.push("**Check Rules**");
       lines.push("");
       if (answer.mustIncludeAny.length) {
         lines.push(`- Must include one of: ${answer.mustIncludeAny.join(" | ")}`);
@@ -376,10 +480,15 @@ async function run() {
       if (answer.mustAvoidAny.length) {
         lines.push(`- Must avoid: ${answer.mustAvoidAny.join(" | ")}`);
       }
+      lines.push("");
+      lines.push("**Answers**");
+      lines.push("");
       lines.push(`- Project Memory (${pmVerdict}): ${answer.projectMemory.answer}`);
       lines.push(`- Direct model (${directVerdict}): ${answer.directModel.answer}`);
       lines.push("");
     }
+
+    previousAfterEvent = checkpoint.afterEvent;
   }
 
   writeFileSync(mdPath, `${lines.join("\n")}\n`);
