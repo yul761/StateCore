@@ -27,6 +27,64 @@ This is a control layer for memory.
 
 It is a low-drift, replayable memory system for developers building AI assistants with local models or BYOM endpoints.
 
+## Start Here
+
+Choose the fastest path for what you want:
+
+- Fastest proof: `artifacts/demos/visible-comparison-latest.md`
+- Quick orientation: `docs/start-here.md`
+- Implementation details: `docs/technical-overview.md`
+- Evaluation model: `docs/drift-definition.md`
+
+## Observable Evidence
+
+If you want one concrete result before reading the architecture, start with the curated demo:
+
+- `artifacts/demos/visible-comparison-latest.md`
+- `artifacts/demos/visible-comparison-latest.json`
+- `docs/observable-comparison.md`
+
+That sample evaluates the same event stream in two ways:
+
+- Project Memory
+- a direct-model rolling-summary baseline
+
+Current curated sample result:
+
+- rounds evaluated: `3`
+- questions evaluated: `7`
+- Project Memory: `7/7`
+- direct baseline: `3/7`
+
+Most visible failure in the baseline:
+
+- it compresses the final goal into `self-hosted memory runtime for local models`
+- it drops `long-term`
+- Project Memory preserves the full goal state
+
+## At A Glance
+
+The fastest way to understand the difference is this:
+
+```mermaid
+flowchart LR
+  A[Direct Model Memory] --> B[Events]
+  B --> C[Rolling Summary]
+  C --> D[Answer]
+```
+
+```mermaid
+flowchart LR
+  E[Project Memory] --> F[Events]
+  F --> G[Selection]
+  G --> H[Protected State]
+  H --> I[Digest]
+  I --> J[Grounded Answer]
+```
+
+Project Memory is not trying to make one summary prompt slightly better.
+It changes the memory update mechanism itself.
+
 ## What Problem It Solves
 
 Most LLM applications accumulate memory in one of two ways:
@@ -264,20 +322,9 @@ That working directory is ignored from git.
 Curated release snapshots are archived under `artifacts/releases/`.
 Curated demo evidence for repo visitors lives under `artifacts/demos/`.
 
-## Observable Evidence
-
-If you want a quick, human-readable example instead of a metric table, start with:
-
-- `artifacts/demos/visible-comparison-latest.md`
-- `artifacts/demos/visible-comparison-latest.json`
-- `docs/observable-comparison.md`
-
-The current curated demo runs the same event sequence through Project Memory and a direct-model rolling-summary baseline.
-In the included sample run, Project Memory passed `7/7` checkpoint questions while the direct baseline passed `3/7`.
-The clearest visible failure is at the final goal check: the baseline compresses the goal into "self-hosted memory runtime for local models" and drops `long-term`, while Project Memory preserves the full target state.
-
 ## Docs
 
+- Start here: `docs/start-here.md`
 - Vision and roadmap: `docs/vision-and-roadmap.md`
 - Drift definition: `docs/drift-definition.md`
 - Digest state specification: `docs/digest-state.md`
