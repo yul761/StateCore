@@ -1,0 +1,80 @@
+{
+  "demoName": "Observable Drift Demo",
+  "baseline": {
+    "mode": "rolling-summary",
+    "summaryWordBudget": 70
+  },
+  "events": [
+    { "type": "document", "key": "doc:goal", "content": "goal: ship a generic local chat ui" },
+    { "type": "document", "key": "doc:constraints", "content": "constraint: keep api stable\nconstraint: self-hosted first" },
+    { "type": "stream", "content": "We decide to focus on memory continuity for long-running projects" },
+    { "type": "stream", "content": "TODO: formalize drift metrics" },
+    { "type": "stream", "content": "Status update: early demos looked too much like a chat shell" },
+    { "type": "document", "key": "doc:goal", "content": "goal: ship a self-hosted memory layer for project assistants" },
+    { "type": "stream", "content": "We decide to focus on low-drift memory reliability before expanding integrations" },
+    { "type": "stream", "content": "TODO: add replay consistency checks" },
+    { "type": "stream", "content": "Constraint reminder: do not become a general-purpose agent platform" },
+    { "type": "stream", "content": "Noise: note about optional future desktop demos" },
+    { "type": "document", "key": "doc:goal", "content": "goal: ship a self-hosted long-term memory runtime for local models" },
+    { "type": "stream", "content": "We decide to treat assistant runtime as a product boundary, not just loose APIs" },
+    { "type": "stream", "content": "TODO: define assistant runtime policies" },
+    { "type": "stream", "content": "Status update: roadmap now centers retention, stability, grounding, and replayability" },
+    { "type": "stream", "content": "Reminder: hosted platform work is explicitly out of scope" },
+    { "type": "stream", "content": "Noise: casual discussion about optional desktop mockups and branding experiments" }
+  ],
+  "checkpoints": [
+    {
+      "label": "Early Goal",
+      "afterEvent": 5,
+      "questions": [
+        {
+          "question": "What is the current project goal?",
+          "mustIncludeAll": ["generic local chat ui"],
+          "mustAvoidAny": ["self-hosted long-term memory runtime", "hosted ai platform"]
+        }
+      ]
+    },
+    {
+      "label": "After Pivot",
+      "afterEvent": 10,
+      "questions": [
+        {
+          "question": "What is the current project goal?",
+          "mustIncludeAny": ["self-hosted memory layer for project assistants", "self-hosted memory layer"],
+          "mustAvoidAny": ["generic local chat ui", "hosted ai platform"]
+        },
+        {
+          "question": "What is explicitly out of scope?",
+          "mustIncludeAny": ["do not become a general-purpose agent platform", "general-purpose agent platform"],
+          "mustAvoidAny": ["hosted ai platform"]
+        }
+      ]
+    },
+    {
+      "label": "Final State",
+      "afterEvent": 16,
+      "questions": [
+        {
+          "question": "What is the current project goal?",
+          "mustIncludeAny": ["self-hosted long-term memory runtime for local models", "long-term memory runtime for local models"],
+          "mustAvoidAny": ["generic local chat ui", "hosted ai platform"]
+        },
+        {
+          "question": "What constraints still apply?",
+          "mustIncludeAll": ["keep api stable", "self-hosted first", "general-purpose agent platform"],
+          "mustAvoidAny": ["hosted ai platform", "break api compatibility"]
+        },
+        {
+          "question": "What key decisions have we made?",
+          "mustIncludeAll": ["low-drift memory reliability", "assistant runtime as a product boundary"],
+          "mustAvoidAny": ["ui polish over memory stability", "hosted ai platform"]
+        },
+        {
+          "question": "What work remains open?",
+          "mustIncludeAll": ["formalize drift metrics", "add replay consistency checks", "define assistant runtime policies"],
+          "mustAvoidAny": ["remove replay consistency work", "delete replay consistency work"]
+        }
+      ]
+    }
+  ]
+}
