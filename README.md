@@ -8,9 +8,12 @@
 LLM memory systems don't fail because of prompts.
 They fail because memory is treated as uncontrolled text.
 
+If memory matters, it must be treated as state — not context.
+
 Project Memory is a self-hosted control layer for long-term memory in AI systems.
 
 It treats memory as controlled state instead of accumulated context:
+
 - replayable state instead of opaque history
 - a digest control pipeline instead of a single LLM call
 - consistency gates and retry before commit
@@ -20,15 +23,19 @@ This is not a chatbot.
 This is not a RAG wrapper.
 This is not a prompt tool.
 
+This is a control layer for memory.
+
 It is a low-drift, replayable memory system for developers building AI assistants with local models or BYOM endpoints.
 
 ## What Problem It Solves
 
 Most LLM applications accumulate memory in one of two ways:
+
 - append more text to context
 - store text in retrieval systems and hope similarity search brings back the right facts
 
 That breaks down over time:
+
 - goals drift
 - constraints get dropped
 - decisions get overwritten
@@ -40,17 +47,20 @@ Project Memory solves that by treating memory as state transitions with explicit
 ## Why Not RAG Memory?
 
 Most "memory" systems today:
+
 - store text in a vector database
 - retrieve by similarity
 - append summaries over time
 
 That helps recall, but it does not solve:
+
 - drift
 - contradictions
 - unstable long-term state
 - non-replayable memory evolution
 
 Project Memory instead:
+
 - models memory as protected state
 - uses a controlled digest pipeline
 - enforces consistency before commit
@@ -69,12 +79,13 @@ Project Memory instead:
 
 ## Comparison
 
-|                       | Traditional RAG Memory | Project Memory     |
+|                       | Traditional RAG Memory | Project Memory    |
 | --------------------- | ---------------------- | ----------------- |
 | Model                 | Text accumulation      | State transitions |
 | Drift control         | ❌                     | ✅                |
 | Replayable            | ❌                     | ✅                |
 | Deterministic updates | ❌                     | Partial           |
+| Trustable over time   | ❌                     | Designed for it   |
 
 ## Example
 
@@ -85,6 +96,7 @@ pnpm dev:cli -- turn "goal: ship a memory engine"
 ```
 
 Output:
+
 - summary: project goal defined and stored in protected state
 - next steps: define architecture, implement digest pipeline, add consistency checks
 
@@ -136,6 +148,7 @@ Memory drift is inevitable when memory is treated as text.
 
 Prompt engineering can improve formatting, but it cannot make long-term memory stable on its own.
 If memory matters, it has to be treated as state:
+
 - selected deliberately
 - merged conservatively
 - validated before commit
@@ -155,41 +168,49 @@ That is the core bet behind Project Memory.
 ## Config Matrix
 
 Required for all:
+
 - `DATABASE_URL`
 - `REDIS_URL`
 
 API (`apps/api`):
+
 - `PORT`
 - `LOCAL_USER_TOKEN`
 - optional LLM config with `FEATURE_LLM=true` and `MODEL_*`
 
 Worker (`apps/worker`):
+
 - `FEATURE_LLM=true` and `MODEL_*`
 - digest tuning with `DIGEST_*`
 - optional reminder delivery with `FEATURE_TELEGRAM=true` and `TELEGRAM_BOT_TOKEN`
 
 CLI (`apps/cli`):
+
 - `API_BASE_URL`
 
 ## Model Setup
 
 Set `FEATURE_LLM=true` and configure:
+
 - `MODEL_PROVIDER`
 - `MODEL_BASE_URL`
 - `MODEL_NAME`
 - `MODEL_API_KEY`
 
 Optional role-specific overrides:
+
 - `MODEL_CHAT_*`
 - `MODEL_STRUCTURED_OUTPUT_*`
 - `MODEL_EMBEDDING_*`
 
 Useful for slower local or hosted backends:
+
 - `MODEL_TIMEOUT_MS`
 
 Legacy `OPENAI_*` variables are still accepted.
 
 Optional hybrid retrieval can be enabled with:
+
 - `RETRIEVE_USE_EMBEDDINGS=true`
 
 ## Architecture
@@ -209,6 +230,7 @@ flowchart LR
 ```
 
 Core responsibilities:
+
 - ingest events and document updates
 - maintain protected memory state
 - consolidate memory through digest control
@@ -218,6 +240,7 @@ Core responsibilities:
 ## Benchmarking
 
 Project Memory includes built-in evaluation for:
+
 - ingest and retrieval performance
 - digest consistency and repeatability
 - replay consistency and transition matching
@@ -232,12 +255,26 @@ pnpm benchmark
 ```
 
 More detail lives in:
+
 - `docs/benchmarking.md`
 - `artifacts/releases/v1.0.0/`
 
 Local benchmark outputs are written to `benchmark-results/`.
 That working directory is ignored from git.
 Curated release snapshots are archived under `artifacts/releases/`.
+Curated demo evidence for repo visitors lives under `artifacts/demos/`.
+
+## Observable Evidence
+
+If you want a quick, human-readable example instead of a metric table, start with:
+
+- `artifacts/demos/visible-comparison-latest.md`
+- `artifacts/demos/visible-comparison-latest.json`
+- `docs/observable-comparison.md`
+
+The current curated demo runs the same event sequence through Project Memory and a direct-model rolling-summary baseline.
+In the included sample run, Project Memory passed `7/7` checkpoint questions while the direct baseline passed `3/7`.
+The clearest visible failure is at the final goal check: the baseline compresses the goal into "self-hosted memory runtime for local models" and drops `long-term`, while Project Memory preserves the full target state.
 
 ## Docs
 
@@ -271,6 +308,7 @@ Curated release snapshots are archived under `artifacts/releases/`.
 - `packages/db` Prisma schema and client
 
 Runtime entrypoint:
+
 - `POST /memory/runtime/turn`
 
 See `docs/technical-overview.md` for architecture internals.
