@@ -23,6 +23,7 @@
     "release:status": "pnpm dlx changeset status",
     "release:verify": "node ./scripts/release/verify-release.mjs",
     "benchmark": "node ./scripts/benchmark/run-benchmark.mjs",
+    "benchmark:visible": "node ./scripts/benchmark/run-visible-comparison.mjs",
     "benchmark:trend": "node ./scripts/benchmark/generate-trend-report.mjs",
     "smoke:no-llm": "./scripts/smoke-no-llm.sh",
     "smoke:llm": "./scripts/smoke-llm.sh",
