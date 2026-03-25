@@ -117,6 +117,6 @@ export function compileFastLayerContext(input: {
     retrievalBlock,
     recentTurnsBlock,
     retrievalHints,
-    summary: summaryParts.join("; ")
+    summary: summaryParts.join("; ") || "message_only"
   };
 }

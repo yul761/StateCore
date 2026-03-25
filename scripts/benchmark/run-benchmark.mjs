@@ -1631,6 +1631,7 @@ async function run() {
       workingMemoryVersionRate: Number((runtimeResults.filter((result) => result.hasWorkingMemoryVersion).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       stableStateVersionRate: Number((runtimeResults.filter((result) => result.hasStableStateVersion).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       fastLayerContextSummaryRate: Number((runtimeResults.filter((result) => result.hasFastLayerContextSummary).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      directStateFastPathRate: Number((runtimeResults.filter((result) => (Array.isArray(result.notes) ? result.notes : []).includes("answer:direct_state_fast_path")).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       digestTriggerRate: Number((runtimeResults.filter((result) => result.digestTriggered).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       writeTierCounts,
       noteTaxonomy,
@@ -1759,7 +1760,7 @@ async function run() {
     `- Replay state match: ${report.metrics.replay.enabled ? (report.metrics.replay.successfulRuns ? (report.metrics.replay.stateMatch ? "yes" : "no") : `error (${report.metrics.replay.error})`) : "skipped"}${report.metrics.replay.enabled && report.metrics.replay.successfulRuns ? `, successful rebuilds ${report.metrics.replay.successfulRuns}/${report.metrics.replay.rebuildRuns}, snapshots ${report.metrics.replay.rebuildSnapshots}` : ""}`,
     `- Runtime turn success: ${report.metrics.runtime.enabled ? `${report.metrics.runtime.success}/${report.metrics.runtime.runs}` : "skipped"}, evidence coverage ${report.metrics.runtime.enabled ? report.metrics.runtime.evidenceCoverageRate : "n/a"}, avg latency ${report.metrics.runtime.enabled ? `${report.metrics.runtime.avgLatencyMs} ms` : "n/a"}`,
     `- Runtime layer timings: fast path ${report.metrics.runtime.enabled ? `${report.metrics.runtime.fastPathAvgLatencyMs} ms` : "n/a"}, working memory update ${report.metrics.runtime.enabled ? `${report.metrics.runtime.workingMemoryUpdateAvgLatencyMs} ms` : "n/a"}, stable-state update ${report.metrics.runtime.enabled ? `${report.metrics.runtime.stableStateUpdateAvgLatencyMs} ms` : "n/a"}`,
-    `- Runtime layer metadata: working-memory version rate ${report.metrics.runtime.enabled ? report.metrics.runtime.workingMemoryVersionRate : "n/a"}, stable-state version rate ${report.metrics.runtime.enabled ? report.metrics.runtime.stableStateVersionRate : "n/a"}, fast-layer summary rate ${report.metrics.runtime.enabled ? report.metrics.runtime.fastLayerContextSummaryRate : "n/a"}`,
+    `- Runtime layer metadata: working-memory version rate ${report.metrics.runtime.enabled ? report.metrics.runtime.workingMemoryVersionRate : "n/a"}, stable-state version rate ${report.metrics.runtime.enabled ? report.metrics.runtime.stableStateVersionRate : "n/a"}, fast-layer summary rate ${report.metrics.runtime.enabled ? report.metrics.runtime.fastLayerContextSummaryRate : "n/a"}, direct-state fast-path rate ${report.metrics.runtime.enabled ? report.metrics.runtime.directStateFastPathRate : "n/a"}`,
     `- Reminder sent: ${report.metrics.reminder.success === 1 ? "yes" : "no"}, delay ${report.metrics.reminder.delayMs} ms`,
     ...(report.metrics.digest.goldRetention
         ? [
@@ -1820,6 +1821,7 @@ async function run() {
           `- Evidence state confidence rate: ${report.metrics.runtime.evidenceStateConfidenceRate ?? 0}`,
           `- Evidence state transition-taxonomy rate: ${report.metrics.runtime.evidenceStateTransitionTaxonomyRate ?? 0}`,
           `- Evidence recent state changes rate: ${report.metrics.runtime.evidenceRecentStateChangesRate ?? 0}`,
+          `- Direct-state fast-path rate: ${report.metrics.runtime.directStateFastPathRate ?? 0}`,
           `- Digest trigger rate: ${report.metrics.runtime.digestTriggerRate}`,
           `- Write tiers: ${Object.keys(report.metrics.runtime.writeTierCounts || {}).length ? Object.entries(report.metrics.runtime.writeTierCounts).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`,
           `- Note taxonomy: ${Object.keys(report.metrics.runtime.noteTaxonomy || {}).length ? Object.entries(report.metrics.runtime.noteTaxonomy).sort((a, b) => b[1] - a[1]).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`

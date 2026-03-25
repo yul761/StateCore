@@ -108,6 +108,122 @@ describe("Profiled policies", () => {
   });
 });
 
+describe("DefaultRecallPolicy", () => {
+  it("skips retrieval for explicit structured turns and still builds fast context", async () => {
+    const retrieve = vi.fn(async () => ({
+      digest: null,
+      events: [],
+      retrieval: { matches: [] }
+    }));
+    const recallPolicy = new DefaultRecallPolicy(
+      { retrieve } as unknown as RuntimeRetrieveService,
+      {
+        scopeStateLoader: async () => null,
+        workingMemoryLoader: async () => ({
+          scopeId: "scope-1",
+          version: 2,
+          state: {
+            currentGoal: "keep runtime fast",
+            activeConstraints: ["stable api"],
+            recentDecisions: [],
+            openQuestions: [],
+            sourceEventIds: ["turn-1"]
+          },
+          updatedAt: new Date("2026-03-17T00:00:00.000Z")
+        }),
+        recentTurnsLoader: async () => [
+          { id: "turn-1", content: "Previous user turn", createdAt: new Date("2026-03-17T00:00:00.000Z") }
+        ]
+      }
+    );
+
+    const recall = await recallPolicy.resolve({
+      scopeId: "scope-1",
+      message: "goal: keep fast runtime answers under two seconds"
+    });
+
+    expect(retrieve).not.toHaveBeenCalled();
+    expect(recall.retrievalPlan).toMatchObject({
+      mode: "none",
+      reason: "local_turn_only",
+      limit: 0
+    });
+    expect(recall.fastLayerContext?.workingMemoryBlock).toContain("Current goal: keep runtime fast");
+  });
+
+  it("reuses cached retrieval results for repeated runtime recall", async () => {
+    const retrieve = vi.fn(async () => ({
+      digest: null,
+      events: [
+        {
+          id: "evt-1",
+          content: "We decided to keep the fast path under two seconds",
+          createdAt: new Date("2026-03-17T00:00:00.000Z")
+        }
+      ],
+      retrieval: { matches: [{ id: "evt-1", sourceType: "stream" }] }
+    }));
+    const recallPolicy = new DefaultRecallPolicy(
+      { retrieve } as unknown as RuntimeRetrieveService,
+      {
+        scopeStateLoader: async () => ({
+          digestId: "digest-cache-1",
+          state: {
+            stableFacts: {
+              goal: "ship fast runtime replies"
+            }
+          }
+        }),
+        workingMemoryLoader: async () => ({
+          scopeId: "scope-cache-1",
+          version: 7,
+          state: {
+            currentGoal: "ship fast runtime replies",
+            activeConstraints: ["fast path under two seconds"],
+            recentDecisions: [],
+            openQuestions: [],
+            sourceEventIds: ["turn-cache-1"]
+          },
+          updatedAt: new Date("2026-03-17T00:00:00.000Z")
+        }),
+        recentTurnsLoader: async () => [
+          { id: "turn-cache-1", content: "Previous user turn", createdAt: new Date("2026-03-17T00:00:00.000Z") }
+        ],
+        limit: 4
+      }
+    );
+
+    const first = await recallPolicy.resolve({
+      scopeId: "scope-cache-1",
+      message: "What is the current goal for the runtime?"
+    });
+    const second = await recallPolicy.resolve({
+      scopeId: "scope-cache-1",
+      message: "What is the current goal for the runtime?"
+    });
+
+    expect(retrieve).toHaveBeenCalledTimes(1);
+    expect(retrieve).toHaveBeenCalledWith(
+      "scope-cache-1",
+      4,
+      "What is the current goal for the runtime?\nship fast runtime replies\nship fast runtime replies\nfast path under two seconds"
+    );
+    expect(first.retrievalPlan).toMatchObject({
+      mode: "light",
+      reason: "goal_lookup",
+      limit: 4,
+      cacheHit: false
+    });
+    expect(second.retrievalPlan).toMatchObject({
+      mode: "light",
+      reason: "goal_lookup",
+      limit: 4,
+      cacheHit: true
+    });
+    expect(second.events).toHaveLength(1);
+  });
+});
+
 describe("AssistantSession", () => {
   function buildServices() {
     const ingestEvent = vi.fn(async () => ({ ok: true }));
@@ -479,6 +595,149 @@ describe("AssistantSession", () => {
       maxOutputTokens: 400,
       reasoningEffort: "low"
     });
+  });
+
+  it("answers canonical state questions directly from stable and working memory without calling the model", async () => {
+    const chat = vi.fn(async () => "Model answer");
+    const session = new AssistantSession({
+      userId: "user-1",
+      scopeId: "scope-1",
+      memoryService: { ingestEvent: vi.fn(async () => ({ ok: true })) },
+      recallPolicy: {
+        resolve: async () => ({
+          digest: null,
+          events: [],
+          retrieval: { matches: [] },
+          stateRef: "digest-1",
+          stateSnapshot: {
+            digestId: "digest-1",
+            state: {
+              stableFacts: {
+                goal: "ship a three-layer memory runtime for local LLM agents",
+                constraints: ["fast path should stay low latency"],
+                decisions: ["stable state remains on the controlled digest pipeline"]
+              },
+              todos: ["add working memory inspection endpoints"]
+            }
+          },
+          workingMemorySnapshot: {
+            scopeId: "scope-1",
+            version: 3,
+            state: {
+              currentGoal: "ship a three-layer memory runtime for local LLM agents",
+              activeConstraints: ["working memory may be approximate but session scoped"],
+              recentDecisions: ["working memory updates quickly in the background"],
+              openQuestions: ["how far to push latency down next"],
+              sourceEventIds: ["evt-1"]
+            },
+            updatedAt: new Date("2026-03-17T00:00:00.000Z")
+          },
+          workingMemoryView: {
+            goal: "ship a three-layer memory runtime for local LLM agents",
+            constraints: ["working memory may be approximate but session scoped"],
+            decisions: ["working memory updates quickly in the background"],
+            openQuestions: ["how far to push latency down next"]
+          },
+          stableStateView: {
+            goal: "ship a three-layer memory runtime for local LLM agents",
+            constraints: ["fast path should stay low latency"],
+            decisions: ["stable state remains on the controlled digest pipeline"],
+            todos: ["add working memory inspection endpoints"],
+            openQuestions: [],
+            risks: []
+          },
+          recentTurns: [],
+          fastLayerContext: {
+            systemContext: "Respond quickly.",
+            workingMemoryBlock: "(none)",
+            stableStateBlock: "(none)",
+            retrievalBlock: "(none)",
+            recentTurnsBlock: "(none)",
+            retrievalHints: { priorityTerms: [], exclusions: [] },
+            summary: "state_answer"
+          }
+        })
+      },
+      llm: { chat } as any,
+      prompts: {
+        system: "Fast runtime.",
+        user: "Current user turn:\n{{currentTurn}}"
+      }
+    });
+
+    const result = await session.handleTurn({
+      message: "What is the current architecture goal?",
+      source: "sdk",
+      writeTier: "ephemeral",
+      digestMode: "skip"
+    });
+
+    expect(result.answer).toBe("Current goal: ship a three-layer memory runtime for local LLM agents.");
+    expect(result.notes).toContain("answer:direct_state_fast_path");
+    expect(chat).not.toHaveBeenCalled();
+  });
+
+  it("answers canonical state questions directly from retrieved events when snapshots are missing", async () => {
+    const chat = vi.fn(async () => "Model answer");
+    const session = new AssistantSession({
+      userId: "user-1",
+      scopeId: "scope-1",
+      memoryService: { ingestEvent: vi.fn(async () => ({ ok: true })) },
+      recallPolicy: {
+        resolve: async () => ({
+          digest: null,
+          events: [
+            {
+              id: "evt-1",
+              content: "goal: ship a three-layer memory runtime for local LLM agents",
+              createdAt: new Date("2026-03-17T00:00:00.000Z")
+            },
+            {
+              id: "evt-2",
+              content: "constraint: keep the fast path low latency",
+              createdAt: new Date("2026-03-17T00:01:00.000Z")
+            }
+          ],
+          retrieval: {
+            matches: [
+              { id: "evt-1", sourceType: "stream" },
+              { id: "evt-2", sourceType: "stream" }
+            ]
+          },
+          stateRef: null,
+          stateSnapshot: null,
+          workingMemorySnapshot: null,
+          workingMemoryView: { constraints: [], decisions: [], openQuestions: [] },
+          stableStateView: { constraints: [], decisions: [], todos: [], openQuestions: [], risks: [] },
+          recentTurns: [],
+          fastLayerContext: {
+            systemContext: "Respond quickly.",
+            workingMemoryBlock: "(none)",
+            stableStateBlock: "(none)",
+            retrievalBlock: "(none)",
+            recentTurnsBlock: "(none)",
+            retrievalHints: { priorityTerms: [], exclusions: [] },
+            summary: "retrieval_only"
+          }
+        })
+      },
+      llm: { chat } as any,
+      prompts: {
+        system: "Fast runtime.",
+        user: "Current user turn:\n{{currentTurn}}"
+      }
+    });
+
+    const result = await session.handleTurn({
+      message: "What is the current architecture goal?",
+      source: "sdk",
+      writeTier: "ephemeral",
+      digestMode: "skip"
+    });
+
+    expect(result.answer).toBe("Current goal: ship a three-layer memory runtime for local LLM agents.");
+    expect(result.notes).toContain("answer:direct_state_fast_path");
+    expect(chat).not.toHaveBeenCalled();
   });
 
   it("falls back to uncapped runtime output when the capped call returns empty content", async () => {

@@ -11,7 +11,10 @@ import {
   type StateLayerView,
   type WorkingMemoryView
 } from "./working-memory.compiler";
-import type { WorkingMemoryState } from "./working-memory.extractor";
+import {
+  extractWorkingMemoryState,
+  type WorkingMemoryState
+} from "./working-memory.extractor";
 
 const FAST_LAYER_MAX_OUTPUT_TOKENS = 400;
 
@@ -99,6 +102,21 @@ export interface ResolvedRecall {
   stableStateView?: StateLayerView | null;
   recentTurns?: RecentTurnView[];
   fastLayerContext?: FastLayerContext;
+  retrievalPlan?: {
+    mode: "none" | "light" | "full";
+    reason: string;
+    limit: number;
+    query?: string;
+    cacheHit?: boolean;
+  };
+}
+
+interface RuntimeRetrievalPlan {
+  mode: "none" | "light" | "full";
+  reason: string;
+  limit: number;
+  query: string;
+  cacheHit?: boolean;
 }
 
 export interface RuntimeStateSnapshot {
@@ -313,6 +331,120 @@ function isEmptyContentError(error: unknown) {
   return error instanceof Error && /LLM response missing content/i.test(error.message);
 }
 
+const RUNTIME_RECALL_CACHE_TTL_MS = 15_000;
+const runtimeRecallCache = new Map<string, {
+  expiresAt: number;
+  result: Awaited<ReturnType<RuntimeRetrieveService["retrieve"]>>;
+}>();
+const runtimeResolvedRecallCache = new Map<string, {
+  expiresAt: number;
+  result: ResolvedRecall;
+}>();
+
+function buildRecallCacheKey(input: {
+  scopeId: string;
+  mode: "none" | "light" | "full";
+  limit: number;
+  query: string;
+  stateRef?: string | null;
+  workingMemoryVersion?: number | null;
+  recentTurnIds?: string[];
+}) {
+  return [
+    input.scopeId,
+    input.mode,
+    String(input.limit),
+    input.query,
+    input.stateRef ?? "",
+    String(input.workingMemoryVersion ?? ""),
+    (input.recentTurnIds ?? []).join(",")
+  ].join("::");
+}
+
+function compactQueryLine(value?: string | null) {
+  return value?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+function selectRetrieveQuery(input: {
+  message: string;
+  workingMemoryView: WorkingMemoryView;
+  stableStateView: StateLayerView;
+}) {
+  return [
+    compactQueryLine(input.message),
+    compactQueryLine(input.workingMemoryView.goal),
+    compactQueryLine(input.stableStateView.goal),
+    ...(input.workingMemoryView.constraints ?? []).slice(0, 1).map((item) => compactQueryLine(item)),
+    ...(input.stableStateView.constraints ?? []).slice(0, 1).map((item) => compactQueryLine(item))
+  ].filter(Boolean).join("\n");
+}
+
+function classifyTurnRetrievalPlan(input: {
+  message: string;
+  limit: number;
+  forceLimit?: boolean;
+  workingMemoryView: WorkingMemoryView;
+  stableStateView: StateLayerView;
+}): RuntimeRetrievalPlan {
+  const normalized = input.message.trim().toLowerCase();
+  const retrieveQuery = selectRetrieveQuery(input);
+  const noRetrievalPatterns = [
+    /^(goal|constraint|decision|todo)\s*:/i,
+    /^(thanks|thank you|ok|okay|cool|got it|sounds good)[.!]?$/i,
+    /\b(rewrite|rephrase|shorten|expand|format|rename|title|commit message|polish|clean up)\b/i
+  ];
+  const fullRetrievalPatterns = [
+    /\b(source|sources|evidence|quote|quoted|reference|references|replay|history|timeline|document|docs|file|files)\b/i,
+    /\b(why did|what changed|according to|show me)\b/i
+  ];
+  const goalRetrievalPatterns = [
+    /\b(goal|objective|architecture goal|project goal)\b/i
+  ];
+  const lightRetrievalPatterns = [
+    /\?$/,
+    /\b(goal|constraints?|decisions?|todos?|open questions?|remaining|remains|status|progress|current|state|plan|task|runtime)\b/i
+  ];
+
+  if (noRetrievalPatterns.some((pattern) => pattern.test(normalized))) {
+    return {
+      mode: "none" as const,
+      reason: "local_turn_only",
+      limit: 0,
+      query: ""
+    };
+  }
+  if (fullRetrievalPatterns.some((pattern) => pattern.test(normalized))) {
+    return {
+      mode: "full" as const,
+      reason: "evidence_or_history_request",
+      limit: Math.max(1, input.limit),
+      query: retrieveQuery || input.message
+    };
+  }
+  if (goalRetrievalPatterns.some((pattern) => pattern.test(normalized))) {
+    return {
+      mode: "light" as const,
+      reason: "goal_lookup",
+      limit: input.forceLimit ? Math.max(1, input.limit) : Math.max(3, Math.min(input.limit, 4)),
+      query: retrieveQuery || input.message
+    };
+  }
+  if (lightRetrievalPatterns.some((pattern) => pattern.test(normalized))) {
+    return {
+      mode: "light" as const,
+      reason: "state_or_status_request",
+      limit: input.forceLimit ? Math.max(1, input.limit) : Math.max(1, Math.min(input.limit, 2)),
+      query: retrieveQuery || input.message
+    };
+  }
+  return {
+    mode: "light" as const,
+    reason: "default_light_recall",
+    limit: input.forceLimit ? Math.max(1, input.limit) : Math.max(1, Math.min(input.limit, 2)),
+    query: retrieveQuery || input.message
+  };
+}
+
 export function buildGroundingStateDetails(snapshot?: RuntimeStateSnapshot | null) {
   if (!snapshot?.digestId) return null;
   const provenance = snapshot.state?.provenance;
@@ -433,6 +565,105 @@ function shouldPromoteLongForm(text: string, overrides?: RuntimePolicyOverrides)
   return overrides?.promoteLongFormToDocumented === true && (text.includes("\n") || text.length > 280);
 }
 
+function uniqueList(items: Array<string | undefined | null>, limit = 5) {
+  return [...new Set(items.map((item) => item?.trim() ?? "").filter(Boolean))].slice(0, limit);
+}
+
+function formatListAnswer(prefix: string, items: string[]) {
+  if (!items.length) return null;
+  return `${prefix}: ${items.join("; ")}.`;
+}
+
+function extractTodoItemsFromEvents(events: Array<{ content: string }>) {
+  const todos = new Set<string>();
+  for (const event of events) {
+    const lines = event.content
+      .replace(/\r\n/g, "\n")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    for (const line of lines) {
+      if (/^todo\s*:/i.test(line)) {
+        todos.add(line.replace(/^todo\s*:/i, "").trim());
+      }
+      if (/^next step\s*:/i.test(line)) {
+        todos.add(line.replace(/^next step\s*:/i, "").trim());
+      }
+    }
+  }
+  return [...todos].filter(Boolean);
+}
+
+function maybeBuildDirectRuntimeAnswer(question: string, recall: ResolvedRecall) {
+  const normalized = question.trim().toLowerCase();
+  const isQuestionLike = normalized.endsWith("?")
+    || /^(what|which|list|summarize|tell me|what's|whats)\b/i.test(normalized);
+  if (!isQuestionLike) {
+    return null;
+  }
+  const stable = recall.stableStateView ?? {
+    goal: undefined,
+    constraints: [],
+    decisions: [],
+    todos: [],
+    openQuestions: [],
+    risks: []
+  };
+  const working = recall.workingMemoryView ?? {
+    goal: undefined,
+    constraints: [],
+    decisions: [],
+    progressSummary: undefined,
+    openQuestions: [],
+    taskFrame: undefined
+  };
+  const derivedWorking = extractWorkingMemoryState(
+    recall.events.map((event) => ({
+      id: event.id,
+      type: "stream" as const,
+      content: event.content,
+      createdAt: event.createdAt
+    }))
+  );
+  const derivedTodos = extractTodoItemsFromEvents(recall.events);
+
+  if (/\b(goal|objective|architecture goal|project goal)\b/i.test(normalized)) {
+    const goal = stable.goal ?? working.goal ?? derivedWorking.currentGoal;
+    if (goal) {
+      return `Current goal: ${goal}.`;
+    }
+  }
+
+  if (/\bconstraints?\b/i.test(normalized)) {
+    const constraints = uniqueList([
+      ...stable.constraints,
+      ...working.constraints,
+      ...derivedWorking.activeConstraints
+    ]);
+    return formatListAnswer("Current constraints", constraints);
+  }
+
+  if (/\b(decision|decisions|decide|decided)\b/i.test(normalized)) {
+    const decisions = uniqueList([
+      ...stable.decisions,
+      ...working.decisions,
+      ...derivedWorking.recentDecisions
+    ]);
+    return formatListAnswer("Key decisions", decisions);
+  }
+
+  if (/\b(open|remaining|remains|todo|todos|work is still open|left to do|next steps?)\b/i.test(normalized)) {
+    const openWork = uniqueList([
+      ...stable.todos,
+      ...derivedTodos,
+      ...working.openQuestions.map((item) => `open question: ${item}`)
+    ]);
+    return formatListAnswer("Open work", openWork);
+  }
+
+  return null;
+}
+
 export class DefaultMemoryWritePolicy implements MemoryWritePolicy {
   classifyTurn(input: RuntimeTurnInput): MemoryWriteDecision {
     if (input.writeTier) return { tier: input.writeTier, reason: "explicit_write_tier" };
@@ -505,6 +736,7 @@ export class DefaultRecallPolicy implements RecallPolicy {
       recentTurnsLoader?: (scopeId: string, limit: number) => Promise<Array<{ id: string; content: string; createdAt: Date }>>;
       limit?: number;
       recentTurnsLimit?: number;
+      forceRecallLimit?: boolean;
     }
   ) {}
 
@@ -518,24 +750,68 @@ export class DefaultRecallPolicy implements RecallPolicy {
     ]);
     const stableStateView = compileStateLayerView(state?.state ?? null);
     const workingMemoryView = workingMemory?.view ?? compileWorkingMemoryView(workingMemory?.state ?? null);
-    const retrieveQuery = [
-      input.message,
-      workingMemoryView.goal,
-      stableStateView.goal,
-      ...(workingMemoryView.constraints ?? []).slice(0, 1),
-      ...(stableStateView.constraints ?? []).slice(0, 1)
-    ].filter(Boolean).join("\n");
-    const result = await this.retrieveService.retrieve(
-      input.scopeId,
-      this.options?.limit ?? 4,
-      retrieveQuery || input.message
-    );
     const recentTurns = recentTurnEvents.map((event) => ({
       id: event.id,
       role: /^assistant reply:/i.test(event.content) ? "assistant" : "user",
       content: event.content.replace(/^assistant reply:\s*/i, "").trim(),
       createdAt: event.createdAt
     })) satisfies RecentTurnView[];
+    const retrievalPlan = classifyTurnRetrievalPlan({
+      message: input.message,
+      limit: this.options?.limit ?? 4,
+      forceLimit: this.options?.forceRecallLimit,
+      workingMemoryView,
+      stableStateView
+    });
+    const resolvedCacheKey = buildRecallCacheKey({
+      scopeId: input.scopeId,
+      mode: retrievalPlan.mode,
+      limit: retrievalPlan.limit,
+      query: `${input.message}\n${retrievalPlan.query}`,
+      stateRef: state?.digestId ?? null,
+      workingMemoryVersion: workingMemory?.version ?? null,
+      recentTurnIds: recentTurns.map((turn) => turn.id)
+    });
+    const resolvedCached = runtimeResolvedRecallCache.get(resolvedCacheKey);
+    if (resolvedCached && resolvedCached.expiresAt > Date.now()) {
+      return {
+        ...resolvedCached.result,
+        retrievalPlan: resolvedCached.result.retrievalPlan
+          ? { ...resolvedCached.result.retrievalPlan, cacheHit: true }
+          : undefined
+      };
+    }
+    let result: Awaited<ReturnType<RuntimeRetrieveService["retrieve"]>> = {
+      digest: null,
+      events: [],
+      retrieval: { matches: [] }
+    };
+    if (retrievalPlan.mode !== "none") {
+      const cacheKey = buildRecallCacheKey({
+        scopeId: input.scopeId,
+        mode: retrievalPlan.mode,
+        limit: retrievalPlan.limit,
+        query: retrievalPlan.query,
+        stateRef: state?.digestId ?? null,
+        workingMemoryVersion: workingMemory?.version ?? null,
+        recentTurnIds: recentTurns.map((turn) => turn.id)
+      });
+      const cached = runtimeRecallCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        result = cached.result;
+      } else {
+        result = await this.retrieveService.retrieve(
+          input.scopeId,
+          retrievalPlan.limit,
+          retrievalPlan.query || input.message
+        );
+        runtimeRecallCache.set(cacheKey, {
+          expiresAt: Date.now() + RUNTIME_RECALL_CACHE_TTL_MS,
+          result
+        });
+      }
+      retrievalPlan.cacheHit = Boolean(cached && cached.expiresAt > Date.now());
+    }
     const fastLayerContext = compileFastLayerContext({
       message: input.message,
       workingMemoryView,
@@ -547,7 +823,7 @@ export class DefaultRecallPolicy implements RecallPolicy {
       })),
       recentTurns
     });
-    return {
+    const resolvedRecall = {
       digest: result.digest,
       events: result.events,
       retrieval: result.retrieval,
@@ -557,8 +833,14 @@ export class DefaultRecallPolicy implements RecallPolicy {
       workingMemoryView,
       stableStateView,
       recentTurns,
-      fastLayerContext
+      fastLayerContext,
+      retrievalPlan
     };
+    runtimeResolvedRecallCache.set(resolvedCacheKey, {
+      expiresAt: Date.now() + RUNTIME_RECALL_CACHE_TTL_MS,
+      result: resolvedRecall
+    });
+    return resolvedRecall;
   }
 }
 
@@ -638,7 +920,8 @@ export function createRuntimeRecallPolicy(
     workingMemoryLoader: options?.workingMemoryLoader,
     recentTurnsLoader: options?.recentTurnsLoader,
     limit: options?.overrides?.recallLimit ?? profileLimit,
-    recentTurnsLimit
+    recentTurnsLimit,
+    forceRecallLimit: typeof options?.overrides?.recallLimit === "number"
   });
 }
 
@@ -661,7 +944,11 @@ export class AssistantSession {
       message: input.message
     });
 
-    const answer = await this.generateGroundedAnswer(input.message, recall);
+    const directAnswer = maybeBuildDirectRuntimeAnswer(input.message, recall);
+    const answer = directAnswer ?? await this.generateGroundedAnswer(input.message, recall);
+    if (directAnswer) {
+      notes.push("answer:direct_state_fast_path");
+    }
 
     let digestTriggered = false;
     const shouldAttemptDigest = input.digestMode !== "skip" && Boolean(this.options.backgroundProcessor?.requestStableStateDigest || this.options.digestTrigger);
