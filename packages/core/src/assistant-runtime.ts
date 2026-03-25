@@ -1,5 +1,17 @@
 import { createHash } from "crypto";
 import type { ChatModel } from "./model-provider";
+import {
+  compileFastLayerContext,
+  type FastLayerContext,
+  type RecentTurnView,
+} from "./fast-layer-context.compiler";
+import {
+  compileStateLayerView,
+  compileWorkingMemoryView,
+  type StateLayerView,
+  type WorkingMemoryView
+} from "./working-memory.compiler";
+import type { WorkingMemoryState } from "./working-memory.extractor";
 
 export type MemorySource = "telegram" | "cli" | "api" | "sdk";
 
@@ -80,6 +92,11 @@ export interface ResolvedRecall {
   };
   stateRef?: string | null;
   stateSnapshot?: RuntimeStateSnapshot | null;
+  workingMemorySnapshot?: RuntimeWorkingMemorySnapshot | null;
+  workingMemoryView?: WorkingMemoryView | null;
+  stableStateView?: StateLayerView | null;
+  recentTurns?: RecentTurnView[];
+  fastLayerContext?: FastLayerContext;
 }
 
 export interface RuntimeStateSnapshot {
@@ -119,6 +136,16 @@ export interface RuntimeStateSnapshot {
       value?: string;
     }>;
   } | null;
+}
+
+export interface RuntimeWorkingMemorySnapshot {
+  id?: string;
+  scopeId: string;
+  version: number;
+  state: WorkingMemoryState;
+  view?: WorkingMemoryView | null;
+  updatedAt: Date;
+  createdAt?: Date;
 }
 
 export interface GroundingEvidence {
@@ -165,6 +192,9 @@ export interface GroundedAnswer {
   answer: string;
   writeTier: MemoryWriteTier;
   digestTriggered: boolean;
+  workingMemoryVersion?: number | null;
+  stableStateVersion?: string | null;
+  usedFastLayerContextSummary?: string;
   notes?: string[];
   evidence: GroundingEvidence;
 }
@@ -234,6 +264,19 @@ export interface RecallPolicy {
   }): Promise<ResolvedRecall>;
 }
 
+export interface RuntimeBackgroundProcessor {
+  persistTurnArtifacts(input: {
+    userId: string;
+    scopeId: string;
+    turn: RuntimeTurnInput;
+    writeTier: MemoryWriteTier;
+    answer: string;
+    assistantReplySource: MemorySource;
+  }): Promise<void>;
+  requestWorkingMemoryUpdate?(scopeId: string): Promise<void>;
+  requestStableStateDigest?(scopeId: string): Promise<void>;
+}
+
 export interface DigestPolicy {
   shouldDigest(input: {
     turn: RuntimeTurnInput;
@@ -259,6 +302,7 @@ export interface AssistantSessionOptions {
   memoryWritePolicy?: MemoryWritePolicy;
   digestPolicy?: DigestPolicy;
   digestTrigger?: DigestTrigger;
+  backgroundProcessor?: RuntimeBackgroundProcessor;
   assistantReplySource?: MemorySource;
 }
 
@@ -450,19 +494,57 @@ export class DefaultRecallPolicy implements RecallPolicy {
     private retrieveService: RuntimeRetrieveService,
     private options?: {
       scopeStateLoader?: (scopeId: string) => Promise<RuntimeStateSnapshot | null>;
+      workingMemoryLoader?: (scopeId: string) => Promise<RuntimeWorkingMemorySnapshot | null>;
+      recentTurnsLoader?: (scopeId: string, limit: number) => Promise<Array<{ id: string; content: string; createdAt: Date }>>;
       limit?: number;
+      recentTurnsLimit?: number;
     }
   ) {}
 
   async resolve(input: { scopeId: string; message: string }): Promise<ResolvedRecall> {
-    const result = await this.retrieveService.retrieve(input.scopeId, this.options?.limit ?? 12, input.message);
     const state = this.options?.scopeStateLoader ? await this.options.scopeStateLoader(input.scopeId) : null;
+    const workingMemory = this.options?.workingMemoryLoader ? await this.options.workingMemoryLoader(input.scopeId) : null;
+    const stableStateView = compileStateLayerView(state?.state ?? null);
+    const workingMemoryView = workingMemory?.view ?? compileWorkingMemoryView(workingMemory?.state ?? null);
+    const retrieveQuery = [
+      input.message,
+      workingMemoryView.goal,
+      ...(workingMemoryView.constraints ?? []).slice(0, 2),
+      stableStateView.goal,
+      ...(stableStateView.constraints ?? []).slice(0, 2)
+    ].filter(Boolean).join("\n");
+    const result = await this.retrieveService.retrieve(input.scopeId, this.options?.limit ?? 12, retrieveQuery || input.message);
+    const recentTurnEvents = this.options?.recentTurnsLoader
+      ? await this.options.recentTurnsLoader(input.scopeId, this.options?.recentTurnsLimit ?? 6)
+      : [];
+    const recentTurns = recentTurnEvents.map((event) => ({
+      id: event.id,
+      role: /^assistant reply:/i.test(event.content) ? "assistant" : "user",
+      content: event.content.replace(/^assistant reply:\s*/i, "").trim(),
+      createdAt: event.createdAt
+    })) satisfies RecentTurnView[];
+    const fastLayerContext = compileFastLayerContext({
+      message: input.message,
+      workingMemoryView,
+      stateLayerView: stableStateView,
+      retrievalSnippets: result.events.map((event) => ({
+        id: event.id,
+        content: event.content,
+        createdAt: event.createdAt
+      })),
+      recentTurns
+    });
     return {
       digest: result.digest,
       events: result.events,
       retrieval: result.retrieval,
       stateRef: state?.digestId ?? null,
-      stateSnapshot: state
+      stateSnapshot: state,
+      workingMemorySnapshot: workingMemory,
+      workingMemoryView,
+      stableStateView,
+      recentTurns,
+      fastLayerContext
     };
   }
 }
@@ -531,13 +613,18 @@ export function createRuntimeRecallPolicy(
     profile?: RuntimePolicyProfile;
     overrides?: RuntimePolicyOverrides;
     scopeStateLoader?: (scopeId: string) => Promise<RuntimeStateSnapshot | null>;
+    workingMemoryLoader?: (scopeId: string) => Promise<RuntimeWorkingMemorySnapshot | null>;
+    recentTurnsLoader?: (scopeId: string, limit: number) => Promise<Array<{ id: string; content: string; createdAt: Date }>>;
   }
 ) {
   const profile = options?.profile ?? "default";
   const profileLimit = profile === "conservative" ? 8 : profile === "document-heavy" ? 16 : 12;
   return new DefaultRecallPolicy(retrieveService, {
     scopeStateLoader: options?.scopeStateLoader,
-    limit: options?.overrides?.recallLimit ?? profileLimit
+    workingMemoryLoader: options?.workingMemoryLoader,
+    recentTurnsLoader: options?.recentTurnsLoader,
+    limit: options?.overrides?.recallLimit ?? profileLimit,
+    recentTurnsLimit: 6
   });
 }
 
@@ -555,10 +642,6 @@ export class AssistantSession {
     const writeTier = writeDecision.tier;
     const notes = writeDecision.reason ? [`write_tier:${writeDecision.reason}`] : [];
 
-    if (writeTier !== "ephemeral") {
-      await this.writeTurn(input, writeTier);
-    }
-
     const recall = await this.options.recallPolicy.resolve({
       scopeId: this.options.scopeId,
       message: input.message
@@ -566,23 +649,13 @@ export class AssistantSession {
 
     const answer = await this.generateGroundedAnswer(input.message, recall);
 
-    if (writeTier !== "ephemeral") {
-      await this.options.memoryService.ingestEvent({
-        userId: this.options.userId,
-        scopeId: this.options.scopeId,
-        type: "stream",
-        source: this.options.assistantReplySource ?? "sdk",
-        content: `Assistant reply: ${answer}`
-      });
-    }
-
     let digestTriggered = false;
-    const shouldAttemptDigest = input.digestMode !== "skip" && Boolean(this.options.digestTrigger);
+    const shouldAttemptDigest = input.digestMode !== "skip" && Boolean(this.options.backgroundProcessor?.requestStableStateDigest || this.options.digestTrigger);
     if (shouldAttemptDigest) {
       if (input.digestMode === "force") {
         digestTriggered = true;
         notes.push("digest:forced_by_input");
-      } else if (this.digestPolicy && this.options.digestTrigger) {
+      } else if (this.digestPolicy) {
         const digestDecision = this.normalizeDigestDecision(await this.digestPolicy.shouldDigest({
           turn: input,
           writeTier,
@@ -593,20 +666,58 @@ export class AssistantSession {
           notes.push(`digest:${digestDecision.reason}`);
         }
       }
-      if (digestTriggered && this.options.digestTrigger) {
-        await this.options.digestTrigger.requestDigest(this.options.scopeId);
-      }
     } else if (input.digestMode === "skip") {
       notes.push("digest:skipped_by_input");
     }
+
+    this.scheduleBackgroundTasks(input, writeTier, answer, digestTriggered);
 
     return {
       answer,
       writeTier,
       digestTriggered,
+      workingMemoryVersion: recall.workingMemorySnapshot?.version ?? null,
+      stableStateVersion: recall.stateRef ?? null,
+      usedFastLayerContextSummary: recall.fastLayerContext?.summary,
       notes,
       evidence: this.buildEvidence(recall)
     };
+  }
+
+  private scheduleBackgroundTasks(
+    input: RuntimeTurnInput,
+    writeTier: MemoryWriteTier,
+    answer: string,
+    digestTriggered: boolean
+  ) {
+    const backgroundProcessor = this.options.backgroundProcessor;
+    if (!backgroundProcessor) {
+      return;
+    }
+    queueMicrotask(() => {
+      void (async () => {
+        if (writeTier !== "ephemeral") {
+          await backgroundProcessor.persistTurnArtifacts({
+            userId: this.options.userId,
+            scopeId: this.options.scopeId,
+            turn: input,
+            writeTier,
+            answer,
+            assistantReplySource: this.options.assistantReplySource ?? "sdk"
+          });
+        }
+        if (writeTier !== "ephemeral" && backgroundProcessor.requestWorkingMemoryUpdate) {
+          await backgroundProcessor.requestWorkingMemoryUpdate(this.options.scopeId);
+        }
+        if (digestTriggered) {
+          if (backgroundProcessor.requestStableStateDigest) {
+            await backgroundProcessor.requestStableStateDigest(this.options.scopeId);
+          } else if (this.options.digestTrigger) {
+            await this.options.digestTrigger.requestDigest(this.options.scopeId);
+          }
+        }
+      })().catch(() => undefined);
+    });
   }
 
   private async writeTurn(input: RuntimeTurnInput, writeTier: MemoryWriteTier) {
@@ -659,7 +770,13 @@ export class AssistantSession {
   private async generateGroundedAnswer(question: string, recall: ResolvedRecall) {
     const userPrompt = this.options.prompts.user
       .replaceAll("{{question}}", question)
+      .replaceAll("{{currentTurn}}", question)
       .replaceAll("{{digest}}", recall.digest?.summary ?? "(none)")
+      .replaceAll("{{workingMemory}}", recall.fastLayerContext?.workingMemoryBlock ?? "(none)")
+      .replaceAll("{{stableState}}", recall.fastLayerContext?.stableStateBlock ?? "(none)")
+      .replaceAll("{{retrieval}}", recall.fastLayerContext?.retrievalBlock ?? "(none)")
+      .replaceAll("{{recentTurns}}", recall.fastLayerContext?.recentTurnsBlock ?? "(none)")
+      .replaceAll("{{fastSystemContext}}", recall.fastLayerContext?.systemContext ?? "(none)")
       .replaceAll(
         "{{events}}",
         recall.events.map((event) => `- ${event.createdAt.toISOString()}: ${event.content}`).join("\n") || "(no events)"

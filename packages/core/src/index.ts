@@ -23,6 +23,30 @@ export {
   type ResolvedRecall,
   type RuntimeStateSnapshot
 } from "./assistant-runtime";
+export {
+  compileFastLayerContext,
+  type FastLayerContext,
+  type RecentTurnView,
+  type RetrievalSnippetView
+} from "./fast-layer-context.compiler";
+export {
+  compileStateLayerView,
+  compileWorkingMemoryView,
+  formatStateLayerView,
+  formatWorkingMemoryView,
+  type StateLayerView,
+  type WorkingMemoryView
+} from "./working-memory.compiler";
+export {
+  extractWorkingMemoryState,
+  type WorkingMemoryEventLike,
+  type WorkingMemoryState
+} from "./working-memory.extractor";
+export {
+  WorkingMemoryService,
+  type WorkingMemoryRepo,
+  type WorkingMemorySnapshot
+} from "./working-memory.service";
 import type { ChatModel, EmbeddingModel } from "./model-provider";
 
 export const logger = pino({ level: process.env.LOG_LEVEL || "info" });

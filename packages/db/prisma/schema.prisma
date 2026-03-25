@@ -56,6 +56,7 @@ model ProjectScope {
   memories     MemoryEvent[]
   digests      Digest[]
   digestStates DigestStateSnapshot[]
+  workingMemory WorkingMemorySnapshot?
   reminders    Reminder[]
   userStates   UserState[]
 
@@ -120,6 +121,20 @@ model DigestStateSnapshot {
   digest Digest       @relation(fields: [digestId], references: [id])
 
   @@index([scopeId, createdAt])
+}
+
+model WorkingMemorySnapshot {
+  id        String   @id @default(uuid())
+  scopeId    String   @unique
+  version    Int      @default(1)
+  state      Json
+  view       Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  scope ProjectScope @relation(fields: [scopeId], references: [id])
+
+  @@index([scopeId, updatedAt])
 }
 
 model Reminder {

@@ -1,0 +1,151 @@
+{
+  "name": "three-layer-session",
+  "description": "Multi-turn agent session that separates immediate turn response, quick working-memory updates, and slower authoritative state consolidation.",
+  "benchmarkFocus": [
+    "fast-turn latency",
+    "working-memory freshness",
+    "stable-state durability",
+    "drift-sensitive goal evolution"
+  ],
+  "gold": {
+    "goal": [
+      "ship a three-layer memory runtime for local LLM agents"
+    ],
+    "constraints": [
+      "keep the synchronous turn path low latency",
+      "working memory may be approximate but must stay session scoped",
+      "stable state remains the authoritative long-term truth"
+    ],
+    "decisions": [
+      "We decide the fast layer should compile context from recent turns, retrieval, working memory, and stable state views",
+      "We decide working memory should update in the background without the full digest consistency gate",
+      "We decide stable state should only update through the controlled digest pipeline"
+    ],
+    "todos": [
+      "add working memory inspection endpoints",
+      "report fast path latency separately from stable-state latency",
+      "add replay checks for the authoritative state layer"
+    ],
+    "openQuestions": [
+      "Should working memory use a lightweight LLM extractor or stay heuristic by default?"
+    ],
+    "risks": [
+      "working memory could overfit to the most recent turn and drift before stable-state consolidation"
+    ],
+    "contradictions": {
+      "goal": [
+        "goal: wait for full digest completion before responding to users",
+        "goal: collapse all memory into one rolling summary"
+      ],
+      "constraints": [
+        "constraint: fast turns may directly overwrite stable state"
+      ],
+      "decisions": [
+        "We decide to remove the controlled digest pipeline and trust working memory directly"
+      ],
+      "todos": [
+        "TODO: delete runtime latency reporting"
+      ]
+    }
+  },
+  "events": [
+    {
+      "type": "document",
+      "key": "doc:goal",
+      "content": "goal: ship a low-drift memory runtime for local LLM agents"
+    },
+    {
+      "type": "document",
+      "key": "doc:constraints",
+      "content": "constraint: keep the synchronous turn path low latency\nconstraint: stable state remains the authoritative long-term truth"
+    },
+    {
+      "type": "stream",
+      "content": "We decide the fast layer should compile context from recent turns, retrieval, and state views"
+    },
+    {
+      "type": "stream",
+      "content": "TODO: report fast path latency separately from digest latency"
+    },
+    {
+      "type": "stream",
+      "content": "Status update: direct single-layer memory flow makes every turn too dependent on consolidation latency"
+    },
+    {
+      "type": "document",
+      "key": "doc:architecture",
+      "content": "goal: ship a three-layer memory runtime for local LLM agents\nconstraint: working memory may be approximate but must stay session scoped"
+    },
+    {
+      "type": "stream",
+      "content": "We decide the fast layer should compile context from recent turns, retrieval, working memory, and stable state views"
+    },
+    {
+      "type": "stream",
+      "content": "We decide working memory should update in the background without the full digest consistency gate"
+    },
+    {
+      "type": "stream",
+      "content": "TODO: add working memory inspection endpoints"
+    },
+    {
+      "type": "stream",
+      "content": "Question: Should working memory use a lightweight LLM extractor or stay heuristic by default?"
+    },
+    {
+      "type": "stream",
+      "content": "Risk: working memory could overfit to the most recent turn and drift before stable-state consolidation"
+    },
+    {
+      "type": "stream",
+      "content": "We decide stable state should only update through the controlled digest pipeline"
+    },
+    {
+      "type": "stream",
+      "content": "TODO: add replay checks for the authoritative state layer"
+    },
+    {
+      "type": "stream",
+      "content": "Status update: runtime now returns immediately and lets background jobs refresh working memory and stable state separately"
+    }
+  ],
+  "retrieveCases": [
+    {
+      "query": "What is the current architecture goal?",
+      "expected": "three-layer memory runtime",
+      "aliases": [
+        "local llm agents",
+        "three-layer",
+        "goal"
+      ]
+    },
+    {
+      "query": "What constraints still apply to the runtime?",
+      "expected": "low latency",
+      "aliases": [
+        "session scoped",
+        "authoritative long-term truth",
+        "constraint"
+      ]
+    },
+    {
+      "query": "What did we decide about working memory and stable state?",
+      "expected": "controlled digest pipeline",
+      "aliases": [
+        "background",
+        "working memory",
+        "stable state",
+        "decision"
+      ]
+    },
+    {
+      "query": "What work is still open for the three-layer runtime?",
+      "expected": "working memory inspection endpoints",
+      "aliases": [
+        "fast path latency",
+        "replay checks",
+        "todo"
+      ]
+    }
+  ]
+}

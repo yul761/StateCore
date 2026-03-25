@@ -202,8 +202,71 @@ export const RuntimeTurnOutput = z.object({
   answer: z.string(),
   writeTier: z.enum(["ephemeral", "candidate", "stable", "documented"]),
   digestTriggered: z.boolean(),
+  workingMemoryVersion: z.number().int().min(0).optional(),
+  stableStateVersion: z.string().nullable().optional(),
+  usedFastLayerContextSummary: z.string().optional(),
   notes: z.array(z.string()).optional(),
   evidence: GroundingEvidenceOutput
+});
+
+export const WorkingMemoryState = z.object({
+  currentGoal: z.string().optional(),
+  activeConstraints: z.array(z.string()),
+  recentDecisions: z.array(z.string()),
+  progressSummary: z.string().optional(),
+  openQuestions: z.array(z.string()),
+  taskFrame: z.string().optional(),
+  sourceEventIds: z.array(z.string())
+});
+export type WorkingMemoryState = z.infer<typeof WorkingMemoryState>;
+
+export const WorkingMemoryView = z.object({
+  goal: z.string().optional(),
+  constraints: z.array(z.string()),
+  decisions: z.array(z.string()),
+  progressSummary: z.string().optional(),
+  openQuestions: z.array(z.string()),
+  taskFrame: z.string().optional()
+});
+export type WorkingMemoryView = z.infer<typeof WorkingMemoryView>;
+
+export const StateLayerView = z.object({
+  goal: z.string().optional(),
+  constraints: z.array(z.string()),
+  decisions: z.array(z.string()),
+  todos: z.array(z.string()),
+  openQuestions: z.array(z.string()),
+  risks: z.array(z.string())
+});
+export type StateLayerView = z.infer<typeof StateLayerView>;
+
+export const FastLayerContext = z.object({
+  systemContext: z.string(),
+  workingMemoryBlock: z.string(),
+  stableStateBlock: z.string(),
+  retrievalBlock: z.string(),
+  recentTurnsBlock: z.string(),
+  retrievalHints: z.object({
+    priorityTerms: z.array(z.string()),
+    exclusions: z.array(z.string())
+  }),
+  summary: z.string()
+});
+export type FastLayerContext = z.infer<typeof FastLayerContext>;
+
+export const WorkingMemoryOutput = z.object({
+  scopeId: z.string().uuid(),
+  version: z.number().int().min(0),
+  state: WorkingMemoryState.nullable(),
+  view: WorkingMemoryView.nullable(),
+  updatedAt: z.string().nullable()
+});
+
+export const FastLayerViewOutput = z.object({
+  scopeId: z.string().uuid(),
+  workingMemoryVersion: z.number().int().min(0).nullable(),
+  stableStateVersion: z.string().nullable(),
+  fastLayerContext: FastLayerContext
 });
 
 export const ReminderCreateInput = z.object({
@@ -233,6 +296,12 @@ export const ReminderCancelOutput = z.object({
 export const HealthOutput = z.object({
   status: z.literal("ok"),
   featureLlm: z.boolean().optional(),
+  workingMemory: z.object({
+    enabled: z.boolean(),
+    useLlm: z.boolean(),
+    maxRecentTurns: z.number().int().min(1),
+    maxItemsPerField: z.number().int().min(1)
+  }).optional(),
   retrieve: z.object({
     useEmbeddings: z.boolean(),
     embeddingCandidateLimit: z.number().int().min(1)
@@ -364,3 +433,11 @@ export const DigestState = z.object({
   })).optional()
 });
 export type DigestState = z.infer<typeof DigestState>;
+
+export const StableStateOutput = z.object({
+  digestId: z.string().nullable(),
+  state: DigestState.nullable(),
+  view: StateLayerView.nullable(),
+  consistency: z.unknown().nullable().optional(),
+  createdAt: z.string().nullable()
+});

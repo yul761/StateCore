@@ -181,6 +181,58 @@ program
   });
 
 program
+  .command("working-state")
+  .argument("[scopeId]")
+  .description("Show latest working memory snapshot for a scope or the active scope")
+  .action(async (scopeId?: string) => {
+    const state = await apiFetch("/state");
+    const targetScopeId = scopeId || state.activeScopeId;
+    if (!targetScopeId) {
+      // eslint-disable-next-line no-console
+      console.log("No active scope.");
+      return;
+    }
+    const result = await apiFetch(`/memory/working-state?scopeId=${encodeURIComponent(targetScopeId)}`);
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify(result, null, 2));
+  });
+
+program
+  .command("stable-state")
+  .argument("[scopeId]")
+  .description("Show latest authoritative stable-state snapshot for a scope or the active scope")
+  .action(async (scopeId?: string) => {
+    const state = await apiFetch("/state");
+    const targetScopeId = scopeId || state.activeScopeId;
+    if (!targetScopeId) {
+      // eslint-disable-next-line no-console
+      console.log("No active scope.");
+      return;
+    }
+    const result = await apiFetch(`/memory/stable-state?scopeId=${encodeURIComponent(targetScopeId)}`);
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify(result, null, 2));
+  });
+
+program
+  .command("fast-view")
+  .argument("<message>")
+  .argument("[scopeId]")
+  .description("Show the compiled fast-layer context for a message")
+  .action(async (message: string, scopeId?: string) => {
+    const state = await apiFetch("/state");
+    const targetScopeId = scopeId || state.activeScopeId;
+    if (!targetScopeId) {
+      // eslint-disable-next-line no-console
+      console.log("No active scope.");
+      return;
+    }
+    const result = await apiFetch(`/memory/fast-view?scopeId=${encodeURIComponent(targetScopeId)}&message=${encodeURIComponent(message)}`);
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify(result, null, 2));
+  });
+
+program
   .command("state")
   .argument("[scopeId]")
   .description("Show latest digest state snapshot for a scope or the active scope")

@@ -1,8 +1,13 @@
 import { randomUUID } from "crypto";
 import { Queue, Worker } from "bullmq";
 import { prisma } from "@project-memory/db";
-import { createModelProvider, logger, runDigestControlPipeline } from "@project-memory/core";
-import type { DigestState } from "@project-memory/core";
+import {
+  WorkingMemoryService,
+  createModelProvider,
+  logger,
+  runDigestControlPipeline
+} from "@project-memory/core";
+import type { DigestState, WorkingMemoryState, WorkingMemoryView } from "@project-memory/core";
 import {
   digestClassifySystemPrompt,
   digestClassifyUserPrompt,
@@ -16,6 +21,48 @@ const connection = {
 };
 
 const reminderQueue = new Queue("reminder", { connection });
+const workingMemoryService = new WorkingMemoryService({
+  findLatest: async (scopeId) => {
+    const snapshot = await prisma.workingMemorySnapshot.findUnique({ where: { scopeId } });
+    if (!snapshot) return null;
+    return {
+      id: snapshot.id,
+      scopeId: snapshot.scopeId,
+      version: snapshot.version,
+      state: snapshot.state as unknown as WorkingMemoryState,
+      view: snapshot.view as unknown as WorkingMemoryView,
+      createdAt: snapshot.createdAt,
+      updatedAt: snapshot.updatedAt
+    };
+  },
+  upsert: async (input) => {
+    const snapshot = await prisma.workingMemorySnapshot.upsert({
+      where: { scopeId: input.scopeId },
+      update: {
+        version: input.version,
+        state: input.state as any,
+        view: input.view as any
+      },
+      create: {
+        scopeId: input.scopeId,
+        version: input.version,
+        state: input.state as any,
+        view: input.view as any
+      }
+    });
+    return {
+      id: snapshot.id,
+      scopeId: snapshot.scopeId,
+      version: snapshot.version,
+      state: snapshot.state as unknown as WorkingMemoryState,
+      view: snapshot.view as unknown as WorkingMemoryView,
+      createdAt: snapshot.createdAt,
+      updatedAt: snapshot.updatedAt
+    };
+  }
+}, {
+  maxItemsPerField: workerEnv.workingMemoryMaxItemsPerField
+});
 
 const llm = workerEnv.featureLlm
   ? createModelProvider({
@@ -177,6 +224,39 @@ async function runDigestScopeJob(data: { userId: string; scopeId: string }) {
   }
 }
 
+async function runWorkingMemoryUpdateJob(data: { userId: string; scopeId: string }) {
+  if (!workerEnv.workingMemoryEnabled) {
+    return;
+  }
+
+  const scope = await prisma.projectScope.findFirst({ where: { id: data.scopeId, userId: data.userId } });
+  if (!scope) {
+    throw new Error("Scope not found for user");
+  }
+
+  const recentEvents = await prisma.memoryEvent.findMany({
+    where: { scopeId: data.scopeId },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: workerEnv.workingMemoryMaxRecentTurns
+  });
+
+  const startedAt = Date.now();
+  const snapshot = await workingMemoryService.updateFromEvents(data.scopeId, recentEvents.reverse().map((event) => ({
+    id: event.id,
+    type: event.type,
+    key: event.key,
+    content: event.content,
+    createdAt: event.createdAt,
+    role: /^assistant reply:/i.test(event.content.trim()) ? "assistant" : "user"
+  })));
+
+  logger.info({
+    scopeId: data.scopeId,
+    version: snapshot.version,
+    tookMs: Date.now() - startedAt
+  }, "Working memory updated");
+}
+
 async function runRebuildDigestChainJob(data: { userId: string; scopeId: string; from?: string; to?: string; strategy?: "full" | "since_last_good"; rebuildGroupId?: string }) {
   if (!workerEnv.featureLlm || !llm) {
     throw new Error("FEATURE_LLM disabled or model provider not configured. Rebuild requires MODEL_* or OPENAI_* configuration.");
@@ -291,6 +371,20 @@ new Worker(
   logger.info({ jobId: job.id, name: job.name }, "Digest job completed");
 }).on("failed", (job, err) => {
   logger.error({ jobId: job?.id, name: job?.name, err }, "Digest job failed");
+});
+
+new Worker(
+  "working-memory",
+  async (job) => {
+    if (job.name !== "working_memory_update") return;
+    await runWorkingMemoryUpdateJob(job.data as { userId: string; scopeId: string });
+    return { ok: true };
+  },
+  { connection, concurrency: Math.max(1, workerEnv.digestConcurrency) }
+).on("completed", (job) => {
+  logger.info({ jobId: job.id, name: job.name }, "Working memory job completed");
+}).on("failed", (job, err) => {
+  logger.error({ jobId: job?.id, name: job?.name, err }, "Working memory job failed");
 });
 
 new Worker(

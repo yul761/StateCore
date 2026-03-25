@@ -187,6 +187,9 @@ function loadFixture(fixturePath) {
     throw new Error("invalid_fixture: missing events array");
   }
   return {
+    name: typeof parsed.name === "string" ? parsed.name : null,
+    description: typeof parsed.description === "string" ? parsed.description : null,
+    benchmarkFocus: Array.isArray(parsed.benchmarkFocus) ? parsed.benchmarkFocus.filter((item) => typeof item === "string") : [],
     events: parsed.events,
     gold: parsed.gold ?? null,
     retrieveCases: Array.isArray(parsed.retrieveCases) ? parsed.retrieveCases : null,
@@ -451,8 +454,6 @@ function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, r
         ((answerMetrics?.success ?? 0) / Math.max(1, answerMetrics?.runs ?? 1)) * 0.4
       );
     runtimeScore = clamp((combinedGroundingQuality * 7.5) + ((1 - Math.max(0, 1 - combinedSuccess)) * 7.5));
-  } else {
-    runtimeScore = 15;
   }
 
   return {
@@ -460,8 +461,8 @@ function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, r
     retention: Number(retentionScore.toFixed(2)),
     contradictionControl: Number(contradictionScore.toFixed(2)),
     replay: Number(replayScore.toFixed(2)),
-    runtimeGrounding: Number((runtimeScore - 15).toFixed(2)),
-    total: Number(clamp(consistencyScore + repeatabilityScore + retentionScore + contradictionScore + replayScore + runtimeScore - 15).toFixed(2))
+    runtimeGrounding: Number(runtimeScore.toFixed(2)),
+    total: Number(clamp(consistencyScore + repeatabilityScore + retentionScore + contradictionScore + replayScore + runtimeScore).toFixed(2))
   };
 }
 
@@ -876,20 +877,58 @@ async function waitForStateSnapshot(scopeId, digestId) {
   return { ok: false, error: "state_snapshot_timeout" };
 }
 
-async function waitForReminderSent(reminderId, dueAtIso) {
+async function waitForWorkingMemoryVersion(scopeId, previousVersion) {
   const start = Date.now();
   while (Date.now() - start <= cfg.timeoutMs) {
-    const result = await apiFetch("GET", "/reminders?status=sent&limit=20");
-    if (result.ok) {
+    const result = await apiFetch("GET", `/memory/working-state?scopeId=${scopeId}`);
+    if (!result.ok) return { ok: false, error: `working_state_failed:${result.status}` };
+    const version = typeof result.json?.version === "number" ? result.json.version : 0;
+    if (version > previousVersion) {
+      return { ok: true, latencyMs: Date.now() - start, version };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return { ok: false, error: "working_state_timeout", latencyMs: cfg.timeoutMs };
+}
+
+async function waitForStableStateVersion(scopeId, previousDigestId) {
+  const start = Date.now();
+  while (Date.now() - start <= cfg.timeoutMs) {
+    const result = await apiFetch("GET", `/memory/stable-state?scopeId=${scopeId}`);
+    if (!result.ok) return { ok: false, error: `stable_state_failed:${result.status}` };
+    const digestId = typeof result.json?.digestId === "string" ? result.json.digestId : null;
+    if (digestId && digestId !== previousDigestId) {
+      return { ok: true, latencyMs: Date.now() - start, digestId };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return { ok: false, error: "stable_state_timeout", latencyMs: cfg.timeoutMs };
+}
+
+async function waitForReminderSent(reminderId, dueAtIso) {
+  const reminderTimeoutMs = Math.max(cfg.timeoutMs, 75_000);
+  const start = Date.now();
+  while (Date.now() - start <= reminderTimeoutMs) {
+    let cursor = null;
+    while (true) {
+      const query = cursor
+        ? `/reminders?status=sent&limit=100&cursor=${encodeURIComponent(cursor)}`
+        : "/reminders?status=sent&limit=100";
+      const result = await apiFetch("GET", query);
+      if (!result.ok) break;
       const found = (result.json.items || []).find((item) => item.id === reminderId);
       if (found) {
         const delayMs = Date.now() - new Date(dueAtIso).getTime();
         return { ok: true, delayMs };
       }
+      cursor = typeof result.json?.nextCursor === "string" && result.json.nextCursor.length > 0
+        ? result.json.nextCursor
+        : null;
+      if (!cursor) break;
     }
     await new Promise((resolve) => setTimeout(resolve, 5000));
   }
-  return { ok: false, delayMs: cfg.timeoutMs };
+  return { ok: false, delayMs: reminderTimeoutMs };
 }
 
 async function waitForStateHistory(scopeId, rebuildGroupId) {
@@ -1022,6 +1061,15 @@ async function run() {
   const goldFacts = loadGoldFacts(fixture);
   if (fixture?.source) {
     report.notes.push(`Using fixture: ${fixture.source}`);
+    report.fixture = {
+      name: fixture.name,
+      description: fixture.description,
+      benchmarkFocus: fixture.benchmarkFocus,
+      source: fixture.source
+    };
+    if (fixture.name) report.notes.push(`Fixture name: ${fixture.name}`);
+    if (fixture.description) report.notes.push(`Fixture description: ${fixture.description}`);
+    if (fixture.benchmarkFocus.length) report.notes.push(`Fixture benchmark focus: ${fixture.benchmarkFocus.join(", ")}`);
     if (fixture.gold) report.notes.push("Fixture includes explicit gold labels.");
   }
   if (cfg.retrieveUseEmbeddings && !modelConfig.embeddingModel) {
@@ -1476,6 +1524,10 @@ async function run() {
       }));
     const runtimeResults = [];
     for (const item of runtimeCases) {
+      const beforeWorkingState = await apiFetch("GET", `/memory/working-state?scopeId=${scopeId}`);
+      const beforeStableState = await apiFetch("GET", `/memory/stable-state?scopeId=${scopeId}`);
+      const previousWorkingVersion = typeof beforeWorkingState.json?.version === "number" ? beforeWorkingState.json.version : 0;
+      const previousStableDigestId = typeof beforeStableState.json?.digestId === "string" ? beforeStableState.json.digestId : null;
       const res = await apiFetch("POST", "/memory/runtime/turn", {
         scopeId,
         message: item.message,
@@ -1508,9 +1560,18 @@ async function run() {
         (typeof evidence.stateSummary === "string" && evidence.stateSummary.length > 0) ||
         Boolean(stateDetails)
       );
+      const workingMemoryUpdate = (res.ok && typeof res.json?.writeTier === "string" && res.json.writeTier !== "ephemeral")
+        ? await waitForWorkingMemoryVersion(scopeId, previousWorkingVersion)
+        : { ok: false, latencyMs: 0 };
+      const stableStateUpdate = Boolean(res.json?.digestTriggered)
+        ? await waitForStableStateVersion(scopeId, previousStableDigestId)
+        : { ok: false, latencyMs: 0 };
       runtimeResults.push({
         ok: res.ok && typeof res.json?.answer === "string",
         latencyMs: res.latencyMs,
+        fastPathLatencyMs: res.latencyMs,
+        workingMemoryUpdateLatencyMs: workingMemoryUpdate.ok ? workingMemoryUpdate.latencyMs : null,
+        stableStateUpdateLatencyMs: stableStateUpdate.ok ? stableStateUpdate.latencyMs : null,
         evidenceCoverage,
         hasDigestSummary: typeof evidence.digestSummary === "string" && evidence.digestSummary.length > 0,
         hasEventSnippets: eventSnippets.length > 0,
@@ -1524,11 +1585,21 @@ async function run() {
         hasStateTransitionTaxonomy: typeof stateDetails?.transitionTaxonomy === "object" && Object.keys(stateDetails?.transitionTaxonomy || {}).length > 0,
         hasRecentStateChanges: Array.isArray(stateDetails?.recentChanges) && stateDetails.recentChanges.length > 0,
         digestTriggered: Boolean(res.json?.digestTriggered),
+        hasWorkingMemoryVersion: typeof res.json?.workingMemoryVersion === "number" || res.json?.workingMemoryVersion === null,
+        hasStableStateVersion: typeof res.json?.stableStateVersion === "string" || res.json?.stableStateVersion === null,
+        hasFastLayerContextSummary: typeof res.json?.usedFastLayerContextSummary === "string" && res.json.usedFastLayerContextSummary.length > 0,
         writeTier: typeof res.json?.writeTier === "string" ? res.json.writeTier : "unknown",
         notes: Array.isArray(res.json?.notes) ? res.json.notes : []
       });
     }
     const runtimeLatencies = runtimeResults.map((result) => result.latencyMs);
+    const fastPathLatencies = runtimeResults.map((result) => result.fastPathLatencyMs);
+    const workingMemoryLatencies = runtimeResults
+      .map((result) => result.workingMemoryUpdateLatencyMs)
+      .filter((value) => typeof value === "number");
+    const stableStateLatencies = runtimeResults
+      .map((result) => result.stableStateUpdateLatencyMs)
+      .filter((value) => typeof value === "number");
     const writeTierCounts = {};
     const noteTaxonomy = {};
     for (const result of runtimeResults) {
@@ -1542,6 +1613,9 @@ async function run() {
       runs: runtimeResults.length,
       success: runtimeResults.filter((result) => result.ok).length,
       avgLatencyMs: Number((runtimeLatencies.reduce((sum, value) => sum + value, 0) / Math.max(1, runtimeLatencies.length)).toFixed(2)),
+      fastPathAvgLatencyMs: Number((fastPathLatencies.reduce((sum, value) => sum + value, 0) / Math.max(1, fastPathLatencies.length)).toFixed(2)),
+      workingMemoryUpdateAvgLatencyMs: Number((workingMemoryLatencies.reduce((sum, value) => sum + value, 0) / Math.max(1, workingMemoryLatencies.length)).toFixed(2)),
+      stableStateUpdateAvgLatencyMs: Number((stableStateLatencies.reduce((sum, value) => sum + value, 0) / Math.max(1, stableStateLatencies.length)).toFixed(2)),
       evidenceCoverageRate: Number((runtimeResults.filter((result) => result.evidenceCoverage).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceDigestSummaryRate: Number((runtimeResults.filter((result) => result.hasDigestSummary).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceEventSnippetRate: Number((runtimeResults.filter((result) => result.hasEventSnippets).length / Math.max(1, runtimeResults.length)).toFixed(3)),
@@ -1554,6 +1628,9 @@ async function run() {
       evidenceStateConfidenceRate: Number((runtimeResults.filter((result) => result.hasStateConfidence).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceStateTransitionTaxonomyRate: Number((runtimeResults.filter((result) => result.hasStateTransitionTaxonomy).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       evidenceRecentStateChangesRate: Number((runtimeResults.filter((result) => result.hasRecentStateChanges).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      workingMemoryVersionRate: Number((runtimeResults.filter((result) => result.hasWorkingMemoryVersion).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      stableStateVersionRate: Number((runtimeResults.filter((result) => result.hasStableStateVersion).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      fastLayerContextSummaryRate: Number((runtimeResults.filter((result) => result.hasFastLayerContextSummary).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       digestTriggerRate: Number((runtimeResults.filter((result) => result.digestTriggered).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       writeTierCounts,
       noteTaxonomy,
@@ -1643,6 +1720,9 @@ async function run() {
     `- API: ${cfg.apiBaseUrl}`,
     `- Seed: ${cfg.seed}`,
     `- Fixture: ${cfg.fixture || "(none)"}`,
+    `- Fixture name: ${report.fixture?.name || "(none)"}`,
+    `- Fixture description: ${report.fixture?.description || "(none)"}`,
+    `- Fixture focus: ${report.fixture?.benchmarkFocus?.length ? report.fixture.benchmarkFocus.join(", ") : "(none)"}`,
     `- Commit: ${report.commit}`,
     `- Describe: ${report.describe}`,
     `- Node: ${report.environment.node} (${report.environment.platform}/${report.environment.arch})`,
@@ -1678,6 +1758,8 @@ async function run() {
     `- Digest success: ${report.metrics.digest.success}/${report.metrics.digest.runs}, consistency pass ${report.metrics.digest.consistencyPassRate}, repeatability ${report.metrics.digest.repeatabilityRate ?? 0}, omission warning rate ${report.metrics.digest.omissionWarningRate ?? 0}, avg latency ${report.metrics.digest.avgLatencyMs} ms`,
     `- Replay state match: ${report.metrics.replay.enabled ? (report.metrics.replay.successfulRuns ? (report.metrics.replay.stateMatch ? "yes" : "no") : `error (${report.metrics.replay.error})`) : "skipped"}${report.metrics.replay.enabled && report.metrics.replay.successfulRuns ? `, successful rebuilds ${report.metrics.replay.successfulRuns}/${report.metrics.replay.rebuildRuns}, snapshots ${report.metrics.replay.rebuildSnapshots}` : ""}`,
     `- Runtime turn success: ${report.metrics.runtime.enabled ? `${report.metrics.runtime.success}/${report.metrics.runtime.runs}` : "skipped"}, evidence coverage ${report.metrics.runtime.enabled ? report.metrics.runtime.evidenceCoverageRate : "n/a"}, avg latency ${report.metrics.runtime.enabled ? `${report.metrics.runtime.avgLatencyMs} ms` : "n/a"}`,
+    `- Runtime layer timings: fast path ${report.metrics.runtime.enabled ? `${report.metrics.runtime.fastPathAvgLatencyMs} ms` : "n/a"}, working memory update ${report.metrics.runtime.enabled ? `${report.metrics.runtime.workingMemoryUpdateAvgLatencyMs} ms` : "n/a"}, stable-state update ${report.metrics.runtime.enabled ? `${report.metrics.runtime.stableStateUpdateAvgLatencyMs} ms` : "n/a"}`,
+    `- Runtime layer metadata: working-memory version rate ${report.metrics.runtime.enabled ? report.metrics.runtime.workingMemoryVersionRate : "n/a"}, stable-state version rate ${report.metrics.runtime.enabled ? report.metrics.runtime.stableStateVersionRate : "n/a"}, fast-layer summary rate ${report.metrics.runtime.enabled ? report.metrics.runtime.fastLayerContextSummaryRate : "n/a"}`,
     `- Reminder sent: ${report.metrics.reminder.success === 1 ? "yes" : "no"}, delay ${report.metrics.reminder.delayMs} ms`,
     ...(report.metrics.digest.goldRetention
         ? [

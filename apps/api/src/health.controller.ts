@@ -8,6 +8,12 @@ export class HealthController {
     return {
       status: "ok",
       featureLlm: apiEnv.featureLlm,
+      workingMemory: {
+        enabled: apiEnv.workingMemoryEnabled,
+        useLlm: apiEnv.workingMemoryUseLlm,
+        maxRecentTurns: apiEnv.workingMemoryMaxRecentTurns,
+        maxItemsPerField: apiEnv.workingMemoryMaxItemsPerField
+      },
       retrieve: {
         useEmbeddings: apiEnv.retrieveUseEmbeddings,
         embeddingCandidateLimit: apiEnv.retrieveEmbeddingCandidateLimit

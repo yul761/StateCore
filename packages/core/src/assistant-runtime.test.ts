@@ -7,6 +7,7 @@ import {
   ProfiledDigestPolicy,
   ProfiledMemoryWritePolicy,
   ThresholdDigestPolicy,
+  type RuntimeBackgroundProcessor,
   type RuntimeMemoryService,
   type RuntimeRetrieveService
 } from "./assistant-runtime";
@@ -146,8 +147,10 @@ describe("AssistantSession", () => {
   }
 
   it("writes stable turns, returns evidence, and triggers digest", async () => {
-    const { memoryService, retrieveService, ingestEvent } = buildServices();
-    const requestDigest = vi.fn(async () => undefined);
+    const { memoryService, retrieveService } = buildServices();
+    const persistTurnArtifacts = vi.fn(async () => undefined);
+    const requestWorkingMemoryUpdate = vi.fn(async () => undefined);
+    const requestStableStateDigest = vi.fn(async () => undefined);
     const llm = {
       chat: vi.fn(async () => "Grounded answer")
     };
@@ -174,15 +177,35 @@ describe("AssistantSession", () => {
               { field: "todos", action: "add", value: "Document replay checks" }
             ]
           }
-        })
+        }),
+        workingMemoryLoader: async () => ({
+          scopeId: "scope-1",
+          version: 4,
+          state: {
+            currentGoal: "keep api stable",
+            activeConstraints: ["self-hosted first"],
+            recentDecisions: ["We decide to prioritize digest consistency"],
+            progressSummary: "runtime integration underway",
+            openQuestions: [],
+            sourceEventIds: ["evt-1"]
+          },
+          updatedAt: new Date("2026-03-17T00:00:00.000Z")
+        }),
+        recentTurnsLoader: async () => [
+          { id: "turn-1", content: "Previous user turn", createdAt: new Date("2026-03-17T00:00:00.000Z") }
+        ]
       }),
       llm: llm as any,
       prompts: {
         system: "Use memory.",
-        user: "Question: {{question}}\nDigest: {{digest}}\nEvents:\n{{events}}"
+        user: "Question: {{question}}\nWorking:\n{{workingMemory}}\nStable:\n{{stableState}}\nDigest: {{digest}}\nRetrieved:\n{{retrieval}}\nRecent:\n{{recentTurns}}\nEvents:\n{{events}}"
       },
       digestPolicy: new ThresholdDigestPolicy(),
-      digestTrigger: { requestDigest }
+      backgroundProcessor: {
+        persistTurnArtifacts,
+        requestWorkingMemoryUpdate,
+        requestStableStateDigest
+      } satisfies RuntimeBackgroundProcessor
     });
 
     const result = await session.handleTurn({
@@ -193,6 +216,9 @@ describe("AssistantSession", () => {
     expect(result.answer).toBe("Grounded answer");
     expect(result.writeTier).toBe("stable");
     expect(result.digestTriggered).toBe(true);
+    expect(result.workingMemoryVersion).toBe(4);
+    expect(result.stableStateVersion).toBe("digest-1");
+    expect(result.usedFastLayerContextSummary).toContain("working_goal:keep api stable");
     expect(result.notes).toContain("write_tier:stable_fact_signal");
     expect(result.notes).toContain("digest:stable_or_documented_turn");
     expect(result.evidence.digestIds).toEqual(["digest-1"]);
@@ -233,12 +259,19 @@ describe("AssistantSession", () => {
     expect(result.evidence.stateSummary).toBe(
       "digest:digest-1; goal:keep api stable; constraints:self-hosted first; todos:Document replay checks; provenance:goal|todos; recent:goal:set:keep api stable | todos:add:Document replay checks"
     );
-    expect(ingestEvent).toHaveBeenCalledTimes(2);
-    expect(requestDigest).toHaveBeenCalledWith("scope-1");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(persistTurnArtifacts).toHaveBeenCalledWith(expect.objectContaining({
+      scopeId: "scope-1",
+      writeTier: "stable",
+      answer: "Grounded answer"
+    }));
+    expect(requestWorkingMemoryUpdate).toHaveBeenCalledWith("scope-1");
+    expect(requestStableStateDigest).toHaveBeenCalledWith("scope-1");
   });
 
   it("skips memory writes for ephemeral turns", async () => {
-    const { memoryService, retrieveService, ingestEvent } = buildServices();
+    const { memoryService, retrieveService } = buildServices();
+    const persistTurnArtifacts = vi.fn(async () => undefined);
     const session = new AssistantSession({
       userId: "user-1",
       scopeId: "scope-1",
@@ -248,7 +281,10 @@ describe("AssistantSession", () => {
       prompts: {
         system: "Use memory.",
         user: "Question: {{question}}\nDigest: {{digest}}\nEvents:\n{{events}}"
-      }
+      },
+      backgroundProcessor: {
+        persistTurnArtifacts
+      } as RuntimeBackgroundProcessor
     });
 
     const result = await session.handleTurn({
@@ -259,12 +295,42 @@ describe("AssistantSession", () => {
     expect(result.writeTier).toBe("ephemeral");
     expect(result.digestTriggered).toBe(false);
     expect(result.notes).toContain("write_tier:acknowledgement_only");
-    expect(ingestEvent).not.toHaveBeenCalled();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(persistTurnArtifacts).not.toHaveBeenCalled();
+  });
+
+  it("returns explicit null layer metadata when no working or stable snapshot exists yet", async () => {
+    const { memoryService, retrieveService } = buildServices();
+    const session = new AssistantSession({
+      userId: "user-1",
+      scopeId: "scope-1",
+      memoryService,
+      recallPolicy: new DefaultRecallPolicy(retrieveService, {
+        scopeStateLoader: async () => null,
+        workingMemoryLoader: async () => null
+      }),
+      llm: { chat: vi.fn(async () => "Fresh response") } as any,
+      prompts: {
+        system: "Use memory.",
+        user: "Question: {{question}}\nDigest: {{digest}}\nEvents:\n{{events}}"
+      }
+    });
+
+    const result = await session.handleTurn({
+      message: "goal: start a new scope",
+      source: "sdk"
+    });
+
+    expect(result.workingMemoryVersion).toBeNull();
+    expect(result.stableStateVersion).toBeNull();
+    expect(typeof result.usedFastLayerContextSummary).toBe("string");
+    expect(result.usedFastLayerContextSummary?.length).toBeGreaterThan(0);
   });
 
   it("respects explicit write tier and forced digest mode", async () => {
-    const { memoryService, retrieveService, ingestEvent } = buildServices();
-    const requestDigest = vi.fn(async () => undefined);
+    const { memoryService, retrieveService } = buildServices();
+    const persistTurnArtifacts = vi.fn(async () => undefined);
+    const requestStableStateDigest = vi.fn(async () => undefined);
     const session = new AssistantSession({
       userId: "user-1",
       scopeId: "scope-1",
@@ -276,7 +342,10 @@ describe("AssistantSession", () => {
         user: "Question: {{question}}\nDigest: {{digest}}\nEvents:\n{{events}}"
       },
       digestPolicy: new ThresholdDigestPolicy(99),
-      digestTrigger: { requestDigest }
+      backgroundProcessor: {
+        persistTurnArtifacts,
+        requestStableStateDigest
+      } as RuntimeBackgroundProcessor
     });
 
     const result = await session.handleTurn({
@@ -291,16 +360,14 @@ describe("AssistantSession", () => {
     expect(result.digestTriggered).toBe(true);
     expect(result.notes).toContain("write_tier:explicit_write_tier");
     expect(result.notes).toContain("digest:forced_by_input");
-    expect(requestDigest).toHaveBeenCalledWith("scope-1");
-    expect(ingestEvent).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      type: "document",
-      key: "doc:runtime-test"
-    }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(persistTurnArtifacts).toHaveBeenCalled();
+    expect(requestStableStateDigest).toHaveBeenCalledWith("scope-1");
   });
 
   it("records skipped digest mode in notes", async () => {
     const { memoryService, retrieveService } = buildServices();
-    const requestDigest = vi.fn(async () => undefined);
+    const requestStableStateDigest = vi.fn(async () => undefined);
     const session = new AssistantSession({
       userId: "user-1",
       scopeId: "scope-1",
@@ -312,7 +379,9 @@ describe("AssistantSession", () => {
         user: "Question: {{question}}\nDigest: {{digest}}\nEvents:\n{{events}}"
       },
       digestPolicy: new ThresholdDigestPolicy(),
-      digestTrigger: { requestDigest }
+      backgroundProcessor: {
+        requestStableStateDigest
+      } as RuntimeBackgroundProcessor
     });
 
     const result = await session.handleTurn({
@@ -323,6 +392,88 @@ describe("AssistantSession", () => {
 
     expect(result.digestTriggered).toBe(false);
     expect(result.notes).toContain("digest:skipped_by_input");
-    expect(requestDigest).not.toHaveBeenCalled();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requestStableStateDigest).not.toHaveBeenCalled();
+  });
+
+  it("returns before slow background persistence completes", async () => {
+    const { memoryService, retrieveService } = buildServices();
+    let release = () => undefined;
+    const persistTurnArtifacts = vi.fn(() => new Promise<void>((resolve) => {
+      release = resolve;
+    }));
+    const session = new AssistantSession({
+      userId: "user-1",
+      scopeId: "scope-1",
+      memoryService,
+      recallPolicy: new DefaultRecallPolicy(retrieveService),
+      llm: { chat: vi.fn(async () => "Fast reply") } as any,
+      prompts: {
+        system: "Use memory.",
+        user: "Question: {{question}}\nDigest: {{digest}}\nEvents:\n{{events}}"
+      },
+      backgroundProcessor: {
+        persistTurnArtifacts
+      } as RuntimeBackgroundProcessor
+    });
+
+    const result = await session.handleTurn({
+      message: "We decide to keep fast turns non-blocking",
+      source: "sdk"
+    });
+
+    expect(result.answer).toBe("Fast reply");
+    expect(persistTurnArtifacts).toHaveBeenCalledTimes(1);
+    release();
+  });
+
+  it("supports runtime prompts that respond from the current turn when memory is sparse", async () => {
+    const llm = {
+      chat: vi.fn(async (messages: Array<{ role: string; content: string }>) => messages[1]?.content ?? "")
+    };
+
+    const session = new AssistantSession({
+      userId: "user-1",
+      scopeId: "scope-1",
+      memoryService: { ingestEvent: vi.fn(async () => ({ ok: true })) },
+      recallPolicy: {
+        resolve: async () => ({
+          digest: null,
+          events: [],
+          retrieval: { matches: [] },
+          stateRef: null,
+          stateSnapshot: null,
+          workingMemorySnapshot: null,
+          workingMemoryView: { constraints: [], decisions: [], openQuestions: [] },
+          stableStateView: { constraints: [], decisions: [], todos: [], openQuestions: [], risks: [] },
+          recentTurns: [],
+          fastLayerContext: {
+            systemContext: "Respond quickly using the current user turn plus any recalled context.",
+            workingMemoryBlock: "(none)",
+            stableStateBlock: "(none)",
+            retrievalBlock: "(none)",
+            recentTurnsBlock: "(none)",
+            retrievalHints: { priorityTerms: [], exclusions: [] },
+            summary: "message_only"
+          }
+        })
+      },
+      llm: llm as any,
+      prompts: {
+        system: "Fast runtime.",
+        user: "Current user turn:\n{{currentTurn}}\nWorking:\n{{workingMemory}}\nStable:\n{{stableState}}"
+      }
+    });
+
+    const result = await session.handleTurn({
+      message: "Please turn this into a three-layer runtime with fast turns and background memory updates.",
+      source: "sdk",
+      writeTier: "candidate",
+      digestMode: "skip"
+    });
+
+    expect(result.answer).toContain("Current user turn:");
+    expect(result.answer).toContain("three-layer runtime");
+    expect(result.answer).toContain("Working:\n(none)");
   });
 });

@@ -252,6 +252,35 @@ describe("protectedStateMerge", () => {
     );
   });
 
+  it("promotes goal lines from stream deltas into stable goal instead of volatile context", () => {
+    const merged = protectedStateMerge({
+      prevState: null,
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "goal-1",
+          reason: "novel_event",
+          features: { kind: "note", importanceScore: 0.55, noveltyScore: 0.8 },
+          event: event({
+            id: "goal-1",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "goal: ship structured persistence for runtime turns"
+          })
+        }
+      ]
+    });
+
+    expect(merged.stableFacts.goal).toBe("ship structured persistence for runtime turns");
+    expect(merged.volatileContext ?? []).not.toContain("goal: ship structured persistence for runtime turns");
+    expect(merged.provenance?.goal).toContainEqual(expect.objectContaining({
+      id: "goal-1",
+      sourceType: "event",
+      kind: "note"
+    }));
+  });
+
   it("reaffirms semantically equivalent goals without replacing provenance", () => {
     const merged = protectedStateMerge({
       prevState: {
@@ -646,6 +675,58 @@ describe("protectedStateMerge", () => {
       expect.arrayContaining([
         expect.objectContaining({ field: "constraints", action: "reaffirm", value: "self hosted only" }),
         expect.objectContaining({ field: "todos", action: "reaffirm", value: "ship runtime docs" })
+      ])
+    );
+  });
+
+  it("normalizes structured constraint prefixes from stream events", () => {
+    const merged = protectedStateMerge({
+      prevState: {
+        stableFacts: {
+          goal: "ship alpha",
+          constraints: [],
+          decisions: []
+        },
+        workingNotes: {},
+        todos: [],
+        recentChanges: [],
+        evidenceRefs: []
+      },
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "evt-constraint-prefixed",
+          reason: "stable_fact_signal",
+          features: { kind: "constraint", importanceScore: 0.9, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-constraint-prefixed",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "constraint: keep fast path under 2 seconds"
+          })
+        },
+        {
+          eventId: "evt-todo-prefixed",
+          reason: "stable_fact_signal",
+          features: { kind: "todo", importanceScore: 0.8, noveltyScore: 0.9 },
+          event: event({
+            id: "evt-todo-prefixed",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "TODO: add a visible fast-layer smoke test"
+          })
+        }
+      ]
+    });
+
+    expect(merged.stableFacts.constraints).toEqual(["keep fast path under 2 seconds"]);
+    expect(merged.todos).toEqual(["TODO: add a visible fast-layer smoke test"]);
+    expect(merged.recentChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "constraints", action: "add", value: "keep fast path under 2 seconds" }),
+        expect.objectContaining({ field: "todos", action: "add", value: "TODO: add a visible fast-layer smoke test" })
       ])
     );
   });

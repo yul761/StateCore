@@ -6,4 +6,5 @@ const connection = {
 };
 
 export const digestQueue = new Queue("digest", { connection });
+export const workingMemoryQueue = new Queue("working-memory", { connection });
 export const reminderQueue = new Queue("reminder", { connection });

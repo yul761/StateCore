@@ -1,7 +1,16 @@
 import { Injectable } from "@nestjs/common";
 import { prisma } from "@project-memory/db";
-import { DigestService, MemoryService, ProjectService, RetrieveService, ReminderService, createModelProvider } from "@project-memory/core";
-import type { DigestConsistencyResult, DigestState } from "@project-memory/core";
+import {
+  DigestService,
+  MemoryService,
+  ProjectService,
+  RetrieveService,
+  ReminderService,
+  WorkingMemoryService,
+  compileStateLayerView,
+  createModelProvider
+} from "@project-memory/core";
+import type { DigestConsistencyResult, DigestState, WorkingMemorySnapshot, WorkingMemoryState, WorkingMemoryView } from "@project-memory/core";
 import { apiEnv } from "./env";
 
 @Injectable()
@@ -10,6 +19,7 @@ export class DomainService {
   public memoryService: MemoryService;
   public digestService: DigestService;
   public retrieveService: RetrieveService;
+  public workingMemoryService: WorkingMemoryService;
   public reminderService: ReminderService;
 
   private mapDigestStateSnapshot(snapshot: {
@@ -95,6 +105,12 @@ export class DomainService {
           where: { scopeId, createdAt: { gte: since } },
           orderBy: { createdAt: "desc" },
           take: limit
+        }),
+      listRecentTurns: (scopeId: string, limit: number) =>
+        prisma.memoryEvent.findMany({
+          where: { scopeId, type: "stream" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: limit
         })
     };
 
@@ -151,6 +167,48 @@ export class DomainService {
     this.projectService = new ProjectService(projectsRepo, userStateRepo);
     this.memoryService = new MemoryService(memoryRepo);
     this.digestService = new DigestService(digestRepo);
+    this.workingMemoryService = new WorkingMemoryService({
+      findLatest: async (scopeId: string) => {
+        const snapshot = await prisma.workingMemorySnapshot.findUnique({ where: { scopeId } });
+        if (!snapshot) return null;
+        return {
+          id: snapshot.id,
+          scopeId: snapshot.scopeId,
+          version: snapshot.version,
+          state: snapshot.state as unknown as WorkingMemoryState,
+          view: snapshot.view as unknown as WorkingMemoryView,
+          createdAt: snapshot.createdAt,
+          updatedAt: snapshot.updatedAt
+        } satisfies WorkingMemorySnapshot;
+      },
+      upsert: async (input) => {
+        const snapshot = await prisma.workingMemorySnapshot.upsert({
+          where: { scopeId: input.scopeId },
+          update: {
+            version: input.version,
+            state: input.state as any,
+            view: input.view as any
+          },
+          create: {
+            scopeId: input.scopeId,
+            version: input.version,
+            state: input.state as any,
+            view: input.view as any
+          }
+        });
+        return {
+          id: snapshot.id,
+          scopeId: snapshot.scopeId,
+          version: snapshot.version,
+          state: snapshot.state as unknown as WorkingMemoryState,
+          view: snapshot.view as unknown as WorkingMemoryView,
+          createdAt: snapshot.createdAt,
+          updatedAt: snapshot.updatedAt
+        } satisfies WorkingMemorySnapshot;
+      }
+    }, {
+      maxItemsPerField: apiEnv.workingMemoryMaxItemsPerField
+    });
     const provider = apiEnv.featureLlm
       ? createModelProvider({
           provider: apiEnv.modelProvider,
@@ -228,5 +286,53 @@ export class DomainService {
       take: limit
     });
     return snapshots.map((snapshot) => this.mapDigestStateSnapshot(snapshot));
+  }
+
+  async getLatestWorkingMemory(scopeId: string) {
+    return this.workingMemoryService.getLatest(scopeId);
+  }
+
+  async getStateLayerView(scopeId: string) {
+    const snapshot = await this.getLatestDigestState(scopeId);
+    if (!snapshot) return null;
+    return {
+      digestId: snapshot.digestId,
+      state: snapshot.state,
+      view: compileStateLayerView(snapshot.state),
+      consistency: snapshot.consistency,
+      createdAt: snapshot.createdAt
+    };
+  }
+
+  async listRecentTurns(scopeId: string, limit: number): Promise<Array<{ id: string; content: string; createdAt: Date }>> {
+    const recent = await prisma.memoryEvent.findMany({
+      where: { scopeId, type: "stream" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: Math.max(limit * 4, limit)
+    });
+    const ordered = recent.reverse();
+    const grouped: Array<{ id: string; content: string; createdAt: Date }> = [];
+
+    for (const event of ordered) {
+      const role = /^assistant reply:/i.test(event.content.trim()) ? "assistant" : "user";
+      const previous = grouped[grouped.length - 1];
+      const previousRole = previous && /^assistant reply:/i.test(previous.content.trim()) ? "assistant" : "user";
+      const withinTurnWindow = previous
+        ? Math.abs(event.createdAt.getTime() - previous.createdAt.getTime()) <= 5_000
+        : false;
+
+      if (previous && previousRole === role && withinTurnWindow && role === "user") {
+        previous.content = `${previous.content}\n${event.content}`;
+        continue;
+      }
+
+      grouped.push({
+        id: event.id,
+        content: event.content,
+        createdAt: event.createdAt
+      });
+    }
+
+    return grouped.slice(-limit);
   }
 }

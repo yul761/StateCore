@@ -565,8 +565,14 @@ function parseLinesWithPrefix(text: string, prefix: string) {
 }
 
 function parseGoal(text: string) {
-  const match = text.match(/\bgoal\s*:\s*([^\n.]+)/i);
-  return match?.[1]?.trim();
+  const line = text
+    .split("\n")
+    .map((entry) => entry.trim())
+    .find((entry) => /^goal\s*:/i.test(entry));
+  if (!line) return undefined;
+  const raw = line.replace(/^goal\s*:/i, "").trim();
+  const sectionBoundary = raw.match(/^(.*?)(?:\.\s+(?:constraints?|decisions?|todos?|next steps?|risks?|changes?|status)\b.*)?$/i);
+  return sectionBoundary?.[1]?.trim().replace(/\.$/, "") || undefined;
 }
 
 function findBestSemanticMatch(values: string[], candidate: string, threshold = 0.8) {
@@ -620,6 +626,18 @@ function stripTodoRemovalPrefix(text: string) {
   return text
     .replace(/^\s*(done|completed|complete|cancel|remove|drop|close)\s+/i, "")
     .trim();
+}
+
+function stripStructuredLabel(text: string, labels: string[]) {
+  if (!labels.length) return text.trim();
+  const pattern = labels
+    .map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  return text.replace(new RegExp(`^\\s*(?:${pattern})\\s*:\\s*`, "i"), "").trim();
+}
+
+function normalizeConstraintFactText(text: string) {
+  return stripStructuredLabel(text, ["constraint"]).trim();
 }
 
 function normalizeTodoFactText(text: string) {
@@ -944,6 +962,11 @@ export function protectedStateMerge(input: {
     next.evidenceRefs.push(evidence);
     const text = delta.event.content.trim();
     const lowered = text.toLowerCase();
+    const mentionedGoal = parseGoal(text);
+
+    if (mentionedGoal && delta.features.kind !== "noise") {
+      mergeGoalUpdate(next, mentionedGoal, evidence);
+    }
 
     if (delta.features.kind === "decision") {
       if (/\b(revoke|undo|cancel decision)\b/.test(lowered)) {
@@ -966,11 +989,6 @@ export function protectedStateMerge(input: {
         }
       }
 
-      const decisionGoal = parseGoal(text);
-      if (decisionGoal) {
-        mergeGoalUpdate(next, decisionGoal, evidence);
-      }
-
       const resolvedQuestion = removeWorkingNoteValue({
         values: next.workingNotes.openQuestions,
         provenance: next.provenance.openQuestions,
@@ -988,11 +1006,12 @@ export function protectedStateMerge(input: {
     }
 
     if (delta.features.kind === "constraint" && delta.features.importanceScore >= 0.75) {
-      const existing = findBestSemanticMatch(next.stableFacts.constraints, text);
+      const normalizedConstraint = normalizeConstraintFactText(text);
+      const existing = findBestSemanticMatch(next.stableFacts.constraints, normalizedConstraint);
       if (!existing) {
-        next.stableFacts.constraints.push(text);
-        pushRecentChange(next, { field: "constraints", action: "add", value: text, evidence });
-        next.provenance.constraints = upsertValueProvenance(next.provenance.constraints, text, evidence);
+        next.stableFacts.constraints.push(normalizedConstraint);
+        pushRecentChange(next, { field: "constraints", action: "add", value: normalizedConstraint, evidence });
+        next.provenance.constraints = upsertValueProvenance(next.provenance.constraints, normalizedConstraint, evidence);
       } else if (!valueHasEvidence(next.provenance.constraints, existing, evidence)) {
         pushRecentChange(next, { field: "constraints", action: "reaffirm", value: existing, evidence });
         next.provenance.constraints = upsertValueProvenance(next.provenance.constraints, existing, evidence);
@@ -1037,7 +1056,7 @@ export function protectedStateMerge(input: {
       }
     }
 
-    if (delta.features.kind === "status" || delta.features.kind === "note") {
+    if ((delta.features.kind === "status" || delta.features.kind === "note") && !mentionedGoal) {
       const normalizedVolatile = normalizeText(stripWorkingNoteResolutionPrefix(text) || text);
       if (resolvedRiskKeys.has(normalizedVolatile)) {
         continue;

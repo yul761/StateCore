@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Inject, Post, Query, Req } from "@nestjs/common";
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import {
   AnswerInput,
   DigestRebuildInput,
@@ -12,16 +12,40 @@ import {
   AssistantSession,
   buildGroundingEvidence,
   type ChatModel,
+  compileFastLayerContext,
+  compileStateLayerView,
   createRuntimePolicyBundle,
   createRuntimeRecallPolicy,
   createModelProvider,
   generateAnswer
 } from "@project-memory/core";
-import { digestQueue } from "./queue";
+import { digestQueue, workingMemoryQueue } from "./queue";
 import { DomainService } from "./domain.service";
 import type { RequestWithUser } from "./types";
 import { apiEnv } from "./env";
-import { answerSystemPrompt, answerUserPrompt } from "@project-memory/prompts";
+import { answerSystemPrompt, answerUserPrompt, runtimeSystemPrompt, runtimeUserPrompt } from "@project-memory/prompts";
+
+function splitStructuredTurnLines(message: string) {
+  const lines = message
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length <= 1) {
+    return lines;
+  }
+
+  const structuredLineCount = lines.filter((line) =>
+    /^(goal|constraint|decision|todo|question|open question|risk|status|status update)\s*:/i.test(line)
+    || /^(we decide|we agreed|agreed)\b/i.test(line)
+  ).length;
+
+  if (structuredLineCount < 2) {
+    return [message];
+  }
+
+  return lines;
+}
 
 @Controller()
 export class MemoryController {
@@ -197,6 +221,97 @@ export class MemoryController {
     };
   }
 
+  @Get("/memory/stable-state")
+  async getStableState(@Req() req: RequestWithUser, @Query("scopeId") scopeId?: string) {
+    if (!scopeId) return { error: "scopeId required" };
+    const scope = await this.domain.projectService.getScope(req.userId, scopeId);
+    if (!scope) {
+      return { error: "Scope not found" };
+    }
+    const snapshot = await this.domain.getStateLayerView(scopeId);
+    if (!snapshot) {
+      return { digestId: null, state: null, view: null, consistency: null, createdAt: null };
+    }
+    return {
+      digestId: snapshot.digestId,
+      state: snapshot.state,
+      view: snapshot.view,
+      consistency: snapshot.consistency,
+      createdAt: snapshot.createdAt.toISOString()
+    };
+  }
+
+  @Get("/memory/working-state")
+  async getWorkingState(@Req() req: RequestWithUser, @Query("scopeId") scopeId?: string) {
+    if (!scopeId) return { error: "scopeId required" };
+    const scope = await this.domain.projectService.getScope(req.userId, scopeId);
+    if (!scope) {
+      return { error: "Scope not found" };
+    }
+    const snapshot = await this.domain.getLatestWorkingMemory(scopeId);
+    if (!snapshot) {
+      return { scopeId, version: 0, state: null, view: null, updatedAt: null };
+    }
+    return {
+      scopeId,
+      version: snapshot.version,
+      state: snapshot.state,
+      view: snapshot.view,
+      updatedAt: snapshot.updatedAt.toISOString()
+    };
+  }
+
+  @Get("/memory/fast-view")
+  async getFastView(
+    @Req() req: RequestWithUser,
+    @Query("scopeId") scopeId?: string,
+    @Query("message") message?: string
+  ) {
+    if (!scopeId) return { error: "scopeId required" };
+    const scope = await this.domain.projectService.getScope(req.userId, scopeId);
+    if (!scope) {
+      return { error: "Scope not found" };
+    }
+    const runtimePolicy = createRuntimeRecallPolicy(this.domain.retrieveService, {
+      scopeStateLoader: async (value) => this.domain.getLatestDigestState(value),
+      workingMemoryLoader: async (value) => {
+        const snapshot = await this.domain.getLatestWorkingMemory(value);
+        return snapshot
+          ? {
+              scopeId: snapshot.scopeId,
+              id: snapshot.id,
+              version: snapshot.version,
+              state: snapshot.state,
+              view: snapshot.view,
+              updatedAt: snapshot.updatedAt,
+              createdAt: snapshot.createdAt
+            }
+          : null;
+      },
+      recentTurnsLoader: async (value, limit) => this.domain.listRecentTurns(value, limit)
+    });
+    const recall = await runtimePolicy.resolve({
+      scopeId,
+      message: message || "Show the current fast-layer context."
+    });
+    return {
+      scopeId,
+      workingMemoryVersion: recall.workingMemorySnapshot?.version ?? null,
+      stableStateVersion: recall.stateRef ?? null,
+      fastLayerContext: recall.fastLayerContext ?? compileFastLayerContext({
+        message: message || "",
+        workingMemoryView: recall.workingMemoryView,
+        stateLayerView: recall.stableStateView ?? compileStateLayerView(recall.stateSnapshot?.state ?? null),
+        retrievalSnippets: recall.events.map((event) => ({
+          id: event.id,
+          content: event.content,
+          createdAt: event.createdAt
+        })),
+        recentTurns: recall.recentTurns ?? []
+      })
+    };
+  }
+
   @Get("/memory/state/history")
   async getDigestStateHistory(
     @Req() req: RequestWithUser,
@@ -298,17 +413,73 @@ export class MemoryController {
       recallPolicy: createRuntimeRecallPolicy(this.domain.retrieveService, {
         profile: policyProfile,
         overrides: input.policyOverrides,
-        scopeStateLoader: async (scopeId) => this.domain.getLatestDigestState(scopeId)
+        scopeStateLoader: async (scopeId) => this.domain.getLatestDigestState(scopeId),
+        workingMemoryLoader: async (scopeId) => {
+          const snapshot = await this.domain.getLatestWorkingMemory(scopeId);
+          return snapshot
+            ? {
+                scopeId: snapshot.scopeId,
+                id: snapshot.id,
+                version: snapshot.version,
+                state: snapshot.state,
+                view: snapshot.view,
+                updatedAt: snapshot.updatedAt,
+                createdAt: snapshot.createdAt
+              }
+            : null;
+        },
+        recentTurnsLoader: async (scopeId, limit) => this.domain.listRecentTurns(scopeId, limit)
       }),
       llm: this.llm,
       prompts: {
-        system: answerSystemPrompt,
-        user: answerUserPrompt
+        system: runtimeSystemPrompt,
+        user: runtimeUserPrompt
       },
       memoryWritePolicy: policies.memoryWritePolicy,
       digestPolicy: policies.digestPolicy,
       digestTrigger: {
         requestDigest: async (scopeId) => {
+          await digestQueue.add("digest_scope", { userId: req.userId, scopeId });
+        }
+      },
+      backgroundProcessor: {
+        persistTurnArtifacts: async ({ turn, writeTier, answer, assistantReplySource }) => {
+          if (writeTier === "documented") {
+            const documentKey = turn.documentKey
+              ?? (typeof turn.metadata?.documentKey === "string" ? turn.metadata.documentKey : null)
+              ?? `runtime:${createHash("sha1").update(turn.message).digest("hex").slice(0, 12)}`;
+            await this.domain.memoryService.ingestEvent({
+              userId: req.userId,
+              scopeId: input.scopeId,
+              type: "document",
+              source: turn.source ?? "api",
+              key: documentKey,
+              content: turn.message
+            });
+          } else {
+            for (const line of splitStructuredTurnLines(turn.message)) {
+              await this.domain.memoryService.ingestEvent({
+                userId: req.userId,
+                scopeId: input.scopeId,
+                type: "stream",
+                source: turn.source ?? "api",
+                content: line
+              });
+            }
+          }
+
+          await this.domain.memoryService.ingestEvent({
+            userId: req.userId,
+            scopeId: input.scopeId,
+            type: "stream",
+            source: assistantReplySource,
+            content: `Assistant reply: ${answer}`
+          });
+        },
+        requestWorkingMemoryUpdate: async (scopeId) => {
+          await workingMemoryQueue.add("working_memory_update", { userId: req.userId, scopeId });
+        },
+        requestStableStateDigest: async (scopeId) => {
           await digestQueue.add("digest_scope", { userId: req.userId, scopeId });
         }
       },
