@@ -1,6 +1,20 @@
 # Technical Overview
 
-This document explains the backend architecture, technology choices, and the digest control workflow.
+This document explains the backend architecture, technology choices, and the three-layer memory workflow.
+
+## Memory Layers
+
+Project Memory now separates memory into three explicit layers:
+
+- Fast Layer
+  - synchronous prompt-building context for the current turn
+  - built from recent turns, retrieval, Working Memory, and State Layer views
+- Working Memory Layer
+  - lightweight, quickly updated structured state for active work
+  - updated independently from the State Layer digest pipeline
+- State Layer
+  - authoritative long-term memory
+  - persisted and consolidated through the controlled digest pipeline
 
 ## Stack
 
@@ -25,19 +39,35 @@ This document explains the backend architecture, technology choices, and the dig
 ## End-to-End Workflow
 
 ```mermaid
-flowchart LR
-  U[Adapter / CLI] --> A[API]
-  A --> DB[(Postgres)]
-  A --> Q[(Redis Queue)]
-  Q --> W[Worker]
-  W --> DB
-  W --> LLM[OpenAI-compatible LLM]
+flowchart TD
+  U[Adapter / CLI] --> A[API Runtime]
+  A --> F[Fast Layer Context Compiler]
+  F --> LLM[Answer Model]
+  LLM --> A
   A --> U
+  A -. background .-> DB[(Postgres)]
+  A -. enqueue .-> WMQ[(Working Memory Queue)]
+  A -. enqueue .-> SQ[(State Layer Digest Queue)]
+  WMQ --> WMW[Working Memory Worker]
+  SQ --> SW[State Layer Worker]
+  WMW --> DB
+  SW --> DB
 ```
 
-## Digest Control Pipeline
+## Turn Lifecycle
 
-The digest pipeline is intentionally not a single LLM call.
+1. Runtime loads the latest Working Memory snapshot and State Layer snapshot.
+2. Fast Layer compiles the current-turn prompt context.
+3. The answer model returns immediately.
+4. Runtime returns the response without waiting for the State Layer digest pipeline.
+5. In background:
+   - events are persisted
+   - Working Memory is updated
+   - State Layer digest is optionally enqueued
+
+## State Layer Digest Pipeline
+
+The State Layer digest pipeline is intentionally not a single LLM call.
 
 ```mermaid
 flowchart TD
@@ -81,6 +111,9 @@ flowchart TD
   - lightweight `recentChanges`
 - Conservative overwrite rules prevent accidental drift.
 
+This layer is authoritative.
+Working Memory may help the next turn quickly, but it does not overwrite this layer by itself.
+
 ### 4) LLM Generation
 
 - Optional classifier stage (`DIGEST_USE_LLM_CLASSIFIER=true`).
@@ -99,9 +132,19 @@ flowchart TD
 - Retry with corrective instruction up to:
   - `DIGEST_MAX_RETRIES`
 
-## Digest State Snapshots
+## State Layer Snapshots
 
 After each digest, the worker persists a `DigestStateSnapshot` row. When the next digest runs, the snapshot is used as the previous protected state (fallback to derived state if no snapshot exists). This keeps state evolution deterministic and avoids reconstructing from text when possible.
+
+## Working Memory Snapshots
+
+Working Memory snapshots are stored separately from State Layer snapshots.
+They are cheap to update, versioned independently, and designed for fast-turn usefulness rather than durable authority.
+The extractor is intentionally conservative:
+
+- it prefers recent user/document events over assistant-generated replies
+- it parses structured multi-line turns line by line
+- it avoids turning assistant follow-up questions into short-term truth by default
 
 ## Rebuild / Backfill
 
@@ -133,7 +176,9 @@ Use `pnpm benchmark` to generate reproducible performance/reliability reports.
 The benchmark currently measures:
 - ingest throughput and latency
 - retrieve latency and hit-rate
-- digest success + consistency + latency (when LLM enabled)
+- fast-turn latency
+- working-memory update latency
+- State Layer digest success + consistency + latency (when LLM enabled)
 - reminder due-to-sent latency
 
 Reports are written to `benchmark-results/` as JSON and Markdown.

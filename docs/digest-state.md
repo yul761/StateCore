@@ -2,11 +2,14 @@
 
 This document defines the role, structure, and evolution rules for `DigestState`.
 
-`DigestState` is the protected memory state that sits between raw events and generated digests. It exists to reduce drift by giving the system a stable, structured memory representation that does not depend entirely on free-form summary text.
+In the three-layer architecture, `DigestState` should be read as the internal State Layer representation.
+It remains the authoritative protected memory layer, but it is no longer the only memory layer in the system.
+
+`DigestState` is the protected State Layer memory that sits between raw events and generated digests. It exists to reduce drift by giving the system a stable, structured memory representation that does not depend entirely on free-form summary text.
 
 ## Purpose
 
-`DigestState` should be treated as a first-class memory artifact.
+`DigestState` should be treated as a first-class State Layer artifact.
 
 Its job is to:
 
@@ -17,6 +20,11 @@ Its job is to:
 - support replay, rebuild, and auditing
 
 Without a protected state layer, the system must repeatedly infer memory from previous digest text, which increases ambiguity and drift risk.
+
+It is distinct from:
+
+- Fast Layer context
+- Working Memory snapshots
 
 ## Current State in the Repository
 
@@ -58,7 +66,7 @@ This exists in:
 - `packages/core/src/digest-control.ts`
 - `packages/contracts/src/index.ts`
 
-This is already useful, but it is still an early protected-state model rather than the final intended state design.
+This is already useful, but it is still an early State Layer model rather than the final intended state design.
 
 ## Design Goals
 

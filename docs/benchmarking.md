@@ -2,6 +2,12 @@
 
 Project Memory includes a reproducible benchmark runner for research-facing claims (latency, throughput, reliability, digest consistency).
 
+In the three-layer architecture, benchmark output should be read as separating:
+
+- Fast Layer turn latency
+- Working Memory update latency
+- State Layer digest latency
+
 ## Run
 
 Prerequisites:
@@ -18,6 +24,19 @@ Reproducible run (fixed seed + fixture):
 ```bash
 BENCH_SEED=42 BENCH_FIXTURE=benchmark-fixtures/basic.json pnpm benchmark
 ```
+
+Three-layer runtime scenario:
+```bash
+BENCH_FIXTURE=benchmark-fixtures/three-layer-session.json pnpm benchmark
+```
+
+`three-layer-session.json` is the fixture to use when you want runtime-facing evidence for the
+new architecture. It simulates a drift-sensitive session where:
+
+- the goal shifts from generic low-drift memory into an explicit three-layer runtime
+- Working Memory is expected to refresh between turns
+- State Layer remains the durable truth via the digest pipeline
+- benchmark reports should separate fast-path latency from Working Memory and State Layer update latency
 
 Generate additional fixtures:
 ```bash
@@ -224,6 +243,9 @@ The benchmark now also emits state-backed counterparts for the latest protected 
 6. Assistant runtime
 - turn success rate
 - average turn latency
+- fast-path average turn latency
+- working-memory update average latency
+- stable-state update average latency
 - evidence coverage rate
 - digest-summary evidence rate
 - event-snippet evidence rate
@@ -238,6 +260,9 @@ The benchmark now also emits state-backed counterparts for the latest protected 
 - observed write-tier distribution
 - policy profile used by the run
 - runtime decision-note taxonomy
+- working-memory-version coverage rate
+- stable-state-version coverage rate
+- fast-layer-context-summary coverage rate
 
 7. Answer grounding
 - answer success rate

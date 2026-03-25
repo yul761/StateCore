@@ -85,6 +85,38 @@ flowchart LR
 Project Memory is not trying to make one summary prompt slightly better.
 It changes the memory update mechanism itself.
 
+## Three-Layer Architecture
+
+Project Memory now separates memory into three layers on purpose:
+
+- Fast Layer
+  - synchronous
+  - used to assemble prompt context for the current turn
+  - optimized for low latency, not for authority
+- Working Memory Layer
+  - lightweight, quickly updated structured memory
+  - bridges the gap between raw recent turns and slow stable-state consolidation
+  - session/task scoped and allowed to be approximate
+- State Layer
+  - authoritative, replayable, low-drift long-term memory
+  - updated asynchronously through the controlled digest pipeline
+  - source of durable truth
+
+Why this split exists:
+
+- a single layer is too slow if you want strict consolidation on every turn
+- a single layer is too unreliable if you let fast-turn prompts become durable truth
+- fast response and low-drift long-term memory are different jobs and should not share the same update path
+
+## Turn Lifecycle
+
+1. User message hits the runtime entrypoint.
+2. Fast Layer builds prompt context from recent turns, retrieval, Working Memory, and State Layer snapshots.
+3. The model returns an immediate response.
+4. The API returns that response immediately.
+5. In the background, the system persists events, updates Working Memory, and optionally enqueues a State Layer digest.
+6. The next turn sees the newer Working Memory immediately, and the newer State Layer once the digest commits.
+
 ## What Problem It Solves
 
 Most LLM applications accumulate memory in one of two ways:
@@ -197,7 +229,11 @@ Optional:
 
 ```bash
 pnpm dev:cli -- state
+pnpm dev:cli -- working-state
+pnpm dev:cli -- stable-state
+pnpm dev:cli -- fast-view "What is the current goal?"
 pnpm dev:cli -- turn "What changed in the project plan?"
+pnpm benchmark:visible
 ```
 
 ## Why This Exists
@@ -274,33 +310,43 @@ Optional hybrid retrieval can be enabled with:
 ## Architecture
 
 Project Memory sits between your interaction layer and your model endpoint.
-It owns memory state, digest control, replay, and grounded answer generation.
+It owns the fast-turn context path, Working Memory updates, State Layer consolidation, replay, and grounded answer generation.
 
 ```mermaid
-flowchart LR
-  U[Adapter / CLI] --> A[API]
-  A --> DB[(Postgres)]
-  A --> Q[(Redis Queue)]
-  Q --> W[Worker]
-  W --> LLM[OpenAI-compatible LLM]
-  W --> DB
+flowchart TD
+  U[User / Adapter / CLI] --> A[API Runtime]
+  A --> F[Fast Layer Context Compiler]
+  F --> LLM[Answer Model]
+  LLM --> A
   A --> U
+
+  A -. background .-> E[Persist Events]
+  E --> DB[(Postgres)]
+  A -. background .-> WMQ[(Working Memory Queue)]
+  A -. background .-> SQ[(State Layer Digest Queue)]
+  WMQ --> WMW[Working Memory Worker]
+  SQ --> SW[State Layer Worker]
+  WMW --> DB
+  SW --> DB
+  DB --> F
 ```
 
 Core responsibilities:
 
-- ingest events and document updates
-- maintain protected memory state
-- consolidate memory through digest control
-- retrieve grounded evidence
-- run replay and rebuild workflows
+- build fast-turn prompt context without waiting for full stable-state consolidation
+- maintain low-latency Working Memory snapshots for active conversations
+- consolidate authoritative State Layer snapshots through the digest control pipeline
+- retrieve grounded evidence for runtime turns and answer calls
+- run replay and rebuild workflows for stable-state validation
 
 ## Benchmarking
 
 Project Memory includes built-in evaluation for:
 
 - ingest and retrieval performance
-- digest consistency and repeatability
+- fast-turn latency
+- working-memory update latency
+- State Layer digest consistency and repeatability
 - replay consistency and transition matching
 - grounded answer coverage
 - long-term memory reliability
@@ -310,6 +356,12 @@ Run:
 
 ```bash
 pnpm benchmark
+```
+
+Three-layer runtime scenario:
+
+```bash
+BENCH_FIXTURE=benchmark-fixtures/three-layer-session.json pnpm benchmark
 ```
 
 More detail lives in:

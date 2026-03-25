@@ -24,6 +24,12 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
 - **GET /memory/state?scopeId=**
   - returns latest `DigestStateSnapshot` for replay/audit use
   - includes `consistency: { ok, errors, warnings } | null`
+- **GET /memory/stable-state?scopeId=**
+  - returns latest authoritative State Layer snapshot plus compiled State Layer view
+- **GET /memory/working-state?scopeId=**
+  - returns latest Working Memory snapshot plus compiled Working Memory view
+- **GET /memory/fast-view?scopeId=&message=**
+  - returns compiled Fast Layer context for inspection/debug
 - **GET /memory/state/history?scopeId=&limit=&rebuildGroupId=**
   - returns recent `DigestStateSnapshot` items for replay/audit use
   - each item includes `consistency: { ok, errors, warnings } | null`
@@ -52,7 +58,7 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
 - **POST /memory/runtime/turn**
   - body: `{ scopeId, message, source?, policyProfile?, policyOverrides?, writeTier?, documentKey?, digestMode?, metadata? }`
   - runs the assistant runtime session flow
-  - returns `{ answer, writeTier, digestTriggered, notes?, evidence }`
+  - returns `{ answer, writeTier, digestTriggered, workingMemoryVersion?, stableStateVersion?, usedFastLayerContextSummary?, notes?, evidence }`
   - `evidence` now includes both ids and lightweight summaries/snippets
   - `evidence.eventSnippets` now also carries retrieval ranking metadata when available (`sourceType`, scores, `rankingReason`)
   - `evidence.stateSummary` is derived from the latest digest state snapshot when available, not just a snapshot id placeholder
@@ -75,7 +81,10 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
 ## Health
 - **GET /health**
   - returns `status`
-  - also exposes active retrieval config and model-role names for benchmark/reproducibility tooling
+  - also exposes:
+    - active Working Memory config
+    - active retrieval config
+    - model-role names for benchmark/reproducibility tooling
 
 ## Example (curl)
 ```bash

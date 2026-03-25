@@ -58,6 +58,12 @@ Then open:
 
 - `artifacts/demos/visible-comparison-latest.md`
 
+If you want the repo's broader three-layer benchmark instead of the side-by-side visible demo:
+
+```bash
+BENCH_FIXTURE=benchmark-fixtures/three-layer-session.json pnpm benchmark
+```
+
 ## If You Want The Internals
 
 Read these next:

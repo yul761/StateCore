@@ -4,6 +4,9 @@ This document defines the intended assistant runtime layer for Project Memory.
 
 Project Memory should not stop at exposing low-level memory primitives. It should provide a developer-facing runtime that makes long-term memory usable without forcing every integrator to rebuild the same ingestion, recall, prompt assembly, answer grounding, and digest-trigger logic.
 
+In the current architecture, the assistant runtime is the Fast Layer orchestrator.
+It should return quickly while Working Memory and State Layer updates continue in the background.
+
 ## Purpose
 
 The assistant runtime exists to turn the memory system into a practical integration layer.
@@ -79,8 +82,12 @@ Responsibilities:
 - resolve recall for the current turn
 - apply memory write policy
 - trigger answer generation
-- schedule or trigger digesting
+- schedule Working Memory updates
+- schedule or trigger State Layer digesting
 - return answer output with evidence
+
+Working Memory updates are intentionally lower-trust than State Layer digesting.
+The current extractor prefers user-authored and document-backed signals, and ignores assistant reply text when building short-term structured state so the runtime does not reinforce its own generations as memory.
 
 Minimum semantics:
 
@@ -118,13 +125,15 @@ The runtime should support rules that map incoming content into these tiers.
 
 ### RecallPolicy
 
-`RecallPolicy` determines what memory is retrieved before answer generation.
+`RecallPolicy` determines what memory is gathered before answer generation.
 
 At minimum, recall should consider:
 
 - the latest digest
-- protected state or snapshot state
+- State Layer snapshot/view
+- Working Memory snapshot/view
 - recent events
+- recent turns
 - relevant documents
 
 As retrieval evolves, this policy may also include vector or hybrid ranking. The runtime should keep the policy boundary explicit so retrieval improvements do not silently change answer behavior.
@@ -169,14 +178,13 @@ The current implementation already goes slightly beyond ids by returning lightwe
 The runtime for a single turn should roughly follow this sequence:
 
 1. Receive a user message.
-2. Classify the message for memory write intent.
-3. Store the raw turn or derived event payloads.
-4. Resolve recall for the turn.
-5. Build the answer context from digest, state, and selected events.
-6. Generate or return an answer.
-7. Persist the assistant reply if policy requires it.
-8. Trigger digesting if `DigestPolicy` conditions are met.
-9. Return answer text plus evidence information.
+2. Resolve Fast Layer context from recent turns, retrieval, Working Memory, and State Layer.
+3. Generate and return the answer immediately.
+4. Classify the message for memory write intent.
+5. Persist raw turn artifacts in the background.
+6. Enqueue a Working Memory update.
+7. Trigger State Layer digesting if `DigestPolicy` conditions are met.
+8. Return answer text plus evidence information and layer metadata.
 
 ## Suggested Runtime Interfaces
 
@@ -216,6 +224,12 @@ The current implementation is intentionally small:
 - `DefaultMemoryWritePolicy`
 - `DefaultRecallPolicy`
 - `ThresholdDigestPolicy`
+
+The current runtime output now also exposes lightweight layer metadata:
+
+- `workingMemoryVersion`
+- `stableStateVersion`
+- `usedFastLayerContextSummary`
 
 The current runtime turn input also supports explicit policy hints:
 
