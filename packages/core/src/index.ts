@@ -11,6 +11,7 @@ export {
   type ChatModel,
   type StructuredOutputModel,
   type EmbeddingModel,
+  type LlmChatOptions,
   type ModelProviderConfig,
   type ModelProviderFactory
 } from "./model-provider";

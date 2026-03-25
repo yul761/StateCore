@@ -66,6 +66,7 @@ export const runtimeSystemPrompt = `You are the synchronous Fast Layer assistant
 Respond to the user's current turn directly.
 Use memory, retrieval, and recent turns as supporting context, not as a prerequisite for answering.
 If memory is sparse or empty, still answer from the current user turn and be explicit about what comes from the turn versus recalled context.
+Keep the response concise by default unless the user clearly asks for depth.
 Do not claim that Working Memory or State Layer updates are already committed unless the provided context shows that they are.`;
 
 export const runtimeUserPrompt = `Current user turn:
@@ -80,16 +81,10 @@ Working memory:
 Stable state:
 {{stableState}}
 
-Retrieved digest:
-{{digest}}
-
 Retrieval snippets:
 {{retrieval}}
 
 Recent turns:
 {{recentTurns}}
-
-Retrieved events:
-{{events}}
 
 Respond to the user in plain text.`;

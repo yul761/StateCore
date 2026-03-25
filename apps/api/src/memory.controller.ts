@@ -14,6 +14,7 @@ import {
   type ChatModel,
   compileFastLayerContext,
   compileStateLayerView,
+  createChatModelClient,
   createRuntimePolicyBundle,
   createRuntimeRecallPolicy,
   createModelProvider,
@@ -49,11 +50,12 @@ function splitStructuredTurnLines(message: string) {
 
 @Controller()
 export class MemoryController {
-  private llm: ChatModel | null = null;
+  private answerLlm: ChatModel | null = null;
+  private runtimeLlm: ChatModel | null = null;
 
   constructor(@Inject(DomainService) private readonly domain: DomainService) {
     if (apiEnv.featureLlm) {
-      this.llm = createModelProvider({
+      this.answerLlm = createModelProvider({
         provider: apiEnv.modelProvider,
         apiKey: apiEnv.modelApiKey,
         baseUrl: apiEnv.modelBaseUrl,
@@ -69,6 +71,13 @@ export class MemoryController {
         embeddingModel: apiEnv.embeddingModelName || undefined,
         timeoutMs: apiEnv.modelTimeoutMs
       })?.chat ?? null;
+      this.runtimeLlm = createChatModelClient({
+        provider: apiEnv.modelProvider,
+        apiKey: apiEnv.runtimeModelApiKey,
+        baseUrl: apiEnv.runtimeModelBaseUrl,
+        model: apiEnv.runtimeModelName,
+        timeoutMs: apiEnv.runtimeModelTimeoutMs
+      });
     }
   }
 
@@ -359,7 +368,7 @@ export class MemoryController {
 
   @Post("/memory/answer")
   async answer(@Req() req: RequestWithUser, @Body() body: unknown) {
-    if (!apiEnv.featureLlm || !this.llm) {
+    if (!apiEnv.featureLlm || !this.answerLlm) {
       throw new BadRequestException("FEATURE_LLM disabled");
     }
     const input = AnswerInput.parse(body);
@@ -378,7 +387,7 @@ export class MemoryController {
       eventsText,
       systemPrompt: answerSystemPrompt,
       userPromptTemplate: answerUserPrompt,
-      llm: this.llm
+      llm: this.answerLlm
     });
 
     return {
@@ -395,7 +404,7 @@ export class MemoryController {
 
   @Post("/memory/runtime/turn")
   async runtimeTurn(@Req() req: RequestWithUser, @Body() body: unknown) {
-    if (!apiEnv.featureLlm || !this.llm) {
+    if (!apiEnv.featureLlm || !this.runtimeLlm) {
       throw new BadRequestException("FEATURE_LLM disabled");
     }
     const input = RuntimeTurnInput.parse(body);
@@ -430,10 +439,14 @@ export class MemoryController {
         },
         recentTurnsLoader: async (scopeId, limit) => this.domain.listRecentTurns(scopeId, limit)
       }),
-      llm: this.llm,
+      llm: this.runtimeLlm,
       prompts: {
         system: runtimeSystemPrompt,
         user: runtimeUserPrompt
+      },
+      runtimeResponseOptions: {
+        maxOutputTokens: apiEnv.runtimeModelMaxOutputTokens,
+        reasoningEffort: apiEnv.runtimeModelReasoningEffort
       },
       memoryWritePolicy: policies.memoryWritePolicy,
       digestPolicy: policies.digestPolicy,

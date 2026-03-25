@@ -97,7 +97,7 @@ describe("Profiled policies", () => {
       { profile: "conservative" }
     );
     await conservativeRecall.resolve({ scopeId: "scope-1", message: "test" });
-    expect(retrieve).toHaveBeenCalledWith("scope-1", 8, "test");
+    expect(retrieve).toHaveBeenCalledWith("scope-1", 2, "test");
 
     const overrideRecall = createRuntimeRecallPolicy(
       { retrieve } as unknown as RuntimeRetrieveService,
@@ -475,5 +475,63 @@ describe("AssistantSession", () => {
     expect(result.answer).toContain("Current user turn:");
     expect(result.answer).toContain("three-layer runtime");
     expect(result.answer).toContain("Working:\n(none)");
+    expect(llm.chat).toHaveBeenCalledWith(expect.any(Array), {
+      maxOutputTokens: 400,
+      reasoningEffort: "low"
+    });
+  });
+
+  it("falls back to uncapped runtime output when the capped call returns empty content", async () => {
+    const chat = vi.fn()
+      .mockRejectedValueOnce(new Error("LLM response missing content"))
+      .mockResolvedValueOnce("Recovered fast reply");
+
+    const session = new AssistantSession({
+      userId: "user-1",
+      scopeId: "scope-1",
+      memoryService: { ingestEvent: vi.fn(async () => ({ ok: true })) },
+      recallPolicy: {
+        resolve: async () => ({
+          digest: null,
+          events: [],
+          retrieval: { matches: [] },
+          stateRef: null,
+          stateSnapshot: null,
+          workingMemorySnapshot: null,
+          workingMemoryView: { constraints: [], decisions: [], openQuestions: [] },
+          stableStateView: { constraints: [], decisions: [], todos: [], openQuestions: [], risks: [] },
+          recentTurns: [],
+          fastLayerContext: {
+            systemContext: "Respond quickly.",
+            workingMemoryBlock: "(none)",
+            stableStateBlock: "(none)",
+            retrievalBlock: "(none)",
+            recentTurnsBlock: "(none)",
+            retrievalHints: { priorityTerms: [], exclusions: [] },
+            summary: "message_only"
+          }
+        })
+      },
+      llm: { chat } as any,
+      prompts: {
+        system: "Fast runtime.",
+        user: "Current user turn:\n{{currentTurn}}"
+      }
+    });
+
+    const result = await session.handleTurn({
+      message: "goal: keep fast runtime answers stable",
+      source: "sdk",
+      digestMode: "skip"
+    });
+
+    expect(result.answer).toBe("Recovered fast reply");
+    expect(chat).toHaveBeenNthCalledWith(1, expect.any(Array), {
+      maxOutputTokens: 400,
+      reasoningEffort: "low"
+    });
+    expect(chat).toHaveBeenNthCalledWith(2, expect.any(Array), {
+      reasoningEffort: "low"
+    });
   });
 });

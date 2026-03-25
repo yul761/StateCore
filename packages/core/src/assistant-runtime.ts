@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import type { ChatModel } from "./model-provider";
+import type { ChatModel, LlmChatOptions } from "./model-provider";
 import {
   compileFastLayerContext,
   type FastLayerContext,
@@ -12,6 +12,8 @@ import {
   type WorkingMemoryView
 } from "./working-memory.compiler";
 import type { WorkingMemoryState } from "./working-memory.extractor";
+
+const FAST_LAYER_MAX_OUTPUT_TOKENS = 400;
 
 export type MemorySource = "telegram" | "cli" | "api" | "sdk";
 
@@ -304,6 +306,11 @@ export interface AssistantSessionOptions {
   digestTrigger?: DigestTrigger;
   backgroundProcessor?: RuntimeBackgroundProcessor;
   assistantReplySource?: MemorySource;
+  runtimeResponseOptions?: LlmChatOptions;
+}
+
+function isEmptyContentError(error: unknown) {
+  return error instanceof Error && /LLM response missing content/i.test(error.message);
 }
 
 export function buildGroundingStateDetails(snapshot?: RuntimeStateSnapshot | null) {
@@ -502,21 +509,27 @@ export class DefaultRecallPolicy implements RecallPolicy {
   ) {}
 
   async resolve(input: { scopeId: string; message: string }): Promise<ResolvedRecall> {
-    const state = this.options?.scopeStateLoader ? await this.options.scopeStateLoader(input.scopeId) : null;
-    const workingMemory = this.options?.workingMemoryLoader ? await this.options.workingMemoryLoader(input.scopeId) : null;
+    const [state, workingMemory, recentTurnEvents] = await Promise.all([
+      this.options?.scopeStateLoader ? this.options.scopeStateLoader(input.scopeId) : Promise.resolve(null),
+      this.options?.workingMemoryLoader ? this.options.workingMemoryLoader(input.scopeId) : Promise.resolve(null),
+      this.options?.recentTurnsLoader
+        ? this.options.recentTurnsLoader(input.scopeId, this.options?.recentTurnsLimit ?? 3)
+        : Promise.resolve([])
+    ]);
     const stableStateView = compileStateLayerView(state?.state ?? null);
     const workingMemoryView = workingMemory?.view ?? compileWorkingMemoryView(workingMemory?.state ?? null);
     const retrieveQuery = [
       input.message,
       workingMemoryView.goal,
-      ...(workingMemoryView.constraints ?? []).slice(0, 2),
       stableStateView.goal,
-      ...(stableStateView.constraints ?? []).slice(0, 2)
+      ...(workingMemoryView.constraints ?? []).slice(0, 1),
+      ...(stableStateView.constraints ?? []).slice(0, 1)
     ].filter(Boolean).join("\n");
-    const result = await this.retrieveService.retrieve(input.scopeId, this.options?.limit ?? 12, retrieveQuery || input.message);
-    const recentTurnEvents = this.options?.recentTurnsLoader
-      ? await this.options.recentTurnsLoader(input.scopeId, this.options?.recentTurnsLimit ?? 6)
-      : [];
+    const result = await this.retrieveService.retrieve(
+      input.scopeId,
+      this.options?.limit ?? 4,
+      retrieveQuery || input.message
+    );
     const recentTurns = recentTurnEvents.map((event) => ({
       id: event.id,
       role: /^assistant reply:/i.test(event.content) ? "assistant" : "user",
@@ -618,13 +631,14 @@ export function createRuntimeRecallPolicy(
   }
 ) {
   const profile = options?.profile ?? "default";
-  const profileLimit = profile === "conservative" ? 8 : profile === "document-heavy" ? 16 : 12;
+  const profileLimit = profile === "conservative" ? 2 : profile === "document-heavy" ? 6 : 4;
+  const recentTurnsLimit = profile === "conservative" ? 2 : profile === "document-heavy" ? 4 : 3;
   return new DefaultRecallPolicy(retrieveService, {
     scopeStateLoader: options?.scopeStateLoader,
     workingMemoryLoader: options?.workingMemoryLoader,
     recentTurnsLoader: options?.recentTurnsLoader,
     limit: options?.overrides?.recallLimit ?? profileLimit,
-    recentTurnsLimit: 6
+    recentTurnsLimit
   });
 }
 
@@ -782,9 +796,24 @@ export class AssistantSession {
         recall.events.map((event) => `- ${event.createdAt.toISOString()}: ${event.content}`).join("\n") || "(no events)"
       );
 
-    return this.options.llm.chat([
+    const messages: Array<{ role: "system" | "user"; content: string }> = [
       { role: "system", content: this.options.prompts.system },
       { role: "user", content: userPrompt }
-    ]);
+    ];
+    const primaryOptions: LlmChatOptions = {
+      maxOutputTokens: this.options.runtimeResponseOptions?.maxOutputTokens ?? FAST_LAYER_MAX_OUTPUT_TOKENS,
+      reasoningEffort: this.options.runtimeResponseOptions?.reasoningEffort ?? "low"
+    };
+
+    try {
+      return await this.options.llm.chat(messages, primaryOptions);
+    } catch (error) {
+      if (!isEmptyContentError(error)) {
+        throw error;
+      }
+      return this.options.llm.chat(messages, {
+        reasoningEffort: primaryOptions.reasoningEffort
+      });
+    }
   }
 }

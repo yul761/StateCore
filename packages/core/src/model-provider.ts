@@ -5,6 +5,11 @@ export interface LlmClientOptions {
   timeoutMs?: number;
 }
 
+export interface LlmChatOptions {
+  maxOutputTokens?: number;
+  reasoningEffort?: "low" | "medium" | "high";
+}
+
 export interface ModelProviderConfig {
   provider?: string;
   apiKey?: string;
@@ -54,7 +59,30 @@ export class LlmClient {
     this.timeoutMs = options.timeoutMs ?? 20000;
   }
 
-  async chat(messages: { role: "system" | "user"; content: string }[]) {
+  private extractMessageContent(data: any) {
+    const raw = data?.choices?.[0]?.message?.content;
+    if (typeof raw === "string" && raw.trim()) {
+      return raw;
+    }
+    if (Array.isArray(raw)) {
+      const text = raw
+        .map((part) => {
+          if (typeof part === "string") return part;
+          if (typeof part?.text === "string") return part.text;
+          if (typeof part?.content === "string") return part.content;
+          return "";
+        })
+        .join("")
+        .trim();
+      if (text) return text;
+    }
+    if (typeof data?.output_text === "string" && data.output_text.trim()) {
+      return data.output_text;
+    }
+    return null;
+  }
+
+  async chat(messages: { role: "system" | "user"; content: string }[], options?: LlmChatOptions) {
     let lastError: unknown;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const controller = new AbortController();
@@ -71,7 +99,13 @@ export class LlmClient {
           headers,
           body: JSON.stringify({
             model: this.model,
-            messages
+            messages,
+            ...(typeof options?.maxOutputTokens === "number" && options.maxOutputTokens > 0
+              ? { max_completion_tokens: options.maxOutputTokens }
+              : {}),
+            ...(typeof options?.reasoningEffort === "string"
+              ? { reasoning_effort: options.reasoningEffort }
+              : {})
           }),
           signal: controller.signal
         });
@@ -82,7 +116,7 @@ export class LlmClient {
         }
 
         const data: any = await response.json();
-        const content = data?.choices?.[0]?.message?.content;
+        const content = this.extractMessageContent(data);
         if (!content) {
           throw new Error("LLM response missing content");
         }

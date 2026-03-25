@@ -23,6 +23,10 @@ export class HealthController {
         model: apiEnv.modelName,
         baseUrl: apiEnv.modelBaseUrl,
         chatModel: apiEnv.chatModelName,
+        runtimeModel: apiEnv.runtimeModelName,
+        runtimeModelBaseUrl: apiEnv.runtimeModelBaseUrl,
+        runtimeReasoningEffort: apiEnv.runtimeModelReasoningEffort,
+        runtimeMaxOutputTokens: apiEnv.runtimeModelMaxOutputTokens,
         structuredOutputModel: apiEnv.structuredOutputModelName,
         embeddingModel: apiEnv.embeddingModelName || null
       }

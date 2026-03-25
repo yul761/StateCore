@@ -30,10 +30,10 @@ export interface FastLayerContext {
   summary: string;
 }
 
-const MAX_RETRIEVAL_SNIPPETS = 3;
-const MAX_RECENT_TURNS = 4;
-const MAX_SNIPPET_CHARS = 280;
-const MAX_RECENT_TURN_CHARS = 360;
+const MAX_RETRIEVAL_SNIPPETS = 2;
+const MAX_RECENT_TURNS = 3;
+const MAX_SNIPPET_CHARS = 180;
+const MAX_RECENT_TURN_CHARS = 220;
 
 function uniq(items: string[]) {
   return [...new Set(items.map((item) => item.trim()).filter(Boolean))];

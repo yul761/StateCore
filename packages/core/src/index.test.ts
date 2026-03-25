@@ -158,6 +158,40 @@ describe("LlmClient", () => {
       Authorization: "Bearer secret"
     });
   });
+
+  it("supports max completion tokens and content-array responses", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: [
+                { type: "output_text", text: "fast" },
+                { type: "output_text", text: " reply" }
+              ]
+            }
+          }
+        ]
+      })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new LlmClient({
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-5-nano",
+      apiKey: "secret"
+    });
+
+    const content = await client.chat(
+      [{ role: "user", content: "hello" }],
+      { maxOutputTokens: 120, reasoningEffort: "low" }
+    );
+
+    expect(content).toBe("fast reply");
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toContain("\"max_completion_tokens\":120");
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toContain("\"reasoning_effort\":\"low\"");
+  });
 });
 
 describe("createEmbeddingModelClient", () => {

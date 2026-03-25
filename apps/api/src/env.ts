@@ -40,6 +40,12 @@ const envSchema = z.object({
   MODEL_CHAT_API_KEY: z.string().optional(),
   MODEL_CHAT_BASE_URL: z.string().optional(),
   MODEL_CHAT_NAME: z.string().optional(),
+  MODEL_RUNTIME_API_KEY: z.string().optional(),
+  MODEL_RUNTIME_BASE_URL: z.string().optional(),
+  MODEL_RUNTIME_NAME: z.string().optional(),
+  MODEL_RUNTIME_TIMEOUT_MS: z.string().optional(),
+  MODEL_RUNTIME_REASONING_EFFORT: z.enum(["low", "medium", "high"]).optional(),
+  MODEL_RUNTIME_MAX_OUTPUT_TOKENS: z.string().optional(),
   MODEL_STRUCTURED_OUTPUT_API_KEY: z.string().optional(),
   MODEL_STRUCTURED_OUTPUT_BASE_URL: z.string().optional(),
   MODEL_STRUCTURED_OUTPUT_NAME: z.string().optional(),
@@ -65,12 +71,15 @@ const requiresApiKeyForBaseUrl = (baseUrl: string) => /(^https?:\/\/)?api\.opena
 const modelBaseUrl = env.MODEL_BASE_URL || env.OPENAI_BASE_URL || "https://api.openai.com/v1";
 const modelName = env.MODEL_NAME || env.OPENAI_MODEL || "gpt-4o-mini";
 const chatModelBaseUrl = env.MODEL_CHAT_BASE_URL || modelBaseUrl;
+const runtimeModelBaseUrl = env.MODEL_RUNTIME_BASE_URL || chatModelBaseUrl;
 const structuredOutputModelBaseUrl = env.MODEL_STRUCTURED_OUTPUT_BASE_URL || modelBaseUrl;
 const embeddingModelBaseUrl = env.MODEL_EMBEDDING_BASE_URL || modelBaseUrl;
 const chatModelApiKey = env.MODEL_CHAT_API_KEY ?? env.MODEL_API_KEY ?? env.OPENAI_API_KEY ?? "";
+const runtimeModelApiKey = env.MODEL_RUNTIME_API_KEY ?? env.MODEL_CHAT_API_KEY ?? env.MODEL_API_KEY ?? env.OPENAI_API_KEY ?? "";
 const structuredOutputModelApiKey = env.MODEL_STRUCTURED_OUTPUT_API_KEY ?? env.MODEL_API_KEY ?? env.OPENAI_API_KEY ?? "";
 const embeddingModelApiKey = env.MODEL_EMBEDDING_API_KEY ?? env.MODEL_API_KEY ?? env.OPENAI_API_KEY ?? "";
 const chatModelName = env.MODEL_CHAT_NAME || modelName;
+const runtimeModelName = env.MODEL_RUNTIME_NAME || chatModelName;
 const structuredOutputModelName = env.MODEL_STRUCTURED_OUTPUT_NAME || modelName;
 const embeddingModelName = env.MODEL_EMBEDDING_NAME || "";
 const modelApiKey = env.MODEL_API_KEY || env.OPENAI_API_KEY || "";
@@ -86,6 +95,12 @@ if (toBool(env.FEATURE_LLM) && requiresApiKey && !modelApiKey) {
 if (toBool(env.FEATURE_LLM) && requiresApiKeyForBaseUrl(chatModelBaseUrl) && !chatModelApiKey) {
   // eslint-disable-next-line no-console
   console.error("Invalid environment variables", { MODEL_CHAT_API_KEY: ["MODEL_CHAT_API_KEY, MODEL_API_KEY, or OPENAI_API_KEY required for chat model configuration when FEATURE_LLM=true"] });
+  process.exit(1);
+}
+
+if (toBool(env.FEATURE_LLM) && requiresApiKeyForBaseUrl(runtimeModelBaseUrl) && !runtimeModelApiKey) {
+  // eslint-disable-next-line no-console
+  console.error("Invalid environment variables", { MODEL_RUNTIME_API_KEY: ["MODEL_RUNTIME_API_KEY, MODEL_CHAT_API_KEY, MODEL_API_KEY, or OPENAI_API_KEY required for runtime model configuration when FEATURE_LLM=true"] });
   process.exit(1);
 }
 
@@ -121,6 +136,12 @@ export const apiEnv = {
   chatModelApiKey,
   chatModelBaseUrl,
   chatModelName,
+  runtimeModelApiKey,
+  runtimeModelBaseUrl,
+  runtimeModelName,
+  runtimeModelTimeoutMs: Number(env.MODEL_RUNTIME_TIMEOUT_MS || env.MODEL_TIMEOUT_MS || 20000),
+  runtimeModelReasoningEffort: env.MODEL_RUNTIME_REASONING_EFFORT || "low",
+  runtimeModelMaxOutputTokens: Number(env.MODEL_RUNTIME_MAX_OUTPUT_TOKENS || 400),
   structuredOutputModelApiKey,
   structuredOutputModelBaseUrl,
   structuredOutputModelName,
