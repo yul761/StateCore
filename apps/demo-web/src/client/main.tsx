@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import { App } from "./App";
+import { getDemoConfig } from "./config";
 import "./styles.css";
 
 async function loadDemoConfig() {
@@ -17,10 +18,11 @@ async function loadDemoConfig() {
 
 async function bootstrap() {
   await loadDemoConfig();
+  const config = getDemoConfig();
 
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      <App />
+      <App config={config} />
     </React.StrictMode>
   );
 }

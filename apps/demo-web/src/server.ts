@@ -26,11 +26,55 @@ async function start() {
   const appRoot = path.resolve(path.dirname(serverFile), "..");
   const isProduction = process.env.NODE_ENV === "production";
 
+  app.use(express.json());
+
+  app.use(async (req, res, next) => {
+    const shouldProxy =
+      req.path === "/health" || req.path === "/state" || req.path.startsWith("/scopes") || req.path.startsWith("/memory");
+
+    if (!shouldProxy) {
+      next();
+      return;
+    }
+
+    try {
+      const upstreamUrl = new URL(req.originalUrl, apiBaseUrl);
+      const upstreamHeaders = new Headers();
+
+      for (const [key, value] of Object.entries(req.headers)) {
+        if (!value) continue;
+        if (key === "host" || key === "content-length" || key === "connection") continue;
+        upstreamHeaders.set(key, Array.isArray(value) ? value.join(", ") : value);
+      }
+
+      const upstreamResponse = await fetch(upstreamUrl, {
+        method: req.method,
+        headers: upstreamHeaders,
+        body:
+          req.method === "GET" || req.method === "HEAD"
+            ? undefined
+            : req.body !== undefined && Object.keys(req.body || {}).length
+              ? JSON.stringify(req.body)
+              : undefined
+      });
+
+      const responseText = await upstreamResponse.text();
+      res.status(upstreamResponse.status);
+      const contentType = upstreamResponse.headers.get("content-type");
+      if (contentType) {
+        res.setHeader("content-type", contentType);
+      }
+      res.send(responseText);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/config.js", (_req, res) => {
     res.type("application/javascript");
     res.send(
       `window.PROJECT_MEMORY_DEMO_CONFIG = ${JSON.stringify({
-        apiBaseUrl,
+        apiBaseUrl: "",
         routes: demoWebRoutes
       })};\n`
     );

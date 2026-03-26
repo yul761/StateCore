@@ -1,6 +1,6 @@
-import { DEMO_BRAND, DEMO_FLOW_STEPS, EMPTY_CHAT_HINTS, SUGGESTED_DEMO_TURNS } from "./content";
-import { pretty, type DemoHistoryEntry, type DiffEntry, type ScopeSummary } from "./lib";
-import { FactPills } from "./ui";
+import { DEMO_BRAND, DEMO_FLOW_STEPS, EMPTY_CHAT_HINTS, PIPELINE_LEGEND, SUGGESTED_DEMO_TURNS } from "./content";
+import { pretty, type DemoHistoryEntry, type DiffEntry, type PipelineState, type ScopeSummary } from "./lib";
+import { FactPills, PipelineView } from "./ui";
 
 export function ChatPanel(props: {
   activeScope: ScopeSummary | null;
@@ -14,6 +14,7 @@ export function ChatPanel(props: {
   stableCaughtUp: boolean;
   goalAligned: boolean | undefined;
   diff: { working: DiffEntry[]; stable: DiffEntry[] };
+  pipeline: PipelineState;
   history: DemoHistoryEntry[];
   latestMeta: DemoHistoryEntry["meta"] | null;
   messageInput: string;
@@ -32,6 +33,7 @@ export function ChatPanel(props: {
     stableCaughtUp,
     goalAligned,
     diff,
+    pipeline,
     history,
     latestMeta,
     messageInput,
@@ -52,117 +54,123 @@ export function ChatPanel(props: {
           <h2>Chat</h2>
         </div>
       </div>
-      <div className="hero-card">
-        <div className="hero-row">
-          <div>
-            <div className="eyebrow">Active Scope</div>
-            <h3 className="hero-title">{activeScope?.name || "No scope selected."}</h3>
+      <div className="chat-priority-grid">
+        <div className="chat-priority-main">
+          <div className="hero-card hero-card-compact">
+            <div className="hero-row">
+              <div>
+                <div className="eyebrow">Active Scope</div>
+                <h3 className="hero-title">{activeScope?.name || "No scope selected."}</h3>
+              </div>
+              <span className="hero-stage">{activeScope?.stage ? `Stage: ${activeScope.stage}` : "Unknown stage"}</span>
+            </div>
+            <div className="hero-goal">{goal}</div>
+            <div className="hero-facts">
+              <span className="hero-pill">Answer: {answerMode}</span>
+              <span className="hero-pill">Retrieval: {retrievalMode}</span>
+              <span className="hero-pill">Working: {String(workingVersion)}</span>
+              <span className="hero-pill">Stable: {stableVersion}</span>
+              <span className="hero-pill">Alignment {goalAligned === true ? "aligned" : goalAligned === false ? "drift" : "unknown"}</span>
+            </div>
           </div>
-          <span className="hero-stage">{activeScope?.stage ? `Stage: ${activeScope.stage}` : "Unknown stage"}</span>
-        </div>
-        <div className="hero-goal">{goal}</div>
-        <div className="hero-facts">
-          <span className="hero-pill">Answer: {answerMode}</span>
-          <span className="hero-pill">Retrieval: {retrievalMode}</span>
-          <span className="hero-pill">Working: {String(workingVersion)}</span>
-          <span className="hero-pill">Stable: {stableVersion}</span>
-        </div>
-        <div className="hero-facts">
-          <span className="hero-pill">Working {workingCaughtUp ? "caught up" : "pending"}</span>
-          <span className="hero-pill">Stable {stableCaughtUp ? "caught up" : "pending"}</span>
-          <span className="hero-pill">Alignment {goalAligned === true ? "aligned" : goalAligned === false ? "drift" : "unknown"}</span>
-        </div>
-      </div>
-      <div className="story-grid">
-        <article className="story-card">
-          <span className="story-label">Turn Story</span>
-          <strong className="story-headline">{turnStoryHeadline}</strong>
-          <div className="story-detail">
-            Retrieval ran in {retrievalMode} mode. Working Memory changed in {diff.working.length} field
-            {diff.working.length === 1 ? "" : "s"} and State Layer changed in {diff.stable.length} field
-            {diff.stable.length === 1 ? "" : "s"}. {workingCaughtUp ? "Working Memory is caught up." : "Working Memory is still catching up."}{" "}
-            {stableCaughtUp ? "Stable State is caught up." : "Stable State is still waiting on the digest boundary."}
+          <div className="chat-status-row">
+            <span className="chat-status-pill">{activeScope ? `${activeScope.name} (${activeScope.stage})` : "No active scope"}</span>
+            <span className="chat-status-pill">
+              {history.length} {history.length === 1 ? "message" : "messages"}
+            </span>
+            <span className="chat-status-pill">
+              {latestMeta?.answerMode
+                ? `Last answer: ${latestMeta.answerMode}`
+                : activeScopeId
+                  ? "Ask about goals, constraints, decisions, or open work"
+                  : "Create a scope to begin the demo"}
+            </span>
           </div>
-          <div className="story-facts">
-            <FactPills
-              items={[
-                `Answer: ${answerMode}`,
-                `Retrieval: ${retrievalMode}`,
-                `Working diff: ${diff.working.length}`,
-                `Stable diff: ${diff.stable.length}`,
-                `Working: ${workingCaughtUp ? "ready" : "pending"}`,
-                `Stable: ${stableCaughtUp ? "ready" : "pending"}`
-              ]}
+          <div className="messages">
+            {!history.length ? (
+              <div className="empty-state">
+                <strong>No turns yet for this scope.</strong>
+                {EMPTY_CHAT_HINTS.map((hint) => (
+                  <div className="empty-state-detail" key={hint}>
+                    {hint}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              [...history].reverse().map((entry, index) => (
+                <article className={`message message-${entry.role}`} key={`${entry.role}-${index}`}>
+                  <div className="message-label">{entry.role === "user" ? "You" : DEMO_BRAND.eyebrow}</div>
+                  <div className="message-body">{entry.content}</div>
+                  {entry.meta ? <pre className="message-meta">{pretty(entry.meta)}</pre> : null}
+                </article>
+              ))
+            )}
+          </div>
+          <form className="chat-form chat-form-below-history" onSubmit={onSubmit}>
+            <textarea
+              value={messageInput}
+              onChange={(event) => onMessageInputChange(event.target.value)}
+              rows={3}
+              placeholder="Ask about the current goal, constraints, or open work."
+              required
             />
+            <div className="chat-actions chat-actions-inline">
+              <div className="prompt-buttons prompt-buttons-compact">
+                {SUGGESTED_DEMO_TURNS.map(([prompt, label]) => (
+                  <button className="ghost prompt-button" key={prompt} type="button" onClick={() => onMessageInputChange(prompt)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <button type="submit">Send Turn</button>
+            </div>
+          </form>
+        </div>
+
+        <aside className="pipeline-focus-card">
+          <div className="story-card story-card-compact">
+            <span className="story-label">Turn Story</span>
+            <strong className="story-headline">{turnStoryHeadline}</strong>
+            <div className="story-detail">
+              Retrieval ran in {retrievalMode} mode. Working Memory changed in {diff.working.length} field
+              {diff.working.length === 1 ? "" : "s"} and State Layer changed in {diff.stable.length} field
+              {diff.stable.length === 1 ? "" : "s"}.
+            </div>
+            <div className="story-facts">
+              <FactPills
+                items={[
+                  `Working: ${workingCaughtUp ? "ready" : "pending"}`,
+                  `Stable: ${stableCaughtUp ? "ready" : "pending"}`,
+                  `Working diff: ${diff.working.length}`,
+                  `Stable diff: ${diff.stable.length}`
+                ]}
+              />
+            </div>
           </div>
-        </article>
+          <div className="pipeline-focus-header">
+            <div>
+              <div className="eyebrow">Turn Pipeline</div>
+              <h3>What happens after you send a turn</h3>
+            </div>
+            <div className="pipeline-legend pipeline-legend-compact">{PIPELINE_LEGEND}</div>
+          </div>
+          <PipelineView pipeline={pipeline} />
+        </aside>
       </div>
-      <div className="chat-status-row">
-        <span className="chat-status-pill">{activeScope ? `${activeScope.name} (${activeScope.stage})` : "No active scope"}</span>
-        <span className="chat-status-pill">
-          {history.length} {history.length === 1 ? "message" : "messages"}
-        </span>
-        <span className="chat-status-pill">
-          {latestMeta?.answerMode
-            ? `Last answer: ${latestMeta.answerMode}`
-            : activeScopeId
-              ? "Ask about goals, constraints, decisions, or open work"
-              : "Create a scope to begin the demo"}
-        </span>
-      </div>
-      <div className="prompt-strip">
-        <span className="prompt-strip-label">Suggested demo turns</span>
-        <div className="prompt-buttons">
-          {SUGGESTED_DEMO_TURNS.map(([prompt, label]) => (
-            <button className="ghost prompt-button" key={prompt} type="button" onClick={() => onMessageInputChange(prompt)}>
-              {label}
-            </button>
+      <details className="chat-secondary-details">
+        <summary>Suggested walkthrough</summary>
+        <div className="demo-flow">
+          {DEMO_FLOW_STEPS.map(([step, title, detail]) => (
+            <article className="demo-flow-card" key={step}>
+              <span className="demo-flow-step">{step}</span>
+              <div>
+                <strong>{title}</strong>
+                <div className="demo-flow-detail">{detail}</div>
+              </div>
+            </article>
           ))}
         </div>
-      </div>
-      <div className="demo-flow">
-        {DEMO_FLOW_STEPS.map(([step, title, detail]) => (
-          <article className="demo-flow-card" key={step}>
-            <span className="demo-flow-step">{step}</span>
-            <div>
-              <strong>{title}</strong>
-              <div className="demo-flow-detail">{detail}</div>
-            </div>
-          </article>
-        ))}
-      </div>
-      <div className="messages">
-        {!history.length ? (
-          <div className="empty-state">
-            <strong>No turns yet for this scope.</strong>
-            {EMPTY_CHAT_HINTS.map((hint) => (
-              <div className="empty-state-detail" key={hint}>
-                {hint}
-              </div>
-            ))}
-          </div>
-        ) : (
-          [...history].reverse().map((entry, index) => (
-            <article className={`message message-${entry.role}`} key={`${entry.role}-${index}`}>
-              <div className="message-label">{entry.role === "user" ? "You" : DEMO_BRAND.eyebrow}</div>
-              <div className="message-body">{entry.content}</div>
-              {entry.meta ? <pre className="message-meta">{pretty(entry.meta)}</pre> : null}
-            </article>
-          ))
-        )}
-      </div>
-      <form className="chat-form" onSubmit={onSubmit}>
-        <textarea
-          value={messageInput}
-          onChange={(event) => onMessageInputChange(event.target.value)}
-          rows={4}
-          placeholder="Ask about the current goal, constraints, or open work."
-          required
-        />
-        <div className="chat-actions">
-          <button type="submit">Send Turn</button>
-        </div>
-      </form>
+      </details>
     </section>
   );
 }

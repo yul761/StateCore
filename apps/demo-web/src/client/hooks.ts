@@ -194,6 +194,7 @@ export function useDemoRuntime(config: DemoConfig) {
       const layer = nextBundle.layer;
       const workingCaughtUp = Boolean(layer?.freshness?.workingMemoryCaughtUp);
       const stableCaughtUp = Boolean(layer?.freshness?.stableStateCaughtUp);
+      const hasStableSnapshot = Boolean(nextBundle.stable?.snapshotId || layer?.stableStateVersion);
 
       if (workingCaughtUp) {
         setPipelineStage(
@@ -236,9 +237,11 @@ export function useDemoRuntime(config: DemoConfig) {
       } else {
         setPipelineStage(
           "stable",
-          stableCaughtUp ? "complete" : "idle",
-          stableCaughtUp ? "Ready" : "Idle",
-          "No digest triggered on this turn. Stable state remains on the latest committed snapshot."
+          hasStableSnapshot && stableCaughtUp ? "complete" : "idle",
+          hasStableSnapshot && stableCaughtUp ? "Ready" : "No Snapshot",
+          hasStableSnapshot
+            ? "No digest triggered on this turn. Stable state remains on the latest committed snapshot."
+            : "No digest triggered on this turn, and there is no committed stable snapshot yet."
         );
       }
 
@@ -406,11 +409,15 @@ export function useDemoRuntime(config: DemoConfig) {
       );
 
       if (!result.digestTriggered) {
+        const hasStableSnapshot = Boolean(nextInspector.stable?.snapshotId || nextInspector.layer?.stableStateVersion);
+        const stableCaughtUp = Boolean(nextInspector.layer?.freshness?.stableStateCaughtUp);
         setPipelineStage(
           "stable",
-          nextInspector.layer?.freshness?.stableStateCaughtUp ? "complete" : "idle",
-          nextInspector.layer?.freshness?.stableStateCaughtUp ? "Ready" : "Idle",
-          "No digest triggered on this turn. Stable state remains on the latest committed snapshot."
+          hasStableSnapshot && stableCaughtUp ? "complete" : "idle",
+          hasStableSnapshot && stableCaughtUp ? "Ready" : "No Snapshot",
+          hasStableSnapshot
+            ? "No digest triggered on this turn. Stable state remains on the latest committed snapshot."
+            : "No digest triggered on this turn, and there is no committed stable snapshot yet."
         );
         pushTimeline(
           activeScopeId,

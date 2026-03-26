@@ -27,6 +27,12 @@ export interface WorkingMemoryRepo {
 
 export interface WorkingMemoryServiceOptions {
   maxItemsPerField?: number;
+  refineState?: (input: {
+    scopeId: string;
+    events: WorkingMemoryEventLike[];
+    previous: WorkingMemorySnapshot | null;
+    state: WorkingMemoryState;
+  }) => Promise<WorkingMemoryState> | WorkingMemoryState;
 }
 
 export class WorkingMemoryService {
@@ -41,9 +47,17 @@ export class WorkingMemoryService {
 
   async updateFromEvents(scopeId: string, events: WorkingMemoryEventLike[]) {
     const previous = await this.repo.findLatest(scopeId);
-    const state = extractWorkingMemoryState(events, {
+    const extractedState = extractWorkingMemoryState(events, {
       maxItemsPerField: this.options?.maxItemsPerField
     });
+    const state = this.options?.refineState
+      ? await this.options.refineState({
+          scopeId,
+          events,
+          previous,
+          state: extractedState
+        })
+      : extractedState;
     const view = compileWorkingMemoryView(state);
     return this.repo.upsert({
       scopeId,

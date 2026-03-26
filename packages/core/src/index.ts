@@ -42,8 +42,10 @@ export {
 } from "./working-memory.compiler";
 export {
   extractWorkingMemoryState,
+  mergeWorkingMemoryState,
   selectWorkingMemoryEvents,
   type WorkingMemoryEventLike,
+  type PartialWorkingMemoryState,
   type WorkingMemoryState
 } from "./working-memory.extractor";
 export {

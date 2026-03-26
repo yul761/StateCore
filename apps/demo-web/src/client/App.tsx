@@ -1,10 +1,10 @@
-import { getDemoConfig } from "./config";
+import type { getDemoConfig } from "./config";
 import { ChatPanel, InspectorPanel, Sidebar } from "./components";
 import { useDemoRuntime } from "./hooks";
 
-const config = getDemoConfig();
+type DemoConfig = ReturnType<typeof getDemoConfig>;
 
-export function App() {
+export function App({ config }: { config: DemoConfig }) {
   const demo = useDemoRuntime(config);
 
   return (
@@ -32,12 +32,11 @@ export function App() {
         whyAnswerHeadline={demo.whyAnswerHeadline}
         whyAnswerDetail={demo.whyAnswerDetail}
         whyAnswerFacts={demo.whyAnswerFacts}
-        pipeline={demo.pipeline}
         timeline={demo.timeline}
         diff={demo.diff}
       />
 
-      <main className="main-grid">
+      <main className="main-stack">
         <ChatPanel
           activeScope={demo.activeScope}
           activeScopeId={demo.activeScopeId}
@@ -50,6 +49,7 @@ export function App() {
           stableCaughtUp={demo.stableCaughtUp}
           goalAligned={demo.goalAligned}
           diff={demo.diff}
+          pipeline={demo.pipeline}
           history={demo.history}
           latestMeta={demo.latestMeta}
           messageInput={demo.messageInput}

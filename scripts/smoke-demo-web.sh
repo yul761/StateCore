@@ -82,8 +82,16 @@ if [[ "${config_js}" != *"/memory/runtime/turn"* ]]; then
   exit 1
 fi
 
-if [[ "${config_js}" != *"${DEMO_API_BASE_URL}"* ]]; then
-  echo "demo-web config missing expected API base URL" >&2
+if [[ "${config_js}" != *'"apiBaseUrl":""'* ]]; then
+  echo "demo-web config did not switch to same-origin API proxying" >&2
+  exit 1
+fi
+
+proxied_health=$(curl -sS -H "x-user-id: demo-web-smoke-user" "http://localhost:${DEMO_WEB_PORT}/health")
+proxied_health_status=$(printf "%s" "$proxied_health" | jq -r '.status')
+if [[ "${proxied_health_status}" != "ok" ]]; then
+  echo "demo-web proxy health check failed" >&2
+  echo "$proxied_health"
   exit 1
 fi
 

@@ -768,6 +768,12 @@ export class DefaultMemoryWritePolicy implements MemoryWritePolicy {
     if (/^(goal|constraint|decision|todo)\s*:/i.test(text)) {
       return { tier: "stable", reason: "explicit_structured_memory" };
     }
+    if (
+      /\b(i am|i'm)\s+trying\s+to\b/i.test(text)
+      || /\b(i want to|i'd like to|i would like to|my goal is to|i prefer|i'd prefer|i'm looking to|i am looking to)\b/i.test(text)
+    ) {
+      return { tier: "stable", reason: "natural_language_memory_signal" };
+    }
     if (/\b(uploaded doc|document update|spec|architecture|roadmap)\b/i.test(text)) {
       return { tier: "documented", reason: "document_like_update" };
     }
@@ -791,6 +797,12 @@ export class ProfiledMemoryWritePolicy implements MemoryWritePolicy {
     }
     if (/^(goal|constraint|decision|todo)\s*:/i.test(text)) {
       return { tier: "stable", reason: `profile_${this.profile}_explicit_structured_memory` };
+    }
+    if (
+      /\b(i am|i'm)\s+trying\s+to\b/i.test(text)
+      || /\b(i want to|i'd like to|i would like to|my goal is to|i prefer|i'd prefer|i'm looking to|i am looking to)\b/i.test(text)
+    ) {
+      return { tier: "stable", reason: `profile_${this.profile}_natural_language_memory_signal` };
     }
     if (shouldPromoteLongForm(input.message, input.policyOverrides)) {
       return { tier: "documented", reason: "override_promote_long_form" };

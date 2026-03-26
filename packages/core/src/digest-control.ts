@@ -575,6 +575,36 @@ function parseGoal(text: string) {
   return sectionBoundary?.[1]?.trim().replace(/\.$/, "") || undefined;
 }
 
+function cleanNaturalGoalPhrase(value: string) {
+  return value
+    .replace(/\b(?:without|while|but)\b.+$/i, "")
+    .replace(/^to\s+/i, "")
+    .replace(/\s+/g, " ")
+    .replace(/[.?!]+$/g, "")
+    .trim();
+}
+
+function extractNaturalGoal(text: string) {
+  const lines = text
+    .split("\n")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    const match = line.match(
+      /(?:^|[,:]\s*|\b)(?:i am|i'm)\s+trying\s+to\s+([^,.;?!]+)/i
+    ) || line.match(
+      /(?:^|[,:]\s*|\b)(?:i want to|i'd like to|i would like to|i need to|my goal is to|i'm looking to|i am looking to)\s+([^,.;?!]+)/i
+    );
+
+    if (match?.[1]) {
+      return cleanNaturalGoalPhrase(match[1]);
+    }
+  }
+
+  return undefined;
+}
+
 function findBestSemanticMatch(values: string[], candidate: string, threshold = 0.8) {
   let best: { value: string; score: number } | null = null;
   for (const value of values) {
@@ -1001,7 +1031,7 @@ export function protectedStateMerge(input: {
     next.evidenceRefs.push(evidence);
     const text = delta.event.content.trim();
     const lowered = text.toLowerCase();
-    const mentionedGoal = parseGoal(text);
+    const mentionedGoal = parseGoal(text) ?? extractNaturalGoal(text);
 
     if (mentionedGoal && delta.features.kind !== "noise") {
       mergeGoalUpdate(next, mentionedGoal, evidence);

@@ -20,6 +20,7 @@ export function buildDemoViewModel(params: {
   const stableVersion = inspector.layer?.stableStateVersion || "none";
   const workingCaughtUp = Boolean(inspector.layer?.freshness?.workingMemoryCaughtUp);
   const stableCaughtUp = Boolean(inspector.layer?.freshness?.stableStateCaughtUp);
+  const hasStableSnapshot = Boolean(inspector.stable?.snapshotId || inspector.layer?.stableStateVersion);
   const goalAligned = inspector.layer?.layerAlignment?.goalAligned;
 
   const healthSummarySections = createHealthSummarySections(health);
@@ -36,7 +37,7 @@ export function buildDemoViewModel(params: {
     `Retrieval: ${retrievalMode}`,
     `Goal alignment: ${goalAligned === true ? "aligned" : goalAligned === false ? "drift" : "unknown"}`,
     `Working: ${workingCaughtUp ? "caught up" : "lagging"}`,
-    `Stable: ${stableCaughtUp ? "caught up" : "pending"}`,
+    `Stable: ${hasStableSnapshot ? (stableCaughtUp ? "caught up" : "pending") : "no snapshot"}`,
     `Warnings: ${inspector.layer?.warnings?.length || 0}`
   ];
 
@@ -48,14 +49,16 @@ export function buildDemoViewModel(params: {
     diff.stable.length
       ? `State Layer changed in ${diff.stable.length} field${diff.stable.length === 1 ? "" : "s"}.`
       : "State Layer did not record a new visible diff on the last refresh."
-  } ${stableCaughtUp ? "The authoritative state is caught up." : "The authoritative state is still waiting on the latest digest boundary."}`;
+  } ${hasStableSnapshot
+    ? (stableCaughtUp ? "The authoritative state is caught up." : "The authoritative state is still waiting on the latest digest boundary.")
+    : "The authoritative state has not recorded a committed snapshot yet."}`;
   const turnOutcomeFacts = [
     `Answer: ${answerMode}`,
     `Retrieval: ${retrievalMode}`,
     `Working diff: ${diff.working.length}`,
     `Stable diff: ${diff.stable.length}`,
     `Working: ${workingCaughtUp ? "caught up" : "pending"}`,
-    `Stable: ${stableCaughtUp ? "caught up" : latestMeta?.stableStateVersion ? "digesting" : "idle"}`
+    `Stable: ${hasStableSnapshot ? (stableCaughtUp ? "caught up" : "digesting") : "no snapshot"}`
   ];
 
   const scopeCards = scopesCache.map((scope) => {

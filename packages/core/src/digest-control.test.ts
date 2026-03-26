@@ -281,6 +281,35 @@ describe("protectedStateMerge", () => {
     }));
   });
 
+  it("promotes natural-language goal turns from stream deltas into stable goal instead of volatile context", () => {
+    const merged = protectedStateMerge({
+      prevState: null,
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "goal-natural-1",
+          reason: "novel_event",
+          features: { kind: "note", importanceScore: 0.55, noveltyScore: 0.8 },
+          event: event({
+            id: "goal-natural-1",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "I want to learn to get good dressing style"
+          })
+        }
+      ]
+    });
+
+    expect(merged.stableFacts.goal).toBe("learn to get good dressing style");
+    expect(merged.volatileContext ?? []).not.toContain("I want to learn to get good dressing style");
+    expect(merged.provenance?.goal).toContainEqual(expect.objectContaining({
+      id: "goal-natural-1",
+      sourceType: "event",
+      kind: "note"
+    }));
+  });
+
   it("removes conflicting older decisions when newer layer-separation decisions arrive", () => {
     const merged = protectedStateMerge({
       prevState: null,

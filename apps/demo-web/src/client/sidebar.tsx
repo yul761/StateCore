@@ -1,6 +1,6 @@
-import { CHAT_HINT, DEMO_BRAND, PIPELINE_LEGEND } from "./content";
-import type { DiffEntry, PipelineState, ScopeSummary } from "./lib";
-import { CodeDetails, FactPills, PipelineView, SummarySections, type SummarySection } from "./ui";
+import { CHAT_HINT, DEMO_BRAND } from "./content";
+import type { DiffEntry, ScopeSummary } from "./lib";
+import { CodeDetails, FactPills, SummarySections, type SummarySection } from "./ui";
 
 export type ScopeCard = ScopeSummary & {
   messageCount: number;
@@ -23,7 +23,6 @@ export function Sidebar(props: {
   whyAnswerHeadline: string;
   whyAnswerDetail: string;
   whyAnswerFacts: string[];
-  pipeline: PipelineState;
   timeline: { title: string; detail: string; time: string }[];
   diff: { working: DiffEntry[]; stable: DiffEntry[] };
 }) {
@@ -43,7 +42,6 @@ export function Sidebar(props: {
     whyAnswerHeadline,
     whyAnswerDetail,
     whyAnswerFacts,
-    pipeline,
     timeline,
     diff
   } = props;
@@ -152,13 +150,6 @@ export function Sidebar(props: {
           </div>
         </div>
       </div>
-
-      <div className="panel">
-        <h2>Turn Pipeline</h2>
-        <div className="pipeline-legend">{PIPELINE_LEGEND}</div>
-        <PipelineView pipeline={pipeline} />
-      </div>
-
       <div className="sidebar-section-label">Deep Diagnostics</div>
 
       <details className="panel diagnostics-panel" open>

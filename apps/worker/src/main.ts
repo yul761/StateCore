@@ -5,6 +5,7 @@ import {
   WorkingMemoryService,
   createModelProvider,
   logger,
+  mergeWorkingMemoryState,
   runDigestControlPipeline,
   selectWorkingMemoryEvents
 } from "@project-memory/core";
@@ -22,6 +23,81 @@ const connection = {
 };
 
 const reminderQueue = new Queue("reminder", { connection });
+
+type WorkingMemoryPatch = Partial<Pick<
+  WorkingMemoryState,
+  "currentGoal" | "activeConstraints" | "recentDecisions" | "progressSummary" | "openQuestions" | "taskFrame"
+>>;
+
+function shouldAttemptWorkingMemoryLlm(events: Array<{ content: string }>, state: WorkingMemoryState) {
+  if (state.currentGoal && state.activeConstraints.length && state.openQuestions.length) {
+    return false;
+  }
+
+  return events.some((event) =>
+    /\b(i am|i'm)\s+trying\s+to\b/i.test(event.content)
+    || /\b(i want to|i'd like to|i would like to|my goal is to)\b/i.test(event.content)
+    || /\b(i prefer|i'd prefer|prefer)\b/i.test(event.content)
+    || /\?$/.test(event.content.trim())
+  );
+}
+
+function parseJsonObject(text: string) {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
+  const candidate = fenced ?? text;
+  const objectMatch = candidate.match(/\{[\s\S]*\}/);
+  if (!objectMatch) {
+    throw new Error("working_memory_llm_missing_json");
+  }
+  return JSON.parse(objectMatch[0]) as WorkingMemoryPatch;
+}
+
+async function refineWorkingMemoryStateWithLlm(input: {
+  scopeId: string;
+  events: Array<{ id: string; type: "stream" | "document"; content: string; createdAt: Date; role?: "user" | "assistant" | "system" }>;
+  state: WorkingMemoryState;
+}) {
+  if (!workerEnv.workingMemoryUseLlm || !llm) {
+    return input.state;
+  }
+  if (!shouldAttemptWorkingMemoryLlm(input.events, input.state)) {
+    return input.state;
+  }
+
+  const transcript = input.events
+    .map((event) => `[${event.role ?? "user"}] ${event.content}`)
+    .join("\n");
+
+  try {
+    const response = await llm.chat([
+      {
+        role: "system",
+        content:
+          "Extract lightweight working memory from natural language conversation. Return only JSON with keys: currentGoal, activeConstraints, recentDecisions, progressSummary, openQuestions, taskFrame. Use arrays for list fields. Leave fields empty or omit them when unsure. Keep phrases short and concrete."
+      },
+      {
+        role: "user",
+        content: `Current heuristic state:\n${JSON.stringify(input.state, null, 2)}\n\nRecent conversation:\n${transcript}`
+      }
+    ]);
+
+    const parsed = parseJsonObject(response);
+    return mergeWorkingMemoryState(input.state, {
+      currentGoal: typeof parsed.currentGoal === "string" ? parsed.currentGoal.trim() : undefined,
+      activeConstraints: Array.isArray(parsed.activeConstraints) ? parsed.activeConstraints.filter((item): item is string => typeof item === "string") : undefined,
+      recentDecisions: Array.isArray(parsed.recentDecisions) ? parsed.recentDecisions.filter((item): item is string => typeof item === "string") : undefined,
+      progressSummary: typeof parsed.progressSummary === "string" ? parsed.progressSummary.trim() : undefined,
+      openQuestions: Array.isArray(parsed.openQuestions) ? parsed.openQuestions.filter((item): item is string => typeof item === "string") : undefined,
+      taskFrame: typeof parsed.taskFrame === "string" ? parsed.taskFrame.trim() : undefined
+    }, {
+      maxItemsPerField: workerEnv.workingMemoryMaxItemsPerField
+    });
+  } catch (error) {
+    logger.warn({ scopeId: input.scopeId, err: error }, "Working memory LLM refinement failed; keeping heuristic state");
+    return input.state;
+  }
+}
+
 const workingMemoryService = new WorkingMemoryService({
   findLatest: async (scopeId) => {
     const snapshot = await prisma.workingMemorySnapshot.findUnique({ where: { scopeId } });
@@ -62,7 +138,13 @@ const workingMemoryService = new WorkingMemoryService({
     };
   }
 }, {
-  maxItemsPerField: workerEnv.workingMemoryMaxItemsPerField
+  maxItemsPerField: workerEnv.workingMemoryMaxItemsPerField,
+  refineState: async ({ scopeId, events, state }) =>
+    refineWorkingMemoryStateWithLlm({
+      scopeId,
+      events,
+      state
+    })
 });
 
 const structuredOutputModel = workerEnv.featureLlm

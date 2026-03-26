@@ -35,6 +35,20 @@ describe("DefaultMemoryWritePolicy", () => {
       reason: "document_like_update"
     });
   });
+
+  it("classifies natural-language goal and preference turns as stable", () => {
+    expect(policy.classifyTurn({ message: "I am trying to lose weight and I prefer something sustainable." })).toEqual({
+      tier: "stable",
+      reason: "natural_language_memory_signal"
+    });
+  });
+
+  it("classifies 'I am looking to' goal turns as stable", () => {
+    expect(policy.classifyTurn({ message: "I am looking to get fit, maybe squat to 200kg." })).toEqual({
+      tier: "stable",
+      reason: "natural_language_memory_signal"
+    });
+  });
 });
 
 describe("Profiled policies", () => {
