@@ -281,6 +281,50 @@ describe("protectedStateMerge", () => {
     }));
   });
 
+  it("removes conflicting older decisions when newer layer-separation decisions arrive", () => {
+    const merged = protectedStateMerge({
+      prevState: null,
+      documents: [],
+      deltaCandidates: [
+        {
+          eventId: "decision-old",
+          reason: "stable_fact_signal",
+          features: { kind: "decision", importanceScore: 0.9, noveltyScore: 0.9 },
+          event: event({
+            id: "decision-old",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "We decide to merge every memory layer into one prompt path",
+            createdAt: new Date("2026-03-26T00:00:00Z")
+          })
+        },
+        {
+          eventId: "decision-new",
+          reason: "stable_fact_signal",
+          features: { kind: "decision", importanceScore: 0.9, noveltyScore: 0.9 },
+          event: event({
+            id: "decision-new",
+            scopeId: "sc",
+            userId: "u",
+            type: "stream",
+            content: "We decide to keep the assistant runtime as a product boundary",
+            createdAt: new Date("2026-03-26T00:00:01Z")
+          })
+        }
+      ]
+    });
+
+    expect(merged.stableFacts.decisions).toContain("We decide to keep the assistant runtime as a product boundary");
+    expect(merged.stableFacts.decisions).not.toContain("We decide to merge every memory layer into one prompt path");
+    expect(merged.recentChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "decisions", action: "remove", value: "We decide to merge every memory layer into one prompt path" }),
+        expect.objectContaining({ field: "decisions", action: "add", value: "We decide to keep the assistant runtime as a product boundary" })
+      ])
+    );
+  });
+
   it("reaffirms semantically equivalent goals without replacing provenance", () => {
     const merged = protectedStateMerge({
       prevState: {
@@ -1643,6 +1687,96 @@ describe("generateDigestStage2", () => {
     const combinedChanges = result.changes.join("\n");
     expect(combinedChanges).toContain("Decision: We decide to support Ollama first for local model setup");
     expect(combinedChanges).toContain("Open question: Question: should we also support LM Studio?");
+  });
+
+  it("does not project removed conflicting decisions back into digest changes", async () => {
+    const llm = {
+      chat: async () => "{\"summary\":\"We are making progress.\",\"changes\":[],\"nextSteps\":[\"document runtime evidence output\"]}"
+    };
+
+    const result = await generateDigestStage2({
+      scope: { id: "s", userId: "u", name: "Demo", goal: "ship alpha", stage: "build", createdAt: new Date() },
+      lastDigest: null,
+      protectedState: normalizeDigestState({
+        stableFacts: {
+          goal: "ship self-hosted memory control",
+          constraints: [],
+          decisions: ["We decide to keep the assistant runtime as a product boundary"]
+        },
+        workingNotes: {},
+        todos: ["document runtime evidence output"],
+        recentChanges: [
+          {
+            field: "decisions",
+            action: "remove",
+            value: "We decide to merge every memory layer into one prompt path",
+            evidence: { id: "evt-old", sourceType: "event", kind: "decision" }
+          },
+          {
+            field: "decisions",
+            action: "add",
+            value: "We decide to keep the assistant runtime as a product boundary",
+            evidence: { id: "evt-new", sourceType: "event", kind: "decision" }
+          }
+        ],
+        evidenceRefs: []
+      }),
+      deltaCandidates: [],
+      documents: [],
+      llm,
+      systemPrompt: "system",
+      userPromptTemplate: "{{scopeName}} {{lastDigest}} {{protectedState}} {{deltaCandidates}} {{documents}}",
+      maxRetries: 0
+    });
+
+    const combinedChanges = result.changes.join("\n");
+    expect(combinedChanges).toContain("Decision: We decide to keep the assistant runtime as a product boundary");
+    expect(combinedChanges).not.toContain("We decide to merge every memory layer into one prompt path");
+  });
+
+  it("does not project transient cleanup todos into digest changes", async () => {
+    const llm = {
+      chat: async () => "{\"summary\":\"We are making progress.\",\"changes\":[],\"nextSteps\":[\"document runtime evidence output\"]}"
+    };
+
+    const result = await generateDigestStage2({
+      scope: { id: "s", userId: "u", name: "Demo", goal: "ship alpha", stage: "build", createdAt: new Date() },
+      lastDigest: null,
+      protectedState: normalizeDigestState({
+        stableFacts: {
+          goal: "ship self-hosted memory control",
+          constraints: [],
+          decisions: []
+        },
+        workingNotes: {},
+        todos: ["TODO: document runtime evidence output", "TODO: sort tmp logs"],
+        recentChanges: [
+          {
+            field: "todos",
+            action: "add",
+            value: "TODO: sort tmp logs",
+            evidence: { id: "evt-tmp", sourceType: "event", kind: "todo" }
+          },
+          {
+            field: "todos",
+            action: "add",
+            value: "TODO: document runtime evidence output",
+            evidence: { id: "evt-durable", sourceType: "event", kind: "todo" }
+          }
+        ],
+        evidenceRefs: []
+      }),
+      deltaCandidates: [],
+      documents: [],
+      llm,
+      systemPrompt: "system",
+      userPromptTemplate: "{{scopeName}} {{lastDigest}} {{protectedState}} {{deltaCandidates}} {{documents}}",
+      maxRetries: 0
+    });
+
+    const combinedChanges = result.changes.join("\n");
+    expect(combinedChanges).toContain("Todo: TODO: document runtime evidence output");
+    expect(combinedChanges).not.toContain("TODO: sort tmp logs");
   });
 
   it("prefers state-projected summary and next steps over model wording variance", async () => {

@@ -61,7 +61,16 @@
         },
         {
           "question": "What constraints still apply?",
-          "mustIncludeAll": ["keep api stable", "self-hosted first", "general-purpose agent platform"],
+          "mustIncludeAll": [
+            ["keep api stable", "api stability must be maintained", "api must remain stable", "stable api"],
+            ["self-hosted first", "self-hosted-first", "self hosted first"],
+            [
+              "general-purpose agent platform",
+              "general agent platform",
+              "do not become a general-purpose agent platform",
+              "not a general agent platform"
+            ]
+          ],
           "mustAvoidAny": ["hosted ai platform", "break api compatibility"]
         },
         {

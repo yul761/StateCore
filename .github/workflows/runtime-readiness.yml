@@ -1,0 +1,98 @@
+name: Runtime Readiness
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 15 * * *"
+
+jobs:
+  runtime-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    if: ${{ secrets.OPENAI_API_KEY != '' || secrets.MODEL_API_KEY != '' }}
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: project_memory
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      PORT: 3000
+      API_BASE_URL: http://localhost:3000
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/project_memory
+      REDIS_URL: redis://localhost:6379
+      FEATURE_LLM: "true"
+      FEATURE_TELEGRAM: "false"
+      WORKING_MEMORY_ENABLED: "true"
+      WORKING_MEMORY_USE_LLM: "false"
+      MODEL_PROVIDER: openai-compatible
+      MODEL_API_KEY: ${{ secrets.MODEL_API_KEY != '' && secrets.MODEL_API_KEY || secrets.OPENAI_API_KEY }}
+      MODEL_BASE_URL: ${{ vars.MODEL_BASE_URL || 'https://api.openai.com/v1' }}
+      MODEL_NAME: ${{ vars.MODEL_NAME || 'gpt-5-nano' }}
+      MODEL_CHAT_NAME: ${{ vars.MODEL_CHAT_NAME || 'gpt-5-nano' }}
+      MODEL_RUNTIME_NAME: ${{ vars.MODEL_RUNTIME_NAME || 'gpt-5-nano' }}
+      MODEL_RUNTIME_BASE_URL: ${{ vars.MODEL_RUNTIME_BASE_URL || 'https://api.openai.com/v1' }}
+      MODEL_RUNTIME_REASONING_EFFORT: low
+      MODEL_RUNTIME_MAX_OUTPUT_TOKENS: 400
+      MODEL_STRUCTURED_OUTPUT_NAME: ${{ vars.MODEL_STRUCTURED_OUTPUT_NAME || 'gpt-5-nano' }}
+      MODEL_STRUCTURED_OUTPUT_REASONING_EFFORT: low
+      MODEL_STRUCTURED_OUTPUT_MAX_OUTPUT_TOKENS: 600
+      LOG_LEVEL: info
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Run runtime readiness
+        run: ./scripts/ci/runtime-readiness.sh
+
+      - name: Upload readiness artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-readiness
+          path: |
+            runtime-doctor.json
+            runtime-benchmark.json
+            runtime-drift.json
+            runtime-readiness-summary.json
+            runtime-readiness-summary.md
+            .tmp-api.log
+            .tmp-worker.log
+          if-no-files-found: warn

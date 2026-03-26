@@ -1,0 +1,91 @@
+{
+  "name": "Failure Mode Mixed Signals",
+  "description": "Mixed-signal fixture that stresses contradictions, stale documents, transient todos, and conflicting product directions in the same session.",
+  "benchmarkFocus": [
+    "failure_mode_coverage",
+    "stale_document_rejection",
+    "contradiction_handling",
+    "temporary_todo_filtering"
+  ],
+  "gold": {
+    "goal": [
+      "ship a self-hosted memory control layer for assistant runtimes"
+    ],
+    "constraints": [
+      "keep api stable",
+      "self-hosted first",
+      "do not become a general-purpose agent platform"
+    ],
+    "decisions": [
+      "We decide to treat stale documents as drift risk rather than truth",
+      "We decide to keep the assistant runtime as a product boundary"
+    ],
+    "todos": [
+      "add contradiction regression tests",
+      "document runtime boundaries",
+      "formalize drift metrics"
+    ],
+    "transientTodos": [
+      "remove duplicate screenshots",
+      "sort tmp logs"
+    ],
+    "latestDocumentFacts": [
+      "goal: ship a self-hosted memory control layer for assistant runtimes"
+    ],
+    "supersededDocumentFacts": [
+      "goal: ship a hosted all-in-one agent platform"
+    ],
+    "contradictions": {
+      "goal": [
+        "goal: ship a hosted all-in-one agent platform"
+      ],
+      "constraints": [
+        "constraint: hosted first"
+      ],
+      "decisions": [
+        "We decide to merge every memory layer into one prompt path"
+      ],
+      "todos": [
+        "TODO: remove contradiction regression tests"
+      ]
+    }
+  },
+  "events": [
+    { "type": "document", "key": "doc:goal", "content": "goal: ship a hosted all-in-one agent platform" },
+    { "type": "document", "key": "doc:constraints", "content": "constraint: hosted first\nconstraint: keep api stable" },
+    { "type": "stream", "content": "TODO: remove duplicate screenshots" },
+    { "type": "stream", "content": "We decide to merge every memory layer into one prompt path" },
+    { "type": "stream", "content": "Noise: desktop landing page illustration ideas" },
+    { "type": "document", "key": "doc:goal", "content": "goal: ship a self-hosted memory control layer for assistant runtimes" },
+    { "type": "document", "key": "doc:constraints", "content": "constraint: keep api stable\nconstraint: self-hosted first" },
+    { "type": "stream", "content": "Constraint reminder: do not become a general-purpose agent platform" },
+    { "type": "stream", "content": "We decide to treat stale documents as drift risk rather than truth" },
+    { "type": "stream", "content": "We decide to keep the assistant runtime as a product boundary" },
+    { "type": "stream", "content": "TODO: add contradiction regression tests" },
+    { "type": "stream", "content": "TODO: document runtime boundaries" },
+    { "type": "stream", "content": "TODO: formalize drift metrics" },
+    { "type": "stream", "content": "TODO: sort tmp logs" }
+  ],
+  "retrieveCases": [
+    {
+      "query": "What is the project goal?",
+      "expected": "memory control layer",
+      "aliases": ["self-hosted", "assistant runtimes", "goal"]
+    },
+    {
+      "query": "What constraints apply?",
+      "expected": "keep api stable",
+      "aliases": ["self-hosted first", "general-purpose agent platform", "constraint"]
+    },
+    {
+      "query": "What decisions are active?",
+      "expected": "stale documents as drift risk",
+      "aliases": ["assistant runtime", "product boundary", "decision"]
+    },
+    {
+      "query": "What work remains?",
+      "expected": "contradiction regression tests",
+      "aliases": ["runtime boundaries", "drift metrics", "todo"]
+    }
+  ]
+}

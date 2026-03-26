@@ -2,3 +2,11 @@ node_modules/
 .env
 dist/
 benchmark-results/
+.tmp-api.log
+.tmp-worker.log
+.tmp-benchmark-results/
+runtime-doctor.json
+runtime-benchmark.json
+runtime-drift.json
+runtime-readiness-summary.json
+runtime-readiness-summary.md

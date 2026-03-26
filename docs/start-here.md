@@ -21,7 +21,7 @@ The current curated sample evaluates:
 - 3 rounds
 - 7 questions
 - Project Memory: 7/7
-- direct baseline: 3/7
+- direct baseline: 4/7
 
 ## Quick Mental Model
 
@@ -63,6 +63,17 @@ If you want the repo's broader three-layer benchmark instead of the side-by-side
 ```bash
 BENCH_FIXTURE=benchmark-fixtures/three-layer-session.json pnpm benchmark
 ```
+
+If you want the heavier runtime readiness check used for release-style CI:
+
+```bash
+pnpm ci:runtime-readiness
+```
+
+That path now leaves behind:
+
+- `runtime-readiness-summary.json`
+- `runtime-readiness-summary.md`
 
 If you want the fastest product-facing verification of the runtime itself:
 

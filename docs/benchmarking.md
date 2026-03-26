@@ -52,6 +52,15 @@ The same pattern is now available for drift runs:
 DRIFT_REQUEST_TIMEOUT_MS=15000 DRIFT_RUNS=10 DRIFT_FIXTURE=benchmark-fixtures/goal-evolution.json node scripts/benchmark/run-drift.mjs
 ```
 
+The visible comparison runner also supports request timeouts:
+
+```bash
+VISIBLE_COMPARE_REQUEST_TIMEOUT_MS=15000 pnpm benchmark:visible
+```
+
+That runner now writes partial reports while it is still in progress, so a failed
+checkpoint leaves behind a readable artifact instead of an empty hang.
+
 `three-layer-session.json` is the fixture to use when you want runtime-facing evidence for the
 new architecture. It simulates a drift-sensitive session where:
 
@@ -62,6 +71,18 @@ new architecture. It simulates a drift-sensitive session where:
 - benchmark reports should also show whether runtime turns hit `direct_state_fast_path`
 - benchmark reports should also show whether runtime turns and `layer-status` agree on goal alignment and warnings
 - benchmark reports now also include runtime warning taxonomy so a bad alignment score is explainable
+
+Additional higher-coverage fixtures:
+
+- `long-session-handoff.json`
+  - longer continuity window
+  - operator handoff notes mixed with durable work
+  - transient cleanup todos mixed with durable roadmap todos
+- `failure-mode-mixed-signals.json`
+  - stale document replacement
+  - contradiction handling
+  - transient todo filtering
+  - mixed hosted-vs-self-hosted direction changes
 
 Generate additional fixtures:
 ```bash

@@ -29,6 +29,7 @@ The script writes a markdown report that shows:
 - the direct model's rolling summary at that point, split into goal / constraints / decisions / todos / status / noise
 - the same question asked to both systems
 - required facts each answer should include
+- explicit alternate phrasings when a check accepts more than one wording for the same fact
 - whether the answer needed one specific phrase or all of several facts
 - stale or contradictory facts each answer should avoid
 - pass/fail verdicts for both sides
@@ -56,10 +57,24 @@ Or with an explicit fixture:
 VISIBLE_COMPARE_FIXTURE=benchmark-fixtures/observable-drift-demo.json node scripts/benchmark/run-visible-comparison.mjs
 ```
 
+If you want the runner to fail fast on one stuck HTTP or model request:
+
+```bash
+VISIBLE_COMPARE_REQUEST_TIMEOUT_MS=15000 pnpm benchmark:visible
+```
+
 Output files:
 
 - `benchmark-results/visible-comparison-*.json`
 - `benchmark-results/visible-comparison-*.md`
+
+The runner now writes partial JSON and markdown output while it is still in progress.
+If a checkpoint fails, the artifact keeps the completed rounds and marks the report
+status as `failed` with the last error.
+
+Rule checks are intentionally lightweight. They are still string-based, but they now
+support explicit alternative phrasings per requirement so the report does not mark a
+human-obvious paraphrase as a failure.
 
 ## Why This Demo Is Useful
 

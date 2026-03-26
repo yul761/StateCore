@@ -604,6 +604,40 @@ function findBestDecisionMatch(values: string[], candidate: string, threshold = 
   return findBestSemanticMatch(comparableValues, candidate, threshold);
 }
 
+function decisionTopicTokens(value: string) {
+  const stop = new Set([
+    "we", "decide", "decided", "to", "the", "a", "an", "and", "or", "of", "for", "as",
+    "on", "in", "into", "with", "that", "this", "is", "be", "keep"
+  ]);
+  return tokenize(value).filter((token) => token.length > 3 && !stop.has(token));
+}
+
+function decisionConflictDirection(value: string) {
+  const lowered = normalizeText(value);
+  if (/\b(merge|collapse|combine|single|one prompt path|same path)\b/.test(lowered)) return "collapse";
+  if (/\b(boundary|separate|scoped|controlled digest pipeline|digest pipeline|layer|runtime diagnostics)\b/.test(lowered)) return "separate";
+  return null;
+}
+
+function findConflictingDecision(values: string[], candidate: string) {
+  const candidateDirection = decisionConflictDirection(candidate);
+  if (!candidateDirection) return null;
+  const candidateTokens = new Set(decisionTopicTokens(candidate));
+  const architectureTokens = new Set(["memory", "layer", "layers", "runtime", "prompt", "boundary", "digest", "working", "state"]);
+  const candidateArchitecture = [...candidateTokens].some((token) => architectureTokens.has(token));
+  for (const value of values) {
+    const existingDirection = decisionConflictDirection(value);
+    if (!existingDirection || existingDirection === candidateDirection) continue;
+    const valueTokens = decisionTopicTokens(value);
+    const sharedTokens = valueTokens.filter((token) => candidateTokens.has(token));
+    const existingArchitecture = valueTokens.some((token) => architectureTokens.has(token));
+    if (sharedTokens.length >= 1 || (candidateArchitecture && existingArchitecture)) {
+      return value;
+    }
+  }
+  return null;
+}
+
 function findBestTodoMatch(values: string[], candidate: string, threshold = 0.8) {
   const normalizedCandidate = normalizeTodoFactText(candidate);
   const comparableValues = values.filter((value) =>
@@ -642,6 +676,11 @@ function normalizeConstraintFactText(text: string) {
 
 function normalizeTodoFactText(text: string) {
   return text.replace(/^\s*todo\s*:\s*/i, "").trim();
+}
+
+function isTransientCleanupTodo(text: string) {
+  const normalized = normalizeTodoFactText(text).toLowerCase();
+  return /\b(tmp|temporary|cleanup|clean old|sort .*logs?|rename .*screenshot|duplicate .*screenshot|duplicate .*notebook)\b/.test(normalized);
 }
 
 function stripWorkingNoteResolutionPrefix(text: string) {
@@ -978,6 +1017,12 @@ export function protectedStateMerge(input: {
           pushRecentChange(next, { field: "decisions", action: "remove", value: matched, evidence });
         }
       } else {
+        const conflicting = findConflictingDecision(next.stableFacts.decisions, text);
+        if (conflicting) {
+          next.stableFacts.decisions = next.stableFacts.decisions.filter((item) => item !== conflicting);
+          next.provenance.decisions = removeValueProvenance(next.provenance.decisions, conflicting);
+          pushRecentChange(next, { field: "decisions", action: "remove", value: conflicting, evidence });
+        }
         const existing = findBestDecisionMatch(next.stableFacts.decisions, text);
         if (!existing) {
           next.stableFacts.decisions.push(text);
@@ -1261,8 +1306,10 @@ function buildProjectedSummary(state: DigestState, fallbackSummary: string) {
 function projectRecentChange(change: DigestStateChange) {
   switch (change.field) {
     case "decisions":
+      if (change.action === "remove") return null;
       return `Decision: ${change.value}`;
     case "constraints":
+      if (change.action === "remove") return null;
       return `Constraint: ${change.value}`;
     case "openQuestions":
       return change.action === "remove" ? `Resolved question: ${change.value}` : `Open question: ${change.value}`;
@@ -1271,6 +1318,7 @@ function projectRecentChange(change: DigestStateChange) {
     case "goal":
       return `Goal: ${change.value}`;
     case "todos":
+      if (change.action !== "remove" && isTransientCleanupTodo(change.value)) return null;
       return change.action === "remove" ? `Todo completed: ${change.value}` : `Todo: ${change.value}`;
     default:
       return null;

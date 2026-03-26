@@ -1,0 +1,100 @@
+{
+  "name": "Long Session Handoff",
+  "description": "Longer multi-phase session that mixes goal pivots, operator handoff, transient cleanup work, and renewed execution so the three-layer runtime can be checked against a longer continuity window.",
+  "benchmarkFocus": [
+    "long_session_continuity",
+    "handoff_retention",
+    "transient_todo_filtering",
+    "state_layer_reliability"
+  ],
+  "gold": {
+    "goal": [
+      "ship a self-hosted long-term memory runtime for agent teams"
+    ],
+    "constraints": [
+      "keep api stable",
+      "self-hosted first",
+      "do not become a general-purpose agent platform",
+      "fast path must stay under 2 seconds"
+    ],
+    "decisions": [
+      "We decide to keep Working Memory approximate and session scoped",
+      "We decide to keep State Layer on the controlled digest pipeline",
+      "We decide to treat operator handoff notes as retrieval support rather than durable truth",
+      "We decide to expose runtime diagnostics directly in the API"
+    ],
+    "todos": [
+      "formalize handoff benchmarks",
+      "add replay consistency checks",
+      "define runtime operating policies",
+      "ship a hosted demo shell without changing the core self-hosted product boundary"
+    ],
+    "transientTodos": [
+      "rename screenshot folder",
+      "clean old benchmark logs",
+      "remove duplicate notebook cells"
+    ],
+    "contradictions": {
+      "goal": [
+        "goal: ship a hosted all-in-one agent platform",
+        "goal: optimize for generic chat ui polish"
+      ],
+      "constraints": [
+        "constraint: hosted multi-tenant first",
+        "constraint: turn the runtime into a general-purpose orchestration layer"
+      ],
+      "decisions": [
+        "We decide to collapse Working Memory and State Layer into one path",
+        "We decide to prioritize desktop mockups over memory reliability"
+      ],
+      "todos": [
+        "TODO: remove replay consistency checks"
+      ]
+    }
+  },
+  "events": [
+    { "type": "document", "key": "doc:goal", "content": "goal: ship a generic chat shell for local models" },
+    { "type": "document", "key": "doc:constraints", "content": "constraint: keep api stable\nconstraint: self-hosted first" },
+    { "type": "stream", "content": "We decide to keep Working Memory approximate and session scoped" },
+    { "type": "stream", "content": "TODO: formalize handoff benchmarks" },
+    { "type": "stream", "content": "Status update: first pass still looks too much like a chat shell" },
+    { "type": "document", "key": "doc:goal", "content": "goal: ship a self-hosted memory runtime for project assistants" },
+    { "type": "stream", "content": "We decide to keep State Layer on the controlled digest pipeline" },
+    { "type": "stream", "content": "Constraint reminder: do not become a general-purpose agent platform" },
+    { "type": "stream", "content": "TODO: add replay consistency checks" },
+    { "type": "stream", "content": "Operator handoff: keep the runtime focused on continuity and replayability" },
+    { "type": "stream", "content": "TODO: rename screenshot folder" },
+    { "type": "stream", "content": "TODO: clean old benchmark logs" },
+    { "type": "stream", "content": "Noise: optional landing page colors for future hosted demo" },
+    { "type": "document", "key": "doc:goal", "content": "goal: ship a self-hosted long-term memory runtime for agent teams" },
+    { "type": "stream", "content": "constraint: fast path must stay under 2 seconds" },
+    { "type": "stream", "content": "We decide to treat operator handoff notes as retrieval support rather than durable truth" },
+    { "type": "stream", "content": "TODO: define runtime operating policies" },
+    { "type": "stream", "content": "TODO: remove duplicate notebook cells" },
+    { "type": "stream", "content": "Status update: Working Memory and State Layer now diverge on purpose" },
+    { "type": "stream", "content": "We decide to expose runtime diagnostics directly in the API" },
+    { "type": "stream", "content": "TODO: ship a hosted demo shell without changing the core self-hosted product boundary" }
+  ],
+  "retrieveCases": [
+    {
+      "query": "What is the current project goal?",
+      "expected": "long-term memory runtime",
+      "aliases": ["self-hosted", "agent teams", "goal"]
+    },
+    {
+      "query": "What constraints still apply?",
+      "expected": "keep api stable",
+      "aliases": ["self-hosted first", "general-purpose agent platform", "fast path under 2 seconds"]
+    },
+    {
+      "query": "What key decisions have we made?",
+      "expected": "Working Memory approximate",
+      "aliases": ["State Layer", "handoff notes", "runtime diagnostics"]
+    },
+    {
+      "query": "What work remains open?",
+      "expected": "handoff benchmarks",
+      "aliases": ["replay consistency", "runtime operating policies", "hosted demo shell"]
+    }
+  ]
+}

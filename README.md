@@ -10,22 +10,17 @@ They fail because memory is treated as uncontrolled text.
 
 If memory matters, it must be treated as state — not context.
 
-Project Memory is a self-hosted control layer for long-term memory in AI systems.
+Project Memory is a self-hosted memory control layer for AI systems.
 
-It treats memory as controlled state instead of accumulated context:
+It turns memory from accumulated text into controlled state:
 
 - replayable state instead of opaque history
-- a digest control pipeline instead of a single LLM call
-- consistency gates and retry before commit
+- a digest control pipeline instead of a single summary refresh
+- explicit Fast Layer / Working Memory / State Layer separation
 - grounded recall and answers instead of blind retrieval
 
-This is not a chatbot.
-This is not a RAG wrapper.
-This is not a prompt tool.
-
-This is a control layer for memory.
-
-It is a low-drift, replayable memory system for developers building AI assistants with local models or BYOM endpoints.
+It is not a chatbot or a prompt wrapper.
+It is infrastructure for memory continuity.
 
 ## Start Here
 
@@ -54,7 +49,7 @@ Current curated sample result:
 - rounds evaluated: `3`
 - questions evaluated: `7`
 - Project Memory: `7/7`
-- direct baseline: `3/7`
+- direct baseline: `4/7`
 
 Most visible failure in the baseline:
 
@@ -127,9 +122,12 @@ Latest three-layer quick benchmark:
 
 Latest observable drift checks:
 
-- Visible comparison: Project Memory `7/7`, direct baseline `3/7`
-- Goal-evolution drift run: goal / decision / todo drift `0`
-- Remaining drift signal is concentrated in constraints on the goal-evolution fixture
+- Visible comparison: Project Memory `7/7`, direct baseline `4/7`
+- Goal-evolution drift run: goal / constraint / decision / todo drift `0`
+- Goal-evolution digest drift: `0`
+- Goal-evolution runs succeeded: `10/10`
+- Failure-mode mixed-signals drift run: goal / constraint / decision / todo drift `0`
+- Runtime readiness check: doctor + benchmark + drift all pass in one CI-style run
 
 What this means in practice:
 
@@ -137,6 +135,12 @@ What this means in practice:
 - Working Memory updates independently in the background
 - State Layer remains asynchronous and authoritative
 - API responses expose layer versions, retrieval plan, and answer mode for debugging
+
+What is still being hardened:
+
+- broader benchmark fixtures beyond the current long-session and mixed-signal additions
+- more hosted-CI repetition for the visible comparison and runtime readiness paths
+- release-style runtime readiness automation on hosted CI
 
 Useful inspection endpoints:
 
@@ -156,6 +160,15 @@ The local runtime smoke now validates the full three-layer product path:
 - probe a runtime turn and verify `answerMode` / `retrievalPlan` / `layerAlignment`
 - verify `freshness.workingMemoryCaughtUp` / `freshness.stableStateCaughtUp`
 - fail if aggregated diagnostics emit warnings on the clean smoke scope
+
+There is now also a heavier readiness path for CI or release checks:
+
+- `pnpm ci:runtime-readiness`
+- runs runtime smoke
+- runs a quick three-layer benchmark
+- runs a goal-evolution drift benchmark
+- writes `runtime-readiness-summary.json` and `runtime-readiness-summary.md`
+- fails if runtime freshness, runtime diagnostics, or drift regress
 
 ## Turn Lifecycle
 

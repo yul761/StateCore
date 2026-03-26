@@ -26,7 +26,8 @@ const cfg = {
   userId: process.env.VISIBLE_COMPARE_USER_ID || "visible-compare-user",
   fixture: process.env.VISIBLE_COMPARE_FIXTURE || "benchmark-fixtures/observable-drift-demo.json",
   timeoutMs: Number(process.env.VISIBLE_COMPARE_TIMEOUT_MS || 180000),
-  requestTimeoutMs: Number(process.env.VISIBLE_COMPARE_REQUEST_TIMEOUT_MS || 15000),
+  requestTimeoutMs: Number(process.env.VISIBLE_COMPARE_REQUEST_TIMEOUT_MS || 60000),
+  chatTimeoutMs: Number(process.env.VISIBLE_COMPARE_CHAT_TIMEOUT_MS || 60000),
   outputDir: process.env.VISIBLE_COMPARE_OUTPUT_DIR || "benchmark-results",
   modelBaseUrl: process.env.MODEL_CHAT_BASE_URL || process.env.MODEL_BASE_URL || process.env.OPENAI_BASE_URL || "",
   modelApiKey: process.env.MODEL_CHAT_API_KEY || process.env.MODEL_API_KEY || process.env.OPENAI_API_KEY || "",
@@ -51,26 +52,29 @@ async function apiFetch(method, endpoint, body) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), cfg.requestTimeoutMs);
-    const response = await fetch(`${cfg.apiBaseUrl}${endpoint}`, {
-      method,
-      headers,
-      signal: controller.signal,
-      ...(body ? { body: JSON.stringify(body) } : {})
-    });
-    clearTimeout(timer);
-    const text = await response.text();
-    let json;
     try {
-      json = JSON.parse(text);
-    } catch {
-      json = { raw: text };
+      const response = await fetch(`${cfg.apiBaseUrl}${endpoint}`, {
+        method,
+        headers,
+        signal: controller.signal,
+        ...(body ? { body: JSON.stringify(body) } : {})
+      });
+      const text = await response.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = { raw: text };
+      }
+      return {
+        ok: response.ok,
+        status: response.status,
+        json,
+        latencyMs: performance.now() - t0
+      };
+    } finally {
+      clearTimeout(timer);
     }
-    return {
-      ok: response.ok,
-      status: response.status,
-      json,
-      latencyMs: performance.now() - t0
-    };
   } catch (error) {
     return {
       ok: false,
@@ -86,29 +90,32 @@ async function apiFetch(method, endpoint, body) {
 
 async function chat(messages) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), cfg.requestTimeoutMs);
-  const response = await fetch(`${cfg.modelBaseUrl.replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(cfg.modelApiKey ? { Authorization: `Bearer ${cfg.modelApiKey}` } : {})
-    },
-    signal: controller.signal,
-    body: JSON.stringify({
-      model: cfg.modelName,
-      messages
-    })
-  });
-  clearTimeout(timer);
-  if (!response.ok) {
-    throw new Error(`llm_error:${response.status}:${await response.text()}`);
+  const timer = setTimeout(() => controller.abort(), cfg.chatTimeoutMs);
+  try {
+    const response = await fetch(`${cfg.modelBaseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(cfg.modelApiKey ? { Authorization: `Bearer ${cfg.modelApiKey}` } : {})
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: cfg.modelName,
+        messages
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`llm_error:${response.status}:${await response.text()}`);
+    }
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content) {
+      throw new Error("llm_response_missing_content");
+    }
+    return String(content).trim();
+  } finally {
+    clearTimeout(timer);
   }
-  const data = await response.json();
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content) {
-    throw new Error("llm_response_missing_content");
-  }
-  return String(content).trim();
 }
 
 function loadFixture(fixturePath) {
@@ -133,26 +140,40 @@ function loadFixture(fixturePath) {
 function normalizeText(value) {
   return String(value || "")
     .toLowerCase()
+    .replace(/[-_/]/g, " ")
+    .replace(/[^\w\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
+function matchesCandidate(text, candidate) {
+  const normalized = normalizeText(text);
+  if (Array.isArray(candidate)) {
+    return candidate.some((variant) => normalized.includes(normalizeText(variant)));
+  }
+  return normalized.includes(normalizeText(candidate));
+}
+
+function formatRequirement(candidate) {
+  if (Array.isArray(candidate)) {
+    return `(${candidate.join(" OR ")})`;
+  }
+  return candidate;
+}
+
 function includesAll(text, candidates) {
   if (!Array.isArray(candidates) || !candidates.length) return true;
-  const normalized = normalizeText(text);
-  return candidates.every((candidate) => normalized.includes(normalizeText(candidate)));
+  return candidates.every((candidate) => matchesCandidate(text, candidate));
 }
 
 function includesOneOf(text, candidates) {
   if (!Array.isArray(candidates) || !candidates.length) return true;
-  const normalized = normalizeText(text);
-  return candidates.some((candidate) => normalized.includes(normalizeText(candidate)));
+  return candidates.some((candidate) => matchesCandidate(text, candidate));
 }
 
 function hitsAny(text, candidates) {
   if (!Array.isArray(candidates) || !candidates.length) return false;
-  const normalized = normalizeText(text);
-  return candidates.some((candidate) => normalized.includes(normalizeText(candidate)));
+  return candidates.some((candidate) => matchesCandidate(text, candidate));
 }
 
 function evaluateAnswer(answer, question) {
@@ -331,6 +352,16 @@ async function run() {
   const report = {
     startedAt,
     endedAt: null,
+    status: "running",
+    error: null,
+    progress: {
+      completedCheckpoints: 0,
+      totalCheckpoints: fixture.checkpoints.length,
+      lastIngestedEvent: 0,
+      phase: "init",
+      currentCheckpointLabel: null,
+      currentQuestion: null
+    },
     fixture: cfg.fixture,
     fixtureSource: fixture.source,
     demoName: fixture.demoName,
@@ -340,179 +371,229 @@ async function run() {
     summary: null
   };
 
-  const scopeResp = await apiFetch("POST", "/scopes", { name: `${fixture.demoName} ${Date.now()}` });
-  if (!scopeResp.ok || !scopeResp.json.id) {
-    throw new Error(`failed_create_scope:${scopeResp.status}:${JSON.stringify(scopeResp.json)}`);
-  }
-  const scopeId = scopeResp.json.id;
-
-  let rollingSummary = "";
-  let checkpointCursor = 0;
-
-  for (let index = 0; index < fixture.events.length; index += 1) {
-    const event = fixture.events[index];
-    const ingest = await apiFetch("POST", "/memory/events", {
-      scopeId,
-      source: "sdk",
-      ...event
-    });
-    if (!ingest.ok) {
-      throw new Error(`ingest_failed:${index + 1}:${ingest.status}`);
-    }
-
-    rollingSummary = await updateRollingSummary(rollingSummary, event, wordBudget);
-
-    while (
-      checkpointCursor < fixture.checkpoints.length &&
-      Number(fixture.checkpoints[checkpointCursor].afterEvent) === index + 1
-    ) {
-      const checkpoint = fixture.checkpoints[checkpointCursor];
-      const digest = await enqueueDigest(scopeId);
-      const answers = [];
-
-      for (const question of checkpoint.questions) {
-        const projectMemoryAnswer = await answerFromProjectMemory(scopeId, question.question);
-        const directModelAnswer = await answerFromRollingSummary(rollingSummary, question.question);
-        answers.push({
-          question: question.question,
-          mustIncludeAll: question.mustIncludeAll || [],
-          mustIncludeAny: question.mustIncludeAny || [],
-          mustAvoidAny: question.mustAvoidAny || [],
-          projectMemory: {
-            answer: projectMemoryAnswer,
-            evaluation: evaluateAnswer(projectMemoryAnswer, question)
-          },
-          directModel: {
-            answer: directModelAnswer,
-            evaluation: evaluateAnswer(directModelAnswer, question)
-          }
-        });
-      }
-
-      report.checkpoints.push({
-        label: checkpoint.label,
-        afterEvent: checkpoint.afterEvent,
-        digestId: digest.id,
-        rollingSummary,
-        eventWindow: fixture.events.slice(0, checkpoint.afterEvent).map(renderEvent),
-        answers
-      });
-
-      checkpointCursor += 1;
-    }
-  }
-
-  const flattened = report.checkpoints.flatMap((checkpoint) =>
-    checkpoint.answers.map((answer) => ({
-      projectMemoryPass: answer.projectMemory.evaluation.pass,
-      directModelPass: answer.directModel.evaluation.pass
-    }))
-  );
-
-  const projectMemoryWins = flattened.filter((item) => item.projectMemoryPass && !item.directModelPass).length;
-  const directModelWins = flattened.filter((item) => !item.projectMemoryPass && item.directModelPass).length;
-  const ties = flattened.filter((item) => item.projectMemoryPass === item.directModelPass).length;
-  const projectMemoryScore = flattened.filter((item) => item.projectMemoryPass).length;
-  const directModelScore = flattened.filter((item) => item.directModelPass).length;
-
-  report.endedAt = msNow();
-  report.summary = {
-    totalRounds: report.checkpoints.length,
-    totalQuestions: flattened.length,
-    projectMemoryScore,
-    directModelScore,
-    projectMemoryWins,
-    directModelWins,
-    ties
-  };
-
   const outDir = path.join(root, cfg.outputDir);
   mkdirSync(outDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const jsonPath = path.join(outDir, `visible-comparison-${stamp}.json`);
   const mdPath = path.join(outDir, `visible-comparison-${stamp}.md`);
-  writeFileSync(jsonPath, JSON.stringify(report, null, 2));
 
-  const lines = [
-    `# ${fixture.demoName}`,
-    "",
-    `- Started: ${report.startedAt}`,
-    `- Ended: ${report.endedAt}`,
-    `- Fixture: ${cfg.fixture}`,
-    `- Baseline: Direct model (${baselineMode})`,
-    `- Model: ${cfg.modelName}`,
-    "",
-    "## Score",
-    "",
-    `- Rounds evaluated: ${report.checkpoints.length}`,
-    `- Questions evaluated: ${flattened.length}`,
-    `- Project Memory passed: ${projectMemoryScore}/${flattened.length}`,
-    `- Direct model passed: ${directModelScore}/${flattened.length}`,
-    `- Project Memory wins: ${projectMemoryWins}`,
-    `- Direct model wins: ${directModelWins}`,
-    `- Ties: ${ties}`,
-    ""
-  ];
+  function buildMarkdown() {
+    const flattened = report.checkpoints.flatMap((checkpoint) =>
+      checkpoint.answers.map((answer) => ({
+        projectMemoryPass: answer.projectMemory.evaluation.pass,
+        directModelPass: answer.directModel.evaluation.pass
+      }))
+    );
+    const projectMemoryWins = flattened.filter((item) => item.projectMemoryPass && !item.directModelPass).length;
+    const directModelWins = flattened.filter((item) => !item.projectMemoryPass && item.directModelPass).length;
+    const ties = flattened.filter((item) => item.projectMemoryPass === item.directModelPass).length;
+    const projectMemoryScore = flattened.filter((item) => item.projectMemoryPass).length;
+    const directModelScore = flattened.filter((item) => item.directModelPass).length;
 
-  let previousAfterEvent = 0;
-  for (let index = 0; index < report.checkpoints.length; index += 1) {
-    const checkpoint = report.checkpoints[index];
-    const roundNumber = index + 1;
-    const roundEvents = fixture.events
-      .slice(previousAfterEvent, checkpoint.afterEvent)
-      .map((event, eventIndex) => renderEvent(event, previousAfterEvent + eventIndex));
-    const rollingSummarySections = parseRollingSummary(checkpoint.rollingSummary);
+    const lines = [
+      `# ${fixture.demoName}`,
+      "",
+      `- Started: ${report.startedAt}`,
+      `- Ended: ${report.endedAt || "(in progress)"}`,
+      `- Status: ${report.status}`,
+      `- Fixture: ${cfg.fixture}`,
+      `- Baseline: Direct model (${baselineMode})`,
+      `- Model: ${cfg.modelName}`,
+      `- Completed checkpoints: ${report.checkpoints.length}/${fixture.checkpoints.length}`,
+      ...(report.error ? [`- Error: ${report.error}`] : []),
+      "",
+      "## Score",
+      "",
+      `- Rounds evaluated: ${report.checkpoints.length}`,
+      `- Questions evaluated: ${flattened.length}`,
+      `- Project Memory passed: ${projectMemoryScore}/${flattened.length || 0}`,
+      `- Direct model passed: ${directModelScore}/${flattened.length || 0}`,
+      `- Project Memory wins: ${projectMemoryWins}`,
+      `- Direct model wins: ${directModelWins}`,
+      `- Ties: ${ties}`,
+      ""
+    ];
 
-    lines.push(`## Round ${roundNumber}: ${checkpoint.label}`);
-    lines.push("");
-    lines.push(`- Checkpoint: after event ${checkpoint.afterEvent}`);
-    lines.push(`- This round covers events ${previousAfterEvent + 1}-${checkpoint.afterEvent}`);
-    lines.push(`- Digest: ${checkpoint.digestId}`);
-    lines.push("");
-    lines.push("**Input In This Round**");
-    lines.push("");
-    for (const event of roundEvents) {
-      lines.push(`- ${event}`);
+    let previousAfterEvent = 0;
+    for (let index = 0; index < report.checkpoints.length; index += 1) {
+      const checkpoint = report.checkpoints[index];
+      const roundNumber = index + 1;
+      const roundEvents = fixture.events
+        .slice(previousAfterEvent, checkpoint.afterEvent)
+        .map((event, eventIndex) => renderEvent(event, previousAfterEvent + eventIndex));
+      const rollingSummarySections = parseRollingSummary(checkpoint.rollingSummary);
+
+      lines.push(`## Round ${roundNumber}: ${checkpoint.label}`);
+      lines.push("");
+      lines.push(`- Checkpoint: after event ${checkpoint.afterEvent}`);
+      lines.push(`- This round covers events ${previousAfterEvent + 1}-${checkpoint.afterEvent}`);
+      lines.push(`- Digest: ${checkpoint.digestId}`);
+      lines.push("");
+      lines.push("**Input In This Round**");
+      lines.push("");
+      for (const event of roundEvents) {
+        lines.push(`- ${event}`);
+      }
+      lines.push("");
+      lines.push("**Direct-Model Rolling Summary At This Point**");
+      lines.push("");
+      pushSection(lines, "Goal", rollingSummarySections.goal);
+      pushSection(lines, "Constraints", rollingSummarySections.constraints);
+      pushSection(lines, "Decisions", rollingSummarySections.decisions);
+      pushSection(lines, "Open Todos", rollingSummarySections.todos);
+      pushSection(lines, "Status", rollingSummarySections.status);
+      pushSection(lines, "Noise", rollingSummarySections.noise);
+      pushSection(lines, "Other", rollingSummarySections.other);
+
+      for (const answer of checkpoint.answers) {
+        const pmVerdict = answer.projectMemory.evaluation.pass ? "pass" : "fail";
+        const directVerdict = answer.directModel.evaluation.pass ? "pass" : "fail";
+        lines.push(`### Question: ${answer.question}`);
+        lines.push("");
+        lines.push("**Check Rules**");
+        lines.push("");
+        if (answer.mustIncludeAny.length) {
+          lines.push(`- Must include one of: ${answer.mustIncludeAny.map(formatRequirement).join(" | ")}`);
+        }
+        if (answer.mustIncludeAll.length) {
+          lines.push(`- Must include all: ${answer.mustIncludeAll.map(formatRequirement).join(" | ")}`);
+        }
+        if (answer.mustAvoidAny.length) {
+          lines.push(`- Must avoid: ${answer.mustAvoidAny.map(formatRequirement).join(" | ")}`);
+        }
+        lines.push("");
+        lines.push("**Answers**");
+        lines.push("");
+        lines.push(`- Project Memory (${pmVerdict}): ${answer.projectMemory.answer}`);
+        lines.push(`- Direct model (${directVerdict}): ${answer.directModel.answer}`);
+        lines.push("");
+      }
+
+      previousAfterEvent = checkpoint.afterEvent;
     }
-    lines.push("");
-    lines.push("**Direct-Model Rolling Summary At This Point**");
-    lines.push("");
-    pushSection(lines, "Goal", rollingSummarySections.goal);
-    pushSection(lines, "Constraints", rollingSummarySections.constraints);
-    pushSection(lines, "Decisions", rollingSummarySections.decisions);
-    pushSection(lines, "Open Todos", rollingSummarySections.todos);
-    pushSection(lines, "Status", rollingSummarySections.status);
-    pushSection(lines, "Noise", rollingSummarySections.noise);
-    pushSection(lines, "Other", rollingSummarySections.other);
 
-    for (const answer of checkpoint.answers) {
-      const pmVerdict = answer.projectMemory.evaluation.pass ? "pass" : "fail";
-      const directVerdict = answer.directModel.evaluation.pass ? "pass" : "fail";
-      lines.push(`### Question: ${answer.question}`);
-      lines.push("");
-      lines.push("**Check Rules**");
-      lines.push("");
-      if (answer.mustIncludeAny.length) {
-        lines.push(`- Must include one of: ${answer.mustIncludeAny.join(" | ")}`);
-      }
-      if (answer.mustIncludeAll.length) {
-        lines.push(`- Must include all: ${answer.mustIncludeAll.join(" | ")}`);
-      }
-      if (answer.mustAvoidAny.length) {
-        lines.push(`- Must avoid: ${answer.mustAvoidAny.join(" | ")}`);
-      }
-      lines.push("");
-      lines.push("**Answers**");
-      lines.push("");
-      lines.push(`- Project Memory (${pmVerdict}): ${answer.projectMemory.answer}`);
-      lines.push(`- Direct model (${directVerdict}): ${answer.directModel.answer}`);
-      lines.push("");
-    }
-
-    previousAfterEvent = checkpoint.afterEvent;
+    return `${lines.join("\n")}\n`;
   }
 
-  writeFileSync(mdPath, `${lines.join("\n")}\n`);
+  function writeReport() {
+    writeFileSync(jsonPath, JSON.stringify(report, null, 2));
+    writeFileSync(mdPath, buildMarkdown());
+  }
+
+  writeReport();
+
+  try {
+    const scopeResp = await apiFetch("POST", "/scopes", { name: `${fixture.demoName} ${Date.now()}` });
+    if (!scopeResp.ok || !scopeResp.json.id) {
+      throw new Error(`failed_create_scope:${scopeResp.status}:${JSON.stringify(scopeResp.json)}`);
+    }
+    const scopeId = scopeResp.json.id;
+
+    let rollingSummary = "";
+    let checkpointCursor = 0;
+
+    for (let index = 0; index < fixture.events.length; index += 1) {
+      const event = fixture.events[index];
+      report.progress.phase = "ingest_event";
+      const ingest = await apiFetch("POST", "/memory/events", {
+        scopeId,
+        source: "sdk",
+        ...event
+      });
+      if (!ingest.ok) {
+        throw new Error(`ingest_failed:${index + 1}:${ingest.status}`);
+      }
+
+      report.progress.phase = "baseline_rolling_summary";
+      rollingSummary = await updateRollingSummary(rollingSummary, event, wordBudget);
+      report.progress.lastIngestedEvent = index + 1;
+      writeReport();
+
+      while (
+        checkpointCursor < fixture.checkpoints.length &&
+        Number(fixture.checkpoints[checkpointCursor].afterEvent) === index + 1
+      ) {
+        const checkpoint = fixture.checkpoints[checkpointCursor];
+        report.progress.phase = "enqueue_digest";
+        report.progress.currentCheckpointLabel = checkpoint.label;
+        const digest = await enqueueDigest(scopeId);
+        const answers = [];
+
+        for (const question of checkpoint.questions) {
+          report.progress.phase = "project_memory_answer";
+          report.progress.currentQuestion = question.question;
+          writeReport();
+          const projectMemoryAnswer = await answerFromProjectMemory(scopeId, question.question);
+          report.progress.phase = "direct_model_answer";
+          writeReport();
+          const directModelAnswer = await answerFromRollingSummary(rollingSummary, question.question);
+          answers.push({
+            question: question.question,
+            mustIncludeAll: question.mustIncludeAll || [],
+            mustIncludeAny: question.mustIncludeAny || [],
+            mustAvoidAny: question.mustAvoidAny || [],
+            projectMemory: {
+              answer: projectMemoryAnswer,
+              evaluation: evaluateAnswer(projectMemoryAnswer, question)
+            },
+            directModel: {
+              answer: directModelAnswer,
+              evaluation: evaluateAnswer(directModelAnswer, question)
+            }
+          });
+        }
+
+        report.checkpoints.push({
+          label: checkpoint.label,
+          afterEvent: checkpoint.afterEvent,
+          digestId: digest.id,
+          rollingSummary,
+          eventWindow: fixture.events.slice(0, checkpoint.afterEvent).map(renderEvent),
+          answers
+        });
+        report.progress.completedCheckpoints = report.checkpoints.length;
+        report.progress.currentQuestion = null;
+        writeReport();
+        checkpointCursor += 1;
+      }
+    }
+
+    const flattened = report.checkpoints.flatMap((checkpoint) =>
+      checkpoint.answers.map((answer) => ({
+        projectMemoryPass: answer.projectMemory.evaluation.pass,
+        directModelPass: answer.directModel.evaluation.pass
+      }))
+    );
+
+    const projectMemoryWins = flattened.filter((item) => item.projectMemoryPass && !item.directModelPass).length;
+    const directModelWins = flattened.filter((item) => !item.projectMemoryPass && item.directModelPass).length;
+    const ties = flattened.filter((item) => item.projectMemoryPass === item.directModelPass).length;
+    const projectMemoryScore = flattened.filter((item) => item.projectMemoryPass).length;
+    const directModelScore = flattened.filter((item) => item.directModelPass).length;
+
+    report.endedAt = msNow();
+    report.status = "complete";
+    report.progress.phase = "complete";
+    report.progress.currentCheckpointLabel = null;
+    report.progress.currentQuestion = null;
+    report.summary = {
+      totalRounds: report.checkpoints.length,
+      totalQuestions: flattened.length,
+      projectMemoryScore,
+      directModelScore,
+      projectMemoryWins,
+      directModelWins,
+      ties
+    };
+    writeReport();
+  } catch (error) {
+    report.endedAt = msNow();
+    report.status = "failed";
+    report.progress.phase = "failed";
+    report.error = error instanceof Error ? error.message : String(error);
+    writeReport();
+    throw error;
+  }
 
   // eslint-disable-next-line no-console
   console.log(`Visible comparison complete.`);

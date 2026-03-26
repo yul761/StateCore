@@ -1,32 +1,34 @@
 # Observable Drift Demo
 
-- Started: 2026-03-21T23:56:55.491Z
-- Ended: 2026-03-22T00:01:26.048Z
+- Started: 2026-03-26T05:23:21.722Z
+- Ended: 2026-03-26T05:29:20.445Z
+- Status: complete
 - Fixture: benchmark-fixtures/observable-drift-demo.json
 - Baseline: Direct model (rolling-summary)
 - Model: gpt-5-nano
+- Completed checkpoints: 3/3
 
 ## Score
 
 - Rounds evaluated: 3
 - Questions evaluated: 7
 - Project Memory passed: 7/7
-- Direct model passed: 3/7
-- Project Memory wins: 4
+- Direct model passed: 4/7
+- Project Memory wins: 3
 - Direct model wins: 0
-- Ties: 3
+- Ties: 4
 
 ## Round 1: Early Goal
 
 - Checkpoint: after event 5
 - This round covers events 1-5
-- Digest: f9f2ee82-bf62-46b7-9f42-958b9edf7208
+- Digest: cf39814a-519a-48ef-b075-41b893641f27
 
 **Input In This Round**
 
 - 1. [document:doc:goal] goal: ship a generic local chat ui
 - 2. [document:doc:constraints] constraint: keep api stable
-     constraint: self-hosted first
+constraint: self-hosted first
 - 3. [stream] We decide to focus on memory continuity for long-running projects
 - 4. [stream] TODO: formalize drift metrics
 - 5. [stream] Status update: early demos looked too much like a chat shell
@@ -42,10 +44,6 @@
 - keep API stable
 - self-hosted first.
 
-**Decisions**
-
-- prioritize memory continuity for long-running projects.
-
 **Open Todos**
 
 - formalize drift metrics.
@@ -53,6 +51,10 @@
 **Status**
 
 - early demos looked too much like a chat shell.
+
+**Other**
+
+- Decision: focus on memory continuity for long-running projects.
 
 ### Question: What is the current project goal?
 
@@ -63,14 +65,14 @@
 
 **Answers**
 
-- Project Memory (pass): The current project goal is to ship a generic local chat ui.
+- Project Memory (pass): The current project goal is to ship a generic local chat UI.
 - Direct model (pass): The current project goal is to ship a generic local chat UI.
 
 ## Round 2: After Pivot
 
 - Checkpoint: after event 10
 - This round covers events 6-10
-- Digest: 86bf5dd9-076b-4862-9c9a-7347abfa0482
+- Digest: 685814b1-b81c-4c53-b51f-6f690ca7a763
 
 **Input In This Round**
 
@@ -84,31 +86,30 @@
 
 **Goal**
 
-- ship a self-hosted memory layer for project assistants.
+- ship a self-hosted memory layer for project assistants
 
 **Constraints**
 
 - keep API stable
 - self-hosted first
-- do not become a general-purpose agent platform.
-
-**Decisions**
-
-- continue prioritizing memory continuity for long-running projects
-- now emphasize achieving low-drift memory reliability before expanding integrations.
+- do not become a general-purpose agent platform
 
 **Open Todos**
 
 - formalize drift metrics
-- add replay consistency checks.
+- add replay consistency checks
 
 **Status**
 
-- early demos looked too much like a chat shell.
+- shifting focus from demos toward reliability; cautious about integration expansions
 
 **Noise**
 
-- optional future desktop demos.
+- optional future desktop demos
+
+**Other**
+
+- Decision: prioritize low-drift memory reliability; defer integrations/expansions until reliability is achieved
 
 ### Question: What is the current project goal?
 
@@ -120,7 +121,9 @@
 **Answers**
 
 - Project Memory (pass): Goal: ship a self-hosted memory layer for project assistants.
-- Direct model (pass): The current project goal is to ship a self-hosted memory layer for project assistants.
+- Direct model (pass): The goal is to ship a self-hosted memory layer for project assistants.
+
+Focusing on API stability, self-hosted-first design, and high reliability (low drift) before adding integrations.
 
 ### Question: What is explicitly out of scope?
 
@@ -131,18 +134,23 @@
 
 **Answers**
 
-- Project Memory (pass): There is no explicit statement about what is out of scope in the retrieved memory. The closest boundary is the constraint "do not become a general-purpose agent platform," which suggests a scope limit but is not framed as an explicit out-of-scope item.
+- Project Memory (pass): There is no item explicitly labeled as "out of scope" in the retrieved memory.
 
-- Direct model (pass): - Becoming a general-purpose agent platform (explicit constraint: not in scope).
-- Expanding integrations beyond the memory layer until drift metrics and replay checks are formalized (focus is on low-drift reliability first).
-- Desktop demos or non-essential UI/demo noise (desktop demos are noted as optional in the future and out of current scope).
-- Non-self-hosted deployments or cloud-hosted alternatives are not the current focus (self-hosted first is the priority).
+The memory does specify scope-related constraints instead:
+- Do not become a general-purpose agent platform.
+- Keep API stable.
+- Self-hosted first.
+- Focus on memory continuity for long-running projects.
+- Focus on low-drift memory reliability before expanding integrations.
+- Direct model (pass): - Not becoming a general-purpose agent platform.
+- Integrations and expansions beyond the core memory layer are deferred and not in scope until reliability (low-drift memory) is achieved.
+- Desktop demos are not planned now (optional future).
 
 ## Round 3: Final State
 
 - Checkpoint: after event 16
 - This round covers events 11-16
-- Digest: 6cc32641-6b8d-4ce3-8994-368708160fb8
+- Digest: a3b13174-3c30-4d89-941e-346bbad0507a
 
 **Input In This Round**
 
@@ -157,34 +165,32 @@
 
 **Goal**
 
-- ship a self-hosted memory runtime for local models.
+- ship self-hosted memory runtime for local models
 
 **Constraints**
 
-- stable API
-- self-hosted first
-- not a general-purpose agent platform
-- hosted work out of scope.
-
-**Decisions**
-
-- prioritize memory continuity for long-running projects
-- ensure low-drift reliability before expanding integrations
-- treat the assistant runtime as a product boundary.
+- API stable
+- self-hosted-first
+- not a general agent platform
+- hosted work out of scope
 
 **Open Todos**
 
-- drift metrics
-- replay checks
-- define runtime policies.
+- formalize drift metrics
+- add replay checks
+- define policies
 
 **Status**
 
-- roadmap centers retention, stability, grounding, and replayability.
+- roadmap for retention, stability, grounding, and replayability; shifting toward reliability; boundary framing; cautious on integrations
 
 **Noise**
 
-- desktop mockups and branding experiments discussed.
+- casual optional desktop mockups and branding experiments
+
+**Other**
+
+- Decision: prioritize low-drift reliability; treat runtime as product boundary; design for a stable contract
 
 ### Question: What is the current project goal?
 
@@ -195,29 +201,32 @@
 
 **Answers**
 
-- Project Memory (pass): Current project goal: ship a self-hosted long-term memory runtime for local models. Constraints: keep API stable; self-hosted first.
-- Direct model (fail): The goal is to ship a self-hosted memory runtime for local models.
+- Project Memory (pass): Ship a self-hosted long-term memory runtime for local models.
+- Direct model (fail): The current project goal is to ship a self-hosted memory runtime for local models.
 
 ### Question: What constraints still apply?
 
 **Check Rules**
 
-- Must include all: keep api stable | self-hosted first | general-purpose agent platform
+- Must include all: (keep api stable OR api stability must be maintained OR api must remain stable OR stable api) | (self-hosted first OR self-hosted-first OR self hosted first) | (general-purpose agent platform OR general agent platform OR do not become a general-purpose agent platform OR not a general agent platform)
 - Must avoid: hosted ai platform | break api compatibility
 
 **Answers**
 
-- Project Memory (pass): - Self-hosted first. Prioritize self-hosted deployment; hosted platform work is out of scope.
-- Keep API stable.
+- Project Memory (pass): - API stability must be maintained.
+- Self-hosted first (priority).
 - Do not become a general-purpose agent platform.
-- Focus on memory continuity for long-running projects; aim for low-drift memory reliability before expanding integrations.
+- Hosted platform work is explicitly out of scope.
 - Treat the assistant runtime as a product boundary, not just loose APIs.
-- Roadmap constraints emphasize retention, stability, grounding, and replayability.
-
-- Direct model (fail): - Stable API
-- Self-hosted first
-- Not a general-purpose agent platform
-- Hosted work out of scope
+- Focus on memory continuity for long-running projects.
+- Focus on low-drift memory reliability before expanding integrations.
+- Roadmap centers on retention, stability, grounding, and replayability.
+- Direct model (pass): Constraints that still apply:
+- API must remain stable (no breaking changes).
+- Self-hosted-first: primary focus is self-hosted deployment.
+- Not a general agent platform; scope is limited to the memory runtime for local models.
+- Hosted (cloud) work is out of scope.
+- Design constraints: prioritize low-drift reliability, treat the runtime as a product boundary, and design for a stable contract.
 
 ### Question: What key decisions have we made?
 
@@ -228,17 +237,22 @@
 
 **Answers**
 
-- Project Memory (pass): - Treat the assistant runtime as a product boundary, not just loose APIs.
-- Ship a self-hosted long-term memory runtime for local models; self-hosted first and maintain API stability.
-- Focus on memory continuity for long-running projects.
-- Focus on low-drift memory reliability before expanding integrations.
-- Hosted platform work is explicitly out of scope.
-- Roadmap should center retention, stability, grounding, and replayability.
-- Do not become a general-purpose agent platform.
+- Project Memory (pass): Key decisions:
+- We decide to focus on memory continuity for long-running projects.
+- We decide to focus on low-drift memory reliability before expanding integrations.
+- We decide to treat assistant runtime as a product boundary, not just loose APIs.
+- Direct model (fail): Key decisions:
 
-- Direct model (fail): - Prioritize memory continuity for long-running projects.
-- Ensure low-drift reliability before expanding integrations.
-- Treat the assistant runtime as a product boundary.
+- Goal: ship a self-hosted memory runtime for local models.
+- Constraints decisions:
+  - API must be stable.
+  - Self-hosted-first posture.
+  - Not a general agent platform.
+  - Hosted (cloud) work is out of scope.
+- design decisions:
+  - Prioritize low-drift reliability.
+  - Treat the runtime as a product boundary.
+  - Design for a stable contract.
 
 ### Question: What work remains open?
 
@@ -249,13 +263,15 @@
 
 **Answers**
 
-- Project Memory (pass): - TODO: define assistant runtime policies
-- TODO: add replay consistency checks
-- TODO: formalize drift metrics
-- Direct model (fail): Open work items:
+- Project Memory (pass): Open work items (TODOs) from the retrieved records:
+- Define assistant runtime policies
+- Add replay consistency checks
+- Formalize drift metrics
+- Direct model (fail): Open work remaining (per memory summary open todos):
 
-- Drift metrics: define, implement, and instrument drift metrics to monitor stability and coherence over long-running sessions; establish acceptance thresholds and dashboards.
+- Formalize drift metrics: define how to measure model/runtime drift, set thresholds, and establish monitoring/alerting for drift.
 
-- Replay checks: implement tests and checks to ensure memory state is replayable/reproducible; add regression tests for replay paths and determinism.
+- Add replay checks: design and implement replayability checks to verify determinism and reliability across runs; specify replay semantics and logging requirements.
 
-- Define runtime policies: formalize runtime policies governing memory retention, grounding, privacy, security, resource limits, and failure handling; document enforcement rules.
+- Define policies: create policy documentation around drift handling, updates/rollback procedures, reliability targets, and boundary contracts.
+
