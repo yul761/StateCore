@@ -332,9 +332,22 @@ describe("AssistantSession", () => {
     expect(result.answer).toBe("Grounded answer");
     expect(result.writeTier).toBe("stable");
     expect(result.digestTriggered).toBe(true);
+    expect(result.answerMode).toBe("llm_fast_path");
     expect(result.workingMemoryVersion).toBe(4);
     expect(result.stableStateVersion).toBe("digest-1");
     expect(result.usedFastLayerContextSummary).toContain("working_goal:keep api stable");
+    expect(result.retrievalPlan).toMatchObject({
+      mode: "full",
+      reason: "evidence_or_history_request",
+      limit: 4
+    });
+    expect(result.layerAlignment).toEqual({
+      goalAligned: true,
+      sharedConstraintCount: 1,
+      sharedDecisionCount: 0,
+      fastPathReady: true
+    });
+    expect(result.warnings).toEqual([]);
     expect(result.notes).toContain("write_tier:stable_fact_signal");
     expect(result.notes).toContain("digest:stable_or_documented_turn");
     expect(result.evidence.digestIds).toEqual(["digest-1"]);
@@ -439,6 +452,14 @@ describe("AssistantSession", () => {
 
     expect(result.workingMemoryVersion).toBeNull();
     expect(result.stableStateVersion).toBeNull();
+    expect(result.answerMode).toBe("llm_fast_path");
+    expect(result.layerAlignment).toEqual({
+      goalAligned: false,
+      sharedConstraintCount: 0,
+      sharedDecisionCount: 0,
+      fastPathReady: false
+    });
+    expect(result.warnings).toEqual([]);
     expect(typeof result.usedFastLayerContextSummary).toBe("string");
     expect(result.usedFastLayerContextSummary?.length).toBeGreaterThan(0);
   });
@@ -591,6 +612,7 @@ describe("AssistantSession", () => {
     expect(result.answer).toContain("Current user turn:");
     expect(result.answer).toContain("three-layer runtime");
     expect(result.answer).toContain("Working:\n(none)");
+    expect(result.answerMode).toBe("llm_fast_path");
     expect(llm.chat).toHaveBeenCalledWith(expect.any(Array), {
       maxOutputTokens: 400,
       reasoningEffort: "low"
@@ -673,6 +695,18 @@ describe("AssistantSession", () => {
     });
 
     expect(result.answer).toBe("Current goal: ship a three-layer memory runtime for local LLM agents.");
+    expect(result.answerMode).toBe("direct_state_fast_path");
+    expect(result.retrievalPlan).toBeUndefined();
+    expect(result.layerAlignment).toEqual({
+      goalAligned: true,
+      sharedConstraintCount: 0,
+      sharedDecisionCount: 0,
+      fastPathReady: true
+    });
+    expect(result.warnings).toEqual([
+      "constraint_sets_do_not_overlap",
+      "decision_sets_do_not_overlap"
+    ]);
     expect(result.notes).toContain("answer:direct_state_fast_path");
     expect(chat).not.toHaveBeenCalled();
   });
@@ -736,8 +770,91 @@ describe("AssistantSession", () => {
     });
 
     expect(result.answer).toBe("Current goal: ship a three-layer memory runtime for local LLM agents.");
+    expect(result.answerMode).toBe("direct_state_fast_path");
+    expect(result.layerAlignment).toEqual({
+      goalAligned: false,
+      sharedConstraintCount: 0,
+      sharedDecisionCount: 0,
+      fastPathReady: false
+    });
+    expect(result.warnings).toEqual([]);
     expect(result.notes).toContain("answer:direct_state_fast_path");
     expect(chat).not.toHaveBeenCalled();
+  });
+
+  it("surfaces runtime layer warnings when structured fields leak into the goal", async () => {
+    const session = new AssistantSession({
+      userId: "user-1",
+      scopeId: "scope-1",
+      memoryService: { ingestEvent: vi.fn(async () => ({ ok: true })) },
+      recallPolicy: {
+        resolve: async () => ({
+          digest: null,
+          events: [],
+          stateRef: "digest-1",
+          stateSnapshot: null,
+          workingMemorySnapshot: {
+            scopeId: "scope-1",
+            version: 1,
+            state: {
+              currentGoal: "validate CLI fast layer\\nconstraint: keep responses quick",
+              activeConstraints: [],
+              recentDecisions: [],
+              openQuestions: [],
+              sourceEventIds: ["evt-1"]
+            },
+            updatedAt: new Date("2026-03-17T00:00:00.000Z")
+          },
+          workingMemoryView: {
+            goal: "validate CLI fast layer\\nconstraint: keep responses quick",
+            constraints: [],
+            decisions: [],
+            openQuestions: []
+          },
+          stableStateView: {
+            goal: "validate CLI fast layer\\nconstraint: keep responses quick",
+            constraints: [],
+            decisions: [],
+            todos: [],
+            openQuestions: [],
+            risks: []
+          },
+          recentTurns: [],
+          fastLayerContext: {
+            systemContext: "Respond quickly.",
+            workingMemoryBlock: "(none)",
+            stableStateBlock: "(none)",
+            retrievalBlock: "(none)",
+            recentTurnsBlock: "(none)",
+            retrievalHints: { priorityTerms: [], exclusions: [] },
+            summary: "warning_case"
+          }
+        })
+      },
+      llm: { chat: vi.fn(async () => "Model answer") } as any,
+      prompts: {
+        system: "Fast runtime.",
+        user: "Current user turn:\n{{currentTurn}}"
+      }
+    });
+
+    const result = await session.handleTurn({
+      message: "What is the current architecture goal?",
+      source: "sdk",
+      writeTier: "ephemeral",
+      digestMode: "skip"
+    });
+
+    expect(result.layerAlignment).toEqual({
+      goalAligned: true,
+      sharedConstraintCount: 0,
+      sharedDecisionCount: 0,
+      fastPathReady: true
+    });
+    expect(result.warnings).toEqual([
+      "working_goal_contains_structured_lines",
+      "stable_goal_contains_structured_lines"
+    ]);
   });
 
   it("falls back to uncapped runtime output when the capped call returns empty content", async () => {

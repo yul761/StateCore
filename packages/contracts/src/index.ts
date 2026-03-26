@@ -38,6 +38,10 @@ export const StateOutput = z.object({
   activeScopeId: z.string().uuid().nullable()
 });
 
+export const ScopeActivationOutput = z.object({
+  activeScopeId: z.string().uuid().nullable()
+});
+
 export const MemoryEventInput = z.object({
   scopeId: z.string().uuid(),
   type: MemoryType,
@@ -77,7 +81,8 @@ export const DigestOutput = z.object({
   summary: z.string(),
   changes: z.string(),
   nextSteps: z.array(z.string()),
-  createdAt: z.string()
+  createdAt: z.string(),
+  rebuildGroupId: z.string().uuid().nullable().optional()
 });
 
 export const DigestListOutput = z.object({
@@ -87,6 +92,11 @@ export const DigestListOutput = z.object({
 
 export const DigestEnqueueOutput = z.object({
   jobId: z.string()
+});
+
+export const DigestRebuildOutput = z.object({
+  jobId: z.string(),
+  rebuildGroupId: z.string().uuid()
 });
 
 export const DigestRebuildInput = z.object({
@@ -200,11 +210,26 @@ export const RuntimeTurnInput = z.object({
 
 export const RuntimeTurnOutput = z.object({
   answer: z.string(),
+  answerMode: z.enum(["direct_state_fast_path", "llm_fast_path"]).optional(),
   writeTier: z.enum(["ephemeral", "candidate", "stable", "documented"]),
   digestTriggered: z.boolean(),
-  workingMemoryVersion: z.number().int().min(0).optional(),
+  workingMemoryVersion: z.number().int().min(0).nullable().optional(),
   stableStateVersion: z.string().nullable().optional(),
   usedFastLayerContextSummary: z.string().optional(),
+  retrievalPlan: z.object({
+    mode: z.enum(["none", "light", "full"]),
+    reason: z.string(),
+    limit: z.number().int().min(0),
+    query: z.string().optional(),
+    cacheHit: z.boolean().optional()
+  }).optional(),
+  layerAlignment: z.object({
+    goalAligned: z.boolean(),
+    sharedConstraintCount: z.number().int().min(0),
+    sharedDecisionCount: z.number().int().min(0),
+    fastPathReady: z.boolean()
+  }).optional(),
+  warnings: z.array(z.string()).optional(),
   notes: z.array(z.string()).optional(),
   evidence: GroundingEvidenceOutput
 });
@@ -254,6 +279,15 @@ export const FastLayerContext = z.object({
 });
 export type FastLayerContext = z.infer<typeof FastLayerContext>;
 
+export const RetrievalPlanOutput = z.object({
+  mode: z.enum(["none", "light", "full"]),
+  reason: z.string(),
+  limit: z.number().int().min(0),
+  query: z.string().optional(),
+  cacheHit: z.boolean().optional()
+});
+export type RetrievalPlanOutput = z.infer<typeof RetrievalPlanOutput>;
+
 export const WorkingMemoryOutput = z.object({
   scopeId: z.string().uuid(),
   version: z.number().int().min(0),
@@ -266,6 +300,7 @@ export const FastLayerViewOutput = z.object({
   scopeId: z.string().uuid(),
   workingMemoryVersion: z.number().int().min(0).nullable(),
   stableStateVersion: z.string().nullable(),
+  retrievalPlan: RetrievalPlanOutput.nullable().optional(),
   fastLayerContext: FastLayerContext
 });
 
@@ -311,6 +346,10 @@ export const HealthOutput = z.object({
     model: z.string(),
     baseUrl: z.string(),
     chatModel: z.string(),
+    runtimeModel: z.string().optional(),
+    runtimeModelBaseUrl: z.string().optional(),
+    runtimeReasoningEffort: z.enum(["low", "medium", "high"]).optional(),
+    runtimeMaxOutputTokens: z.number().int().min(1).optional(),
     structuredOutputModel: z.string(),
     embeddingModel: z.string().nullable()
   }).optional()
@@ -440,4 +479,51 @@ export const StableStateOutput = z.object({
   view: StateLayerView.nullable(),
   consistency: z.unknown().nullable().optional(),
   createdAt: z.string().nullable()
+});
+
+export const DigestStateOutput = z.object({
+  digestId: z.string().nullable(),
+  state: DigestState.nullable(),
+  consistency: z.unknown().nullable().optional(),
+  createdAt: z.string().nullable()
+});
+
+export const DigestStateHistoryOutput = z.object({
+  items: z.array(z.object({
+    digestId: z.string(),
+    state: DigestState,
+    consistency: z.unknown().nullable().optional(),
+    createdAt: z.string()
+  }))
+});
+
+export const LayerAlignmentOutput = z.object({
+  goalAligned: z.boolean(),
+  sharedConstraintCount: z.number().int().min(0),
+  sharedDecisionCount: z.number().int().min(0),
+  fastPathReady: z.boolean()
+});
+
+export const LayerFreshnessOutput = z.object({
+  latestEventCreatedAt: z.string().nullable(),
+  workingMemoryUpdatedAt: z.string().nullable(),
+  stableStateCreatedAt: z.string().nullable(),
+  workingMemoryLagMs: z.number().int().min(0).nullable(),
+  stableStateLagMs: z.number().int().min(0).nullable(),
+  workingMemoryCaughtUp: z.boolean(),
+  stableStateCaughtUp: z.boolean()
+});
+
+export const LayerStatusOutput = z.object({
+  scopeId: z.string().uuid(),
+  message: z.string(),
+  workingMemoryVersion: z.number().int().min(0).nullable(),
+  stableStateVersion: z.string().nullable(),
+  workingMemoryView: WorkingMemoryView.nullable(),
+  stableStateView: StateLayerView.nullable(),
+  fastLayerSummary: z.string(),
+  retrievalPlan: RetrievalPlanOutput.nullable().optional(),
+  layerAlignment: LayerAlignmentOutput,
+  freshness: LayerFreshnessOutput,
+  warnings: z.array(z.string())
 });

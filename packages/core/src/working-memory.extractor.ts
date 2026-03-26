@@ -113,14 +113,34 @@ function shouldUseForWorkingMemory(event: WorkingMemoryEventLike) {
   return true;
 }
 
+export function selectWorkingMemoryEvents(
+  events: WorkingMemoryEventLike[],
+  maxEvents: number
+) {
+  const cappedMaxEvents = Math.max(1, maxEvents);
+  const ordered = [...events]
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+    .filter(shouldUseForWorkingMemory);
+  const recent = ordered.slice(-cappedMaxEvents);
+  const selected = new Map(recent.map((event) => [event.id, event]));
+
+  const latestGoalEvent = [...ordered]
+    .reverse()
+    .find((event) => extractGoalFromContent(event.content));
+
+  if (latestGoalEvent) {
+    selected.set(latestGoalEvent.id, latestGoalEvent);
+  }
+
+  return [...selected.values()].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+}
+
 export function extractWorkingMemoryState(
   events: WorkingMemoryEventLike[],
   options?: WorkingMemoryExtractorOptions
 ): WorkingMemoryState {
   const maxItems = Math.max(1, options?.maxItemsPerField ?? 5);
-  const ordered = [...events]
-    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-    .filter(shouldUseForWorkingMemory);
+  const ordered = selectWorkingMemoryEvents(events, events.length);
   const reversed = [...ordered].reverse();
 
   let currentGoal: string | undefined;

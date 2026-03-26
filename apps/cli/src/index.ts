@@ -9,6 +9,9 @@ const configDir = path.join(os.homedir(), ".projectmemory");
 const configFile = path.join(configDir, "config.json");
 
 function getOrCreateUserId() {
+  if (cliEnv.cliUserId) {
+    return cliEnv.cliUserId;
+  }
   if (!fs.existsSync(configDir)) {
     fs.mkdirSync(configDir, { recursive: true });
   }
@@ -77,6 +80,77 @@ async function readJsonSafe(response: Response) {
   } catch {
     return null;
   }
+}
+
+async function resolveTargetScopeId(scopeId?: string) {
+  if (scopeId) return scopeId;
+  const state = await apiFetch("/state");
+  return state.activeScopeId ?? null;
+}
+
+async function timedApiFetch(pathname: string, options?: RequestInit) {
+  const startedAt = Date.now();
+  const result = await apiFetch(pathname, options);
+  return {
+    result,
+    latencyMs: Date.now() - startedAt
+  };
+}
+
+function computeDoctorFailures(summary: Record<string, any>, probeTurnEnabled: boolean) {
+  const failures = [];
+  if (summary.status !== "ok") {
+    failures.push("api_not_healthy");
+  }
+  if (!summary.featureLlm) {
+    failures.push("feature_llm_disabled");
+  }
+  if (!summary.scopeId) {
+    failures.push("scope_missing");
+  }
+  if (!summary.layerAlignment?.goalAligned) {
+    failures.push("layer_goal_not_aligned");
+  }
+  if (!summary.layerAlignment?.fastPathReady) {
+    failures.push("layer_fast_path_not_ready");
+  }
+  if (summary.layerFreshness?.workingMemoryCaughtUp === false) {
+    failures.push("working_memory_not_caught_up");
+  }
+  if (summary.layerFreshness?.stableStateCaughtUp === false) {
+    failures.push("stable_state_not_caught_up");
+  }
+  if (Array.isArray(summary.layerWarnings) && summary.layerWarnings.length > 0) {
+    failures.push("layer_warnings_present");
+  }
+  if (probeTurnEnabled) {
+    if (!summary.runtimeProbe) {
+      failures.push("runtime_probe_missing");
+    } else {
+      if (!summary.runtimeProbe.layerAlignment?.goalAligned) {
+        failures.push("runtime_probe_goal_not_aligned");
+      }
+      if (Array.isArray(summary.runtimeProbe.warnings) && summary.runtimeProbe.warnings.length > 0) {
+        failures.push("runtime_probe_warnings_present");
+      }
+      if (!summary.runtimeProbe.answerMode) {
+        failures.push("runtime_probe_answer_mode_missing");
+      }
+    }
+  }
+  return failures;
+}
+
+function writeOutputFile(filePath: string, value: unknown) {
+  const baseDir =
+    process.env.PROJECT_MEMORY_CLI_BASE_DIR ||
+    process.env.PWD ||
+    process.env.INIT_CWD ||
+    process.cwd();
+  const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
+  fs.mkdirSync(path.dirname(resolved), { recursive: true });
+  fs.writeFileSync(resolved, `${JSON.stringify(value, null, 2)}\n`);
+  return resolved;
 }
 
 const program = new Command();
@@ -233,6 +307,118 @@ program
   });
 
 program
+  .command("layer-status")
+  .argument("[message]")
+  .argument("[scopeId]")
+  .description("Show aggregated three-layer diagnostics for a message")
+  .action(async (message?: string, scopeId?: string) => {
+    const state = await apiFetch("/state");
+    const targetScopeId = scopeId || state.activeScopeId;
+    if (!targetScopeId) {
+      // eslint-disable-next-line no-console
+      console.log("No active scope.");
+      return;
+    }
+    const targetMessage = message || "What is the current architecture goal?";
+    const result = await apiFetch(`/memory/layer-status?scopeId=${encodeURIComponent(targetScopeId)}&message=${encodeURIComponent(targetMessage)}`);
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify(result, null, 2));
+  });
+
+program
+  .command("doctor")
+  .argument("[scopeId]")
+  .description("Show runtime health, active scope, layer versions, and fast-view retrieval plan")
+  .option("--probe-turn", "Run a lightweight runtime turn probe as part of the diagnosis")
+  .option("--assert-clean", "Exit non-zero if the diagnosed scope is not in a clean runtime state")
+  .option("--message <text>", "Override the diagnostic message used for layer-status and runtime probe")
+  .option("--output-file <path>", "Write the diagnosis JSON to a file")
+  .option("--output <path>", "Write the diagnosis JSON to a file")
+  .action(async (scopeId: string | undefined, options: { probeTurn?: boolean; assertClean?: boolean; message?: string; output?: string; outputFile?: string }) => {
+    const normalizedScopeId = scopeId && !scopeId.startsWith("-") ? scopeId : undefined;
+    const probeTurnEnabled = Boolean(options.probeTurn || scopeId === "--probe-turn");
+    const targetMessage = options.message || "What is the current architecture goal?";
+    const [health, state] = await Promise.all([
+      apiFetch("/health"),
+      apiFetch("/state")
+    ]);
+    const targetScopeId = normalizedScopeId || state.activeScopeId || null;
+
+    const summary: Record<string, unknown> = {
+      apiBaseUrl: cliEnv.apiBaseUrl,
+      status: health.status ?? "unknown",
+      featureLlm: health.featureLlm ?? false,
+      activeScopeId: state.activeScopeId ?? null,
+      runtimeModel: health.model?.runtimeModel ?? null,
+      runtimeReasoningEffort: health.model?.runtimeReasoningEffort ?? null,
+      runtimeMaxOutputTokens: health.model?.runtimeMaxOutputTokens ?? null,
+      workingMemoryEnabled: health.workingMemory?.enabled ?? null,
+      workingMemoryUseLlm: health.workingMemory?.useLlm ?? null
+    };
+
+    if (targetScopeId) {
+      const layerStatus = await apiFetch(`/memory/layer-status?scopeId=${encodeURIComponent(targetScopeId)}&message=${encodeURIComponent(targetMessage)}`);
+
+      summary.scopeId = targetScopeId;
+      summary.message = targetMessage;
+      summary.workingMemoryVersion = layerStatus.workingMemoryVersion ?? null;
+      summary.stableStateVersion = layerStatus.stableStateVersion ?? null;
+      summary.fastViewSummary = layerStatus.fastLayerSummary ?? null;
+      summary.fastViewRetrievalPlan = layerStatus.retrievalPlan ?? null;
+      summary.layerAlignment = layerStatus.layerAlignment ?? null;
+      summary.layerFreshness = layerStatus.freshness ?? null;
+      summary.layerWarnings = layerStatus.warnings ?? [];
+
+      if (probeTurnEnabled) {
+        const probe = await timedApiFetch("/memory/runtime/turn", {
+          method: "POST",
+          body: JSON.stringify({
+            scopeId: targetScopeId,
+            message: targetMessage,
+            source: "cli",
+            writeTier: "ephemeral",
+            digestMode: "skip"
+          })
+        });
+        summary.runtimeProbe = {
+          latencyMs: probe.latencyMs,
+          answerMode: probe.result.answerMode ?? null,
+          retrievalPlan: probe.result.retrievalPlan ?? null,
+          layerAlignment: probe.result.layerAlignment ?? null,
+          warnings: probe.result.warnings ?? [],
+          notes: probe.result.notes ?? []
+        };
+        if (summary.layerAlignment && typeof summary.layerAlignment === "object") {
+          Object.assign(summary.layerAlignment, {
+            directStateFastPathLive: probe.result.answerMode === "direct_state_fast_path"
+          });
+        }
+      }
+    }
+
+    const assertionFailures = computeDoctorFailures(summary, probeTurnEnabled);
+    summary.diagnosisStatus = assertionFailures.length ? "fail" : "pass";
+    summary.assertionFailures = assertionFailures;
+    summary.requestedOutputPath = options.outputFile || options.output || null;
+
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify(summary, null, 2));
+
+    const outputPathOption = options.outputFile || options.output;
+    if (outputPathOption) {
+      const outputPath = writeOutputFile(outputPathOption, summary);
+      // eslint-disable-next-line no-console
+      console.error(`doctor_output_written: ${outputPath}`);
+    }
+
+    if (options.assertClean && assertionFailures.length) {
+      // eslint-disable-next-line no-console
+      console.error(`doctor_assert_clean_failed: ${assertionFailures.join(",")}`);
+      process.exit(1);
+    }
+  });
+
+program
   .command("state")
   .argument("[scopeId]")
   .description("Show latest digest state snapshot for a scope or the active scope")
@@ -338,8 +524,15 @@ program
     console.log(result.answer);
     // eslint-disable-next-line no-console
     console.log(JSON.stringify({
+      answerMode: result.answerMode,
       writeTier: result.writeTier,
       digestTriggered: result.digestTriggered,
+      workingMemoryVersion: result.workingMemoryVersion ?? null,
+      stableStateVersion: result.stableStateVersion ?? null,
+      usedFastLayerContextSummary: result.usedFastLayerContextSummary ?? null,
+      retrievalPlan: result.retrievalPlan ?? null,
+      layerAlignment: result.layerAlignment ?? null,
+      warnings: result.warnings ?? [],
       notes: result.notes ?? [],
       evidence: result.evidence
     }, null, 2));
@@ -366,5 +559,9 @@ program
     // eslint-disable-next-line no-console
     console.log(`Reminder scheduled in ${value} minutes.`);
   });
+const argv = [...process.argv];
+if (argv[2] === "--") {
+  argv.splice(2, 1);
+}
 
-program.parseAsync();
+program.parseAsync(argv);

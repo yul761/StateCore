@@ -38,6 +38,7 @@ const cfg = {
   digestRuns: Number(process.env.BENCH_DIGEST_RUNS || 2),
   replayRuns: Number(process.env.BENCH_REPLAY_RUNS || 3),
   timeoutMs: Number(process.env.BENCH_TIMEOUT_MS || 180000),
+  requestTimeoutMs: Number(process.env.BENCH_REQUEST_TIMEOUT_MS || 15000),
   outputDir: process.env.BENCH_OUTPUT_DIR || "benchmark-results",
   featureLlm: process.env.FEATURE_LLM === "true",
   profile: process.env.BENCH_PROFILE || "balanced",
@@ -133,24 +134,41 @@ function getEnvSnapshot() {
 
 async function apiFetch(method, endpoint, body) {
   const t0 = performance.now();
-  const response = await fetch(`${cfg.apiBaseUrl}${endpoint}`, {
-    method,
-    headers,
-    ...(body ? { body: JSON.stringify(body) } : {})
-  });
-  const text = await response.text();
-  let json;
   try {
-    json = JSON.parse(text);
-  } catch {
-    json = { raw: text };
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), cfg.requestTimeoutMs);
+    try {
+      const response = await fetch(`${cfg.apiBaseUrl}${endpoint}`, {
+        method,
+        headers,
+        signal: controller.signal,
+        ...(body ? { body: JSON.stringify(body) } : {})
+      });
+      clearTimeout(timeout);
+      const text = await response.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = { raw: text };
+      }
+      return {
+        ok: response.ok,
+        status: response.status,
+        json,
+        latencyMs: performance.now() - t0
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      status: 599,
+      json: { error: "fetch_failed", detail: String(error) },
+      latencyMs: performance.now() - t0
+    };
   }
-  return {
-    ok: response.ok,
-    status: response.status,
-    json,
-    latencyMs: performance.now() - t0
-  };
 }
 
 async function withConcurrency(items, limit, worker) {
@@ -448,12 +466,23 @@ function buildLongTermMemoryReliabilityBreakdown(digestMetrics, replayMetrics, r
         )
       : 1;
     const combinedGroundingQuality = (groundingQuality * 0.6) + (answerGroundingQuality * 0.4);
+    const diagnosticsQuality =
+      (
+        (runtimeMetrics.runtimeLayerAlignmentRate || 0) * 0.35 +
+        (runtimeMetrics.runtimeWarningsFreeRate || 0) * 0.15 +
+        (runtimeMetrics.layerStatusAlignmentRate || 0) * 0.15 +
+        (runtimeMetrics.layerStatusWarningsFreeRate || 0) * 0.1 +
+        (runtimeMetrics.layerStatusWorkingMemoryCaughtUpRate || 0) * 0.1 +
+        (runtimeMetrics.layerStatusStableStateCaughtUpRate || 0) * 0.05 +
+        (runtimeMetrics.runtimeLayerStatusConsistencyRate || 0) * 0.1
+      );
+    const combinedRuntimeQuality = (combinedGroundingQuality * 0.8) + (diagnosticsQuality * 0.2);
     const combinedSuccess =
       (
         (runtimeMetrics.success / Math.max(1, runtimeMetrics.runs)) * 0.6 +
         ((answerMetrics?.success ?? 0) / Math.max(1, answerMetrics?.runs ?? 1)) * 0.4
       );
-    runtimeScore = clamp((combinedGroundingQuality * 7.5) + ((1 - Math.max(0, 1 - combinedSuccess)) * 7.5));
+    runtimeScore = clamp((combinedRuntimeQuality * 7.5) + ((1 - Math.max(0, 1 - combinedSuccess)) * 7.5));
   }
 
   return {
@@ -1181,9 +1210,18 @@ async function run() {
     evidenceStateProvenanceRate: 0,
     evidenceStateConfidenceRate: 0,
     evidenceRecentStateChangesRate: 0,
+    runtimeLayerAlignmentRate: 0,
+    runtimeWarningsFreeRate: 0,
+    layerStatusAlignmentRate: 0,
+    layerStatusWarningsFreeRate: 0,
+    layerStatusWorkingMemoryCaughtUpRate: 0,
+    layerStatusStableStateCaughtUpRate: 0,
+    runtimeLayerStatusConsistencyRate: 0,
     digestTriggerRate: 0,
     writeTierCounts: {},
     noteTaxonomy: {},
+    runtimeWarningTaxonomy: {},
+    layerStatusWarningTaxonomy: {},
     policyProfile: cfg.runtimePolicyProfile
   };
   let answerMetrics = {
@@ -1522,10 +1560,41 @@ async function run() {
         digestMode: index === 0 ? "force" : "skip",
         writeTier: "candidate"
       }));
+    const prewarmMessage = runtimeCases[0]?.message || "What is the current architecture goal?";
+    const prewarmWorkingState = await apiFetch("GET", `/memory/working-state?scopeId=${scopeId}`);
+    const prewarmWorkingVersion = typeof prewarmWorkingState.json?.version === "number" ? prewarmWorkingState.json.version : 0;
+    const prewarmStableState = await apiFetch("GET", `/memory/stable-state?scopeId=${scopeId}`);
+    const prewarmStableDigestId = typeof prewarmStableState.json?.digestId === "string" ? prewarmStableState.json.digestId : null;
+    const prewarmLayerStatus = await apiFetch(
+      "GET",
+      `/memory/layer-status?scopeId=${encodeURIComponent(scopeId)}&message=${encodeURIComponent(prewarmMessage)}`
+    );
+    const prewarmFreshness = prewarmLayerStatus.json?.freshness ?? null;
+    const needsPrewarm =
+      prewarmWorkingVersion === 0 ||
+      prewarmFreshness?.workingMemoryCaughtUp !== true ||
+      prewarmFreshness?.stableStateCaughtUp !== true;
+    if (needsPrewarm) {
+      await apiFetch("POST", "/memory/runtime/turn", {
+        scopeId,
+        message: "status: benchmark prewarm working memory",
+        source: "sdk",
+        policyProfile: cfg.runtimePolicyProfile,
+        writeTier: "stable",
+        digestMode: "force"
+      });
+      await waitForWorkingMemoryVersion(scopeId, prewarmWorkingVersion);
+      await waitForStableStateVersion(scopeId, prewarmStableDigestId);
+      report.notes.push("Runtime benchmark prewarmed Working Memory and Stable State before measuring layer freshness.");
+    }
     const runtimeResults = [];
     for (const item of runtimeCases) {
       const beforeWorkingState = await apiFetch("GET", `/memory/working-state?scopeId=${scopeId}`);
       const beforeStableState = await apiFetch("GET", `/memory/stable-state?scopeId=${scopeId}`);
+      const beforeLayerStatus = await apiFetch(
+        "GET",
+        `/memory/layer-status?scopeId=${encodeURIComponent(scopeId)}&message=${encodeURIComponent(item.message)}`
+      );
       const previousWorkingVersion = typeof beforeWorkingState.json?.version === "number" ? beforeWorkingState.json.version : 0;
       const previousStableDigestId = typeof beforeStableState.json?.digestId === "string" ? beforeStableState.json.digestId : null;
       const res = await apiFetch("POST", "/memory/runtime/turn", {
@@ -1566,6 +1635,13 @@ async function run() {
       const stableStateUpdate = Boolean(res.json?.digestTriggered)
         ? await waitForStableStateVersion(scopeId, previousStableDigestId)
         : { ok: false, latencyMs: 0 };
+      const runtimeLayerAlignment = res.json?.layerAlignment ?? null;
+      const runtimeWarnings = Array.isArray(res.json?.warnings) ? res.json.warnings : [];
+      const layerStatusAlignment = beforeLayerStatus.json?.layerAlignment ?? null;
+      const layerStatusWarnings = Array.isArray(beforeLayerStatus.json?.warnings) ? beforeLayerStatus.json.warnings : [];
+      const layerStatusFreshness = beforeLayerStatus.json?.freshness ?? null;
+      const runtimeRetrievalMode = typeof res.json?.retrievalPlan?.mode === "string" ? res.json.retrievalPlan.mode : null;
+      const layerStatusRetrievalMode = typeof beforeLayerStatus.json?.retrievalPlan?.mode === "string" ? beforeLayerStatus.json.retrievalPlan.mode : null;
       runtimeResults.push({
         ok: res.ok && typeof res.json?.answer === "string",
         latencyMs: res.latencyMs,
@@ -1588,6 +1664,18 @@ async function run() {
         hasWorkingMemoryVersion: typeof res.json?.workingMemoryVersion === "number" || res.json?.workingMemoryVersion === null,
         hasStableStateVersion: typeof res.json?.stableStateVersion === "string" || res.json?.stableStateVersion === null,
         hasFastLayerContextSummary: typeof res.json?.usedFastLayerContextSummary === "string" && res.json.usedFastLayerContextSummary.length > 0,
+        runtimeGoalAligned: runtimeLayerAlignment?.goalAligned === true,
+        runtimeWarningsFree: runtimeWarnings.length === 0,
+        layerStatusGoalAligned: layerStatusAlignment?.goalAligned === true,
+        layerStatusWarningsFree: layerStatusWarnings.length === 0,
+        layerStatusWorkingMemoryCaughtUp: layerStatusFreshness?.workingMemoryCaughtUp === true,
+        layerStatusStableStateCaughtUp: layerStatusFreshness?.stableStateCaughtUp === true,
+        runtimeWarnings,
+        layerStatusWarnings,
+        runtimeLayerStatusConsistent:
+          runtimeLayerAlignment?.goalAligned === layerStatusAlignment?.goalAligned &&
+          runtimeWarnings.length === layerStatusWarnings.length &&
+          runtimeRetrievalMode === layerStatusRetrievalMode,
         writeTier: typeof res.json?.writeTier === "string" ? res.json.writeTier : "unknown",
         notes: Array.isArray(res.json?.notes) ? res.json.notes : []
       });
@@ -1602,10 +1690,18 @@ async function run() {
       .filter((value) => typeof value === "number");
     const writeTierCounts = {};
     const noteTaxonomy = {};
+    const runtimeWarningTaxonomy = {};
+    const layerStatusWarningTaxonomy = {};
     for (const result of runtimeResults) {
       incrementCounter(writeTierCounts, result.writeTier);
       for (const note of Array.isArray(result.notes) ? result.notes : []) {
         incrementCounter(noteTaxonomy, note);
+      }
+      for (const warning of Array.isArray(result.runtimeWarnings) ? result.runtimeWarnings : []) {
+        incrementCounter(runtimeWarningTaxonomy, warning);
+      }
+      for (const warning of Array.isArray(result.layerStatusWarnings) ? result.layerStatusWarnings : []) {
+        incrementCounter(layerStatusWarningTaxonomy, warning);
       }
     }
     runtimeMetrics = {
@@ -1632,9 +1728,18 @@ async function run() {
       stableStateVersionRate: Number((runtimeResults.filter((result) => result.hasStableStateVersion).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       fastLayerContextSummaryRate: Number((runtimeResults.filter((result) => result.hasFastLayerContextSummary).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       directStateFastPathRate: Number((runtimeResults.filter((result) => (Array.isArray(result.notes) ? result.notes : []).includes("answer:direct_state_fast_path")).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      runtimeLayerAlignmentRate: Number((runtimeResults.filter((result) => result.runtimeGoalAligned).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      runtimeWarningsFreeRate: Number((runtimeResults.filter((result) => result.runtimeWarningsFree).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      layerStatusAlignmentRate: Number((runtimeResults.filter((result) => result.layerStatusGoalAligned).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      layerStatusWarningsFreeRate: Number((runtimeResults.filter((result) => result.layerStatusWarningsFree).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      layerStatusWorkingMemoryCaughtUpRate: Number((runtimeResults.filter((result) => result.layerStatusWorkingMemoryCaughtUp).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      layerStatusStableStateCaughtUpRate: Number((runtimeResults.filter((result) => result.layerStatusStableStateCaughtUp).length / Math.max(1, runtimeResults.length)).toFixed(3)),
+      runtimeLayerStatusConsistencyRate: Number((runtimeResults.filter((result) => result.runtimeLayerStatusConsistent).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       digestTriggerRate: Number((runtimeResults.filter((result) => result.digestTriggered).length / Math.max(1, runtimeResults.length)).toFixed(3)),
       writeTierCounts,
       noteTaxonomy,
+      runtimeWarningTaxonomy,
+      layerStatusWarningTaxonomy,
       policyProfile: cfg.runtimePolicyProfile,
       overrides: {
         recallLimit: cfg.runtimeRecallLimit,
@@ -1761,6 +1866,7 @@ async function run() {
     `- Runtime turn success: ${report.metrics.runtime.enabled ? `${report.metrics.runtime.success}/${report.metrics.runtime.runs}` : "skipped"}, evidence coverage ${report.metrics.runtime.enabled ? report.metrics.runtime.evidenceCoverageRate : "n/a"}, avg latency ${report.metrics.runtime.enabled ? `${report.metrics.runtime.avgLatencyMs} ms` : "n/a"}`,
     `- Runtime layer timings: fast path ${report.metrics.runtime.enabled ? `${report.metrics.runtime.fastPathAvgLatencyMs} ms` : "n/a"}, working memory update ${report.metrics.runtime.enabled ? `${report.metrics.runtime.workingMemoryUpdateAvgLatencyMs} ms` : "n/a"}, stable-state update ${report.metrics.runtime.enabled ? `${report.metrics.runtime.stableStateUpdateAvgLatencyMs} ms` : "n/a"}`,
     `- Runtime layer metadata: working-memory version rate ${report.metrics.runtime.enabled ? report.metrics.runtime.workingMemoryVersionRate : "n/a"}, stable-state version rate ${report.metrics.runtime.enabled ? report.metrics.runtime.stableStateVersionRate : "n/a"}, fast-layer summary rate ${report.metrics.runtime.enabled ? report.metrics.runtime.fastLayerContextSummaryRate : "n/a"}, direct-state fast-path rate ${report.metrics.runtime.enabled ? report.metrics.runtime.directStateFastPathRate : "n/a"}`,
+    `- Runtime layer diagnostics: runtime goal-alignment rate ${report.metrics.runtime.enabled ? report.metrics.runtime.runtimeLayerAlignmentRate : "n/a"}, runtime warnings-free rate ${report.metrics.runtime.enabled ? report.metrics.runtime.runtimeWarningsFreeRate : "n/a"}, layer-status goal-alignment rate ${report.metrics.runtime.enabled ? report.metrics.runtime.layerStatusAlignmentRate : "n/a"}, layer-status warnings-free rate ${report.metrics.runtime.enabled ? report.metrics.runtime.layerStatusWarningsFreeRate : "n/a"}, working-memory caught-up rate ${report.metrics.runtime.enabled ? report.metrics.runtime.layerStatusWorkingMemoryCaughtUpRate : "n/a"}, stable-state caught-up rate ${report.metrics.runtime.enabled ? report.metrics.runtime.layerStatusStableStateCaughtUpRate : "n/a"}, runtime/layer-status consistency rate ${report.metrics.runtime.enabled ? report.metrics.runtime.runtimeLayerStatusConsistencyRate : "n/a"}`,
     `- Reminder sent: ${report.metrics.reminder.success === 1 ? "yes" : "no"}, delay ${report.metrics.reminder.delayMs} ms`,
     ...(report.metrics.digest.goldRetention
         ? [
@@ -1822,9 +1928,18 @@ async function run() {
           `- Evidence state transition-taxonomy rate: ${report.metrics.runtime.evidenceStateTransitionTaxonomyRate ?? 0}`,
           `- Evidence recent state changes rate: ${report.metrics.runtime.evidenceRecentStateChangesRate ?? 0}`,
           `- Direct-state fast-path rate: ${report.metrics.runtime.directStateFastPathRate ?? 0}`,
+          `- Runtime goal-alignment rate: ${report.metrics.runtime.runtimeLayerAlignmentRate ?? 0}`,
+          `- Runtime warnings-free rate: ${report.metrics.runtime.runtimeWarningsFreeRate ?? 0}`,
+          `- Layer-status goal-alignment rate: ${report.metrics.runtime.layerStatusAlignmentRate ?? 0}`,
+          `- Layer-status warnings-free rate: ${report.metrics.runtime.layerStatusWarningsFreeRate ?? 0}`,
+          `- Layer-status working-memory caught-up rate: ${report.metrics.runtime.layerStatusWorkingMemoryCaughtUpRate ?? 0}`,
+          `- Layer-status stable-state caught-up rate: ${report.metrics.runtime.layerStatusStableStateCaughtUpRate ?? 0}`,
+          `- Runtime/layer-status consistency rate: ${report.metrics.runtime.runtimeLayerStatusConsistencyRate ?? 0}`,
           `- Digest trigger rate: ${report.metrics.runtime.digestTriggerRate}`,
           `- Write tiers: ${Object.keys(report.metrics.runtime.writeTierCounts || {}).length ? Object.entries(report.metrics.runtime.writeTierCounts).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`,
-          `- Note taxonomy: ${Object.keys(report.metrics.runtime.noteTaxonomy || {}).length ? Object.entries(report.metrics.runtime.noteTaxonomy).sort((a, b) => b[1] - a[1]).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`
+          `- Note taxonomy: ${Object.keys(report.metrics.runtime.noteTaxonomy || {}).length ? Object.entries(report.metrics.runtime.noteTaxonomy).sort((a, b) => b[1] - a[1]).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`,
+          `- Runtime warning taxonomy: ${Object.keys(report.metrics.runtime.runtimeWarningTaxonomy || {}).length ? Object.entries(report.metrics.runtime.runtimeWarningTaxonomy).sort((a, b) => b[1] - a[1]).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`,
+          `- Layer-status warning taxonomy: ${Object.keys(report.metrics.runtime.layerStatusWarningTaxonomy || {}).length ? Object.entries(report.metrics.runtime.layerStatusWarningTaxonomy).sort((a, b) => b[1] - a[1]).map(([name, count]) => `${name}=${count}`).join(", ") : "none"}`
         ]
       : ["- skipped"]),
     "",

@@ -108,6 +108,49 @@ Why this split exists:
 - a single layer is too unreliable if you let fast-turn prompts become durable truth
 - fast response and low-drift long-term memory are different jobs and should not share the same update path
 
+## Current Status
+
+The current repository state is beyond architecture sketches.
+The three-layer runtime is implemented, benchmarked, and inspectable.
+
+Latest three-layer quick benchmark:
+
+- Fast path: `19.2 ms`
+- Working Memory update: `536 ms`
+- State Layer update: `25284 ms`
+- direct-state fast-path rate: `1`
+- runtime vs layer-status consistency: `1`
+- Working Memory caught-up rate: `1`
+- Stable State caught-up rate: `1`
+- Long-term Memory Reliability: `83.72`
+- Replay state match: `yes`
+
+What this means in practice:
+
+- Fast Layer now has a direct state fast path for canonical state questions
+- Working Memory updates independently in the background
+- State Layer remains asynchronous and authoritative
+- API responses expose layer versions, retrieval plan, and answer mode for debugging
+
+Useful inspection endpoints:
+
+- `GET /memory/working-state`
+- `GET /memory/stable-state`
+- `GET /memory/fast-view`
+- `GET /memory/layer-status`
+- `POST /memory/runtime/turn`
+
+The local runtime smoke now validates the full three-layer product path:
+
+- ingest baseline events
+- enqueue a State Layer digest
+- inspect Working Memory
+- inspect Stable State
+- inspect Fast Layer context and aggregated layer status
+- probe a runtime turn and verify `answerMode` / `retrievalPlan` / `layerAlignment`
+- verify `freshness.workingMemoryCaughtUp` / `freshness.stableStateCaughtUp`
+- fail if aggregated diagnostics emit warnings on the clean smoke scope
+
 ## Turn Lifecycle
 
 1. User message hits the runtime entrypoint.
@@ -231,10 +274,56 @@ Optional:
 pnpm dev:cli -- state
 pnpm dev:cli -- working-state
 pnpm dev:cli -- stable-state
+pnpm dev:cli -- layer-status
+pnpm dev:cli -- doctor
+pnpm dev:cli -- doctor --probe-turn
+pnpm dev:cli -- doctor --probe-turn --assert-clean
 pnpm dev:cli -- fast-view "What is the current goal?"
 pnpm dev:cli -- turn "What changed in the project plan?"
+pnpm smoke:runtime
 pnpm benchmark:visible
 ```
+
+`pm doctor` now also reports `layerAlignment`, so you can see whether Working
+Memory and Stable State agree on the current goal and how much constraint /
+decision overlap exists before you inspect the raw snapshots. It also reports
+`layerFreshness`, so you can see whether those layers are actually caught up to
+the latest ingested event stream.
+
+If you want a pass/fail diagnostic instead of just JSON output, use:
+
+```bash
+pnpm dev:cli -- doctor --probe-turn --assert-clean
+```
+
+For automation, you can pin the CLI to a stable identity:
+
+```bash
+PROJECT_MEMORY_CLI_USER_ID=runtime-ci-user pnpm dev:cli -- doctor --probe-turn --assert-clean
+```
+
+If you want a machine-readable diagnosis artifact:
+
+```bash
+PROJECT_MEMORY_CLI_USER_ID=runtime-ci-user pnpm dev:cli -- doctor --probe-turn --assert-clean --output-file runtime-doctor.json
+```
+
+When you run `pnpm dev:cli` from the repo root, relative `--output-file` paths now
+resolve from that invocation directory, so `runtime-doctor.json` is written to the
+repo root instead of `apps/cli/`.
+
+For a fuller local verification pass:
+
+```bash
+pnpm smoke
+```
+
+That now includes:
+
+- no-LLM smoke
+- LLM answer smoke
+- runtime smoke
+- reminders smoke
 
 ## Why This Exists
 

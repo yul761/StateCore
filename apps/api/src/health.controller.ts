@@ -1,11 +1,13 @@
 import { Controller, Get } from "@nestjs/common";
+import { HealthOutput } from "@project-memory/contracts";
 import { apiEnv } from "./env";
+import { parseOutput } from "./output";
 
 @Controller()
 export class HealthController {
   @Get("/health")
   getHealth() {
-    return {
+    return parseOutput(HealthOutput, {
       status: "ok",
       featureLlm: apiEnv.featureLlm,
       workingMemory: {
@@ -30,6 +32,6 @@ export class HealthController {
         structuredOutputModel: apiEnv.structuredOutputModelName,
         embeddingModel: apiEnv.embeddingModelName || null
       }
-    };
+    });
   }
 }

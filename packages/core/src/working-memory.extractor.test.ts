@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractWorkingMemoryState } from "./working-memory.extractor";
+import { extractWorkingMemoryState, selectWorkingMemoryEvents } from "./working-memory.extractor";
 
 describe("extractWorkingMemoryState", () => {
   it("extracts lightweight working memory from recent events", () => {
@@ -61,5 +61,43 @@ describe("extractWorkingMemoryState", () => {
     expect(state.recentDecisions).toEqual(["We decide to update working memory in the background"]);
     expect(state.openQuestions).toEqual([]);
     expect(state.sourceEventIds).toEqual(["evt-1"]);
+  });
+
+  it("preserves the latest explicit goal even when assistant replies crowd the recent event window", () => {
+    const selected = selectWorkingMemoryEvents([
+      {
+        id: "evt-1",
+        type: "stream",
+        role: "user",
+        content: "goal: ship a three-layer runtime",
+        createdAt: new Date("2026-03-24T02:00:00.000Z")
+      },
+      {
+        id: "evt-2",
+        type: "stream",
+        role: "user",
+        content: "constraint: keep responses quick",
+        createdAt: new Date("2026-03-24T02:01:00.000Z")
+      },
+      {
+        id: "evt-3",
+        type: "stream",
+        role: "assistant",
+        content: "Assistant reply: acknowledged",
+        createdAt: new Date("2026-03-24T02:02:00.000Z")
+      },
+      {
+        id: "evt-4",
+        type: "stream",
+        role: "user",
+        content: "status: runtime smoke verifies layer metadata",
+        createdAt: new Date("2026-03-24T02:03:00.000Z")
+      }
+    ], 2);
+
+    expect(selected.map((event) => event.id)).toEqual(["evt-1", "evt-2", "evt-4"]);
+
+    const state = extractWorkingMemoryState(selected);
+    expect(state.currentGoal).toBe("ship a three-layer runtime");
   });
 });

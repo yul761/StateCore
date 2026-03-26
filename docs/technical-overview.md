@@ -65,6 +65,35 @@ flowchart TD
    - Working Memory is updated
    - State Layer digest is optionally enqueued
 
+## Fast Layer Response Modes
+
+The Fast Layer now exposes two response modes:
+
+- `direct_state_fast_path`
+  - used for canonical state questions such as current goal, constraints, decisions, or open work
+  - answers directly from Working Memory, State Layer, or retrieved structured events
+  - avoids an extra answer-model call when the answer is already present in memory
+- `llm_fast_path`
+  - used for open-ended turns that still require model generation
+  - stays on the synchronous path, but with compact recall and prompt budgets
+
+The runtime also exposes a retrieval plan for each turn:
+
+- `none`
+- `light`
+- `full`
+
+This lets developers inspect not just the answer, but why the runtime chose a certain recall strategy.
+
+For product diagnostics, the repository now also exposes `GET /memory/layer-status`,
+which aggregates:
+
+- Working Memory version and view
+- State Layer version and view
+- Fast Layer prompt summary
+- retrieval plan
+- cross-layer alignment signals
+
 ## State Layer Digest Pipeline
 
 The State Layer digest pipeline is intentionally not a single LLM call.

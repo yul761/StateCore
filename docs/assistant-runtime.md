@@ -21,6 +21,14 @@ Its job is to standardize:
 
 The runtime should reduce glue code without turning the project into a generic agent orchestration framework.
 
+The current runtime also exposes explicit decision metadata so callers can inspect:
+
+- whether the answer came from `direct_state_fast_path` or `llm_fast_path`
+- whether the retrieval plan was `none`, `light`, or `full`
+- which Working Memory and State Layer versions were visible to the turn
+- whether Working Memory and State Layer are currently aligned through the aggregated `GET /memory/layer-status` diagnostic
+- whether the current turn itself saw layer warnings, without requiring a second diagnostic read
+
 ## Position in the Architecture
 
 Project Memory should be understood as four layers:
@@ -185,6 +193,8 @@ The runtime for a single turn should roughly follow this sequence:
 6. Enqueue a Working Memory update.
 7. Trigger State Layer digesting if `DigestPolicy` conditions are met.
 8. Return answer text plus evidence information and layer metadata.
+
+For product debugging, that returned metadata is now part of the contract rather than something you have to infer from logs.
 
 ## Suggested Runtime Interfaces
 

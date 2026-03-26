@@ -243,6 +243,18 @@ export class DomainService {
     return this.mapDigestStateSnapshot(snapshot);
   }
 
+  async getLatestMemoryEvent(scopeId: string): Promise<{ id: string; createdAt: Date } | null> {
+    const event = await prisma.memoryEvent.findFirst({
+      where: { scopeId },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: {
+        id: true,
+        createdAt: true
+      }
+    });
+    return event ?? null;
+  }
+
   async listDigests(scopeId: string, limit: number, cursor?: string | null, rebuildGroupId?: string | null) {
     type DigestRow = {
       id: string;

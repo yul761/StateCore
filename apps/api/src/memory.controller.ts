@@ -2,11 +2,25 @@ import { BadRequestException, Body, Controller, Get, Inject, Post, Query, Req } 
 import { createHash, randomUUID } from "crypto";
 import {
   AnswerInput,
+  AnswerOutput,
+  DigestEnqueueOutput,
+  DigestListOutput,
+  DigestRebuildOutput,
+  DigestStateHistoryOutput,
+  DigestStateOutput,
   DigestRebuildInput,
   DigestRequestInput,
+  FastLayerViewOutput,
+  LayerStatusOutput,
+  MemoryEventListOutput,
   MemoryEventInput,
+  MemoryEventOutput,
+  RetrieveOutput,
   RuntimeTurnInput,
-  RetrieveInput
+  RuntimeTurnOutput,
+  RetrieveInput,
+  StableStateOutput,
+  WorkingMemoryOutput
 } from "@project-memory/contracts";
 import {
   AssistantSession,
@@ -14,6 +28,7 @@ import {
   type ChatModel,
   compileFastLayerContext,
   compileStateLayerView,
+  computeLayerDiagnostics,
   createChatModelClient,
   createRuntimePolicyBundle,
   createRuntimeRecallPolicy,
@@ -22,9 +37,13 @@ import {
 } from "@project-memory/core";
 import { digestQueue, workingMemoryQueue } from "./queue";
 import { DomainService } from "./domain.service";
+import { parseOutput } from "./output";
 import type { RequestWithUser } from "./types";
 import { apiEnv } from "./env";
 import { answerSystemPrompt, answerUserPrompt, runtimeSystemPrompt, runtimeUserPrompt } from "@project-memory/prompts";
+
+const WORKING_MEMORY_CAUGHT_UP_WINDOW_MS = 15_000;
+const STABLE_STATE_CAUGHT_UP_WINDOW_MS = 60_000;
 
 function splitStructuredTurnLines(message: string) {
   const lines = message
@@ -81,6 +100,103 @@ export class MemoryController {
     }
   }
 
+  private async resolveRuntimeRecall(scopeId: string, message: string) {
+    const runtimePolicy = createRuntimeRecallPolicy(this.domain.retrieveService, {
+      scopeStateLoader: async (value) => this.domain.getLatestDigestState(value),
+      workingMemoryLoader: async (value) => {
+        const snapshot = await this.domain.getLatestWorkingMemory(value);
+        return snapshot
+          ? {
+              scopeId: snapshot.scopeId,
+              id: snapshot.id,
+              version: snapshot.version,
+              state: snapshot.state,
+              view: snapshot.view,
+              updatedAt: snapshot.updatedAt,
+              createdAt: snapshot.createdAt
+            }
+          : null;
+      },
+      recentTurnsLoader: async (value, limit) => this.domain.listRecentTurns(value, limit)
+    });
+
+    return runtimePolicy.resolve({ scopeId, message });
+  }
+
+  private async buildLayerStatus(scopeId: string, message: string, recall: Awaited<ReturnType<MemoryController["resolveRuntimeRecall"]>>) {
+    const workingMemoryView = recall.workingMemoryView ?? null;
+    const stableStateView = recall.stableStateView ?? compileStateLayerView(recall.stateSnapshot?.state ?? null);
+    const latestEvent = await this.domain.getLatestMemoryEvent(scopeId);
+    const fastLayerContext = recall.fastLayerContext ?? compileFastLayerContext({
+      message,
+      workingMemoryView,
+      stateLayerView: stableStateView,
+      retrievalSnippets: recall.events.map((event) => ({
+        id: event.id,
+        content: event.content,
+        createdAt: event.createdAt
+      })),
+      recentTurns: recall.recentTurns ?? []
+    });
+
+    const diagnostics = computeLayerDiagnostics({
+      workingMemoryView,
+      stableStateView,
+      workingMemoryVersion: recall.workingMemorySnapshot?.version ?? null,
+      stableStateVersion: recall.stateRef ?? null
+    });
+
+    const latestEventCreatedAt = latestEvent?.createdAt ?? null;
+    const workingMemoryUpdatedAt = recall.workingMemorySnapshot?.updatedAt ?? null;
+    const stableStateCreatedAt = recall.stateSnapshot?.createdAt ?? null;
+    const workingMemoryLagMs = latestEventCreatedAt && workingMemoryUpdatedAt
+      ? Math.max(0, latestEventCreatedAt.getTime() - workingMemoryUpdatedAt.getTime())
+      : null;
+    const stableStateLagMs = latestEventCreatedAt && stableStateCreatedAt
+      ? Math.max(0, latestEventCreatedAt.getTime() - stableStateCreatedAt.getTime())
+      : null;
+    const freshness = {
+      latestEventCreatedAt: latestEventCreatedAt?.toISOString() ?? null,
+      workingMemoryUpdatedAt: workingMemoryUpdatedAt?.toISOString() ?? null,
+      stableStateCreatedAt: stableStateCreatedAt?.toISOString() ?? null,
+      workingMemoryLagMs,
+      stableStateLagMs,
+      workingMemoryCaughtUp: latestEventCreatedAt
+        ? Boolean(workingMemoryUpdatedAt && workingMemoryLagMs !== null && workingMemoryLagMs <= WORKING_MEMORY_CAUGHT_UP_WINDOW_MS)
+        : true,
+      stableStateCaughtUp: latestEventCreatedAt
+        ? Boolean(stableStateCreatedAt && stableStateLagMs !== null && stableStateLagMs <= STABLE_STATE_CAUGHT_UP_WINDOW_MS)
+        : true
+    };
+    const warnings = [...diagnostics.warnings];
+
+    if (latestEventCreatedAt && !workingMemoryUpdatedAt) {
+      warnings.push("working_memory_missing_with_recent_events");
+    } else if (workingMemoryLagMs !== null && workingMemoryLagMs > WORKING_MEMORY_CAUGHT_UP_WINDOW_MS) {
+      warnings.push("working_memory_lagging_behind_events");
+    }
+
+    if (latestEventCreatedAt && !stableStateCreatedAt) {
+      warnings.push("stable_state_missing_with_recent_events");
+    } else if (stableStateLagMs !== null && stableStateLagMs > STABLE_STATE_CAUGHT_UP_WINDOW_MS) {
+      warnings.push("stable_state_lagging_behind_events");
+    }
+
+    return parseOutput(LayerStatusOutput, {
+      scopeId,
+      message,
+      workingMemoryVersion: recall.workingMemorySnapshot?.version ?? null,
+      stableStateVersion: recall.stateRef ?? null,
+      workingMemoryView,
+      stableStateView,
+      fastLayerSummary: fastLayerContext.summary,
+      retrievalPlan: recall.retrievalPlan ?? null,
+      layerAlignment: diagnostics.layerAlignment,
+      freshness,
+      warnings
+    });
+  }
+
   @Post("/memory/events")
   async ingestEvent(@Req() req: RequestWithUser, @Body() body: unknown) {
     const input = MemoryEventInput.parse(body);
@@ -99,7 +215,7 @@ export class MemoryController {
       key: input.key ?? null,
       content: input.content
     });
-    return {
+    return parseOutput(MemoryEventOutput, {
       id: event.id,
       userId: event.userId,
       scopeId: event.scopeId,
@@ -109,7 +225,7 @@ export class MemoryController {
       content: event.content,
       createdAt: event.createdAt.toISOString(),
       updatedAt: event.updatedAt ? event.updatedAt.toISOString() : null
-    };
+    });
   }
 
   @Get("/memory/events")
@@ -127,7 +243,7 @@ export class MemoryController {
     const parsed = Number(limit ?? 20);
     const take = Math.min(Number.isFinite(parsed) ? parsed : 20, 100);
     const { items, nextCursor } = await this.domain.memoryService.listEvents(scopeId, take, cursor ?? null);
-    return {
+    return parseOutput(MemoryEventListOutput, {
       items: items.map((event) => ({
         id: event.id,
         userId: event.userId,
@@ -140,7 +256,7 @@ export class MemoryController {
         updatedAt: event.updatedAt ? event.updatedAt.toISOString() : null
       })),
       nextCursor
-    };
+    });
   }
 
   @Post("/memory/digest")
@@ -154,7 +270,7 @@ export class MemoryController {
       return { error: "Scope not found" };
     }
     const job = await digestQueue.add("digest_scope", { userId: req.userId, scopeId: input.scopeId });
-    return { jobId: job.id };
+    return parseOutput(DigestEnqueueOutput, { jobId: String(job.id) });
   }
 
   @Post("/memory/digest/rebuild")
@@ -176,7 +292,7 @@ export class MemoryController {
       strategy: input.strategy ?? "full",
       rebuildGroupId
     });
-    return { jobId: job.id, rebuildGroupId };
+    return parseOutput(DigestRebuildOutput, { jobId: String(job.id), rebuildGroupId });
   }
 
   @Get("/memory/digests")
@@ -197,7 +313,7 @@ export class MemoryController {
     const { items, nextCursor } = rebuildGroupId
       ? await this.domain.listDigests(scopeId, take, cursor ?? null, rebuildGroupId)
       : await this.domain.digestService.listDigests(scopeId, take, cursor ?? null);
-    return {
+    return parseOutput(DigestListOutput, {
       items: items.map((digest) => ({
         id: digest.id,
         scopeId: digest.scopeId,
@@ -208,7 +324,7 @@ export class MemoryController {
         rebuildGroupId: digest.rebuildGroupId ?? null
       })),
       nextCursor
-    };
+    });
   }
 
   @Get("/memory/state")
@@ -220,14 +336,14 @@ export class MemoryController {
     }
     const snapshot = await this.domain.getLatestDigestState(scopeId);
     if (!snapshot) {
-      return { digestId: null, state: null, consistency: null, createdAt: null };
+      return parseOutput(DigestStateOutput, { digestId: null, state: null, consistency: null, createdAt: null });
     }
-    return {
+    return parseOutput(DigestStateOutput, {
       digestId: snapshot.digestId,
       state: snapshot.state,
       consistency: snapshot.consistency,
       createdAt: snapshot.createdAt.toISOString()
-    };
+    });
   }
 
   @Get("/memory/stable-state")
@@ -239,15 +355,15 @@ export class MemoryController {
     }
     const snapshot = await this.domain.getStateLayerView(scopeId);
     if (!snapshot) {
-      return { digestId: null, state: null, view: null, consistency: null, createdAt: null };
+      return parseOutput(StableStateOutput, { digestId: null, state: null, view: null, consistency: null, createdAt: null });
     }
-    return {
+    return parseOutput(StableStateOutput, {
       digestId: snapshot.digestId,
       state: snapshot.state,
       view: snapshot.view,
       consistency: snapshot.consistency,
       createdAt: snapshot.createdAt.toISOString()
-    };
+    });
   }
 
   @Get("/memory/working-state")
@@ -259,15 +375,15 @@ export class MemoryController {
     }
     const snapshot = await this.domain.getLatestWorkingMemory(scopeId);
     if (!snapshot) {
-      return { scopeId, version: 0, state: null, view: null, updatedAt: null };
+      return parseOutput(WorkingMemoryOutput, { scopeId, version: 0, state: null, view: null, updatedAt: null });
     }
-    return {
+    return parseOutput(WorkingMemoryOutput, {
       scopeId,
       version: snapshot.version,
       state: snapshot.state,
       view: snapshot.view,
       updatedAt: snapshot.updatedAt.toISOString()
-    };
+    });
   }
 
   @Get("/memory/fast-view")
@@ -281,34 +397,15 @@ export class MemoryController {
     if (!scope) {
       return { error: "Scope not found" };
     }
-    const runtimePolicy = createRuntimeRecallPolicy(this.domain.retrieveService, {
-      scopeStateLoader: async (value) => this.domain.getLatestDigestState(value),
-      workingMemoryLoader: async (value) => {
-        const snapshot = await this.domain.getLatestWorkingMemory(value);
-        return snapshot
-          ? {
-              scopeId: snapshot.scopeId,
-              id: snapshot.id,
-              version: snapshot.version,
-              state: snapshot.state,
-              view: snapshot.view,
-              updatedAt: snapshot.updatedAt,
-              createdAt: snapshot.createdAt
-            }
-          : null;
-      },
-      recentTurnsLoader: async (value, limit) => this.domain.listRecentTurns(value, limit)
-    });
-    const recall = await runtimePolicy.resolve({
-      scopeId,
-      message: message || "Show the current fast-layer context."
-    });
-    return {
+    const resolvedMessage = message || "Show the current fast-layer context.";
+    const recall = await this.resolveRuntimeRecall(scopeId, resolvedMessage);
+    return parseOutput(FastLayerViewOutput, {
       scopeId,
       workingMemoryVersion: recall.workingMemorySnapshot?.version ?? null,
       stableStateVersion: recall.stateRef ?? null,
+      retrievalPlan: recall.retrievalPlan ?? null,
       fastLayerContext: recall.fastLayerContext ?? compileFastLayerContext({
-        message: message || "",
+        message: resolvedMessage,
         workingMemoryView: recall.workingMemoryView,
         stateLayerView: recall.stableStateView ?? compileStateLayerView(recall.stateSnapshot?.state ?? null),
         retrievalSnippets: recall.events.map((event) => ({
@@ -318,7 +415,23 @@ export class MemoryController {
         })),
         recentTurns: recall.recentTurns ?? []
       })
-    };
+    });
+  }
+
+  @Get("/memory/layer-status")
+  async getLayerStatus(
+    @Req() req: RequestWithUser,
+    @Query("scopeId") scopeId?: string,
+    @Query("message") message?: string
+  ) {
+    if (!scopeId) return { error: "scopeId required" };
+    const scope = await this.domain.projectService.getScope(req.userId, scopeId);
+    if (!scope) {
+      return { error: "Scope not found" };
+    }
+    const resolvedMessage = message || "What is the current architecture goal?";
+    const recall = await this.resolveRuntimeRecall(scopeId, resolvedMessage);
+    return await this.buildLayerStatus(scopeId, resolvedMessage, recall);
   }
 
   @Get("/memory/state/history")
@@ -336,14 +449,14 @@ export class MemoryController {
     const parsed = Number(limit ?? 10);
     const take = Math.min(Number.isFinite(parsed) ? parsed : 10, 50);
     const items = await this.domain.listDigestStates(scopeId, take, rebuildGroupId ?? null);
-    return {
+    return parseOutput(DigestStateHistoryOutput, {
       items: items.map((snapshot) => ({
         digestId: snapshot.digestId,
         state: snapshot.state,
         consistency: snapshot.consistency,
         createdAt: snapshot.createdAt.toISOString()
       }))
-    };
+    });
   }
 
   @Post("/memory/retrieve")
@@ -355,7 +468,7 @@ export class MemoryController {
     }
     const limit = input.limit ?? 20;
     const result = await this.domain.retrieveService.retrieve(input.scopeId, limit, input.query);
-    return {
+    return parseOutput(RetrieveOutput, {
       digest: result.digest ? result.digest.summary : null,
       events: result.events.map((event) => ({
         id: event.id,
@@ -363,7 +476,7 @@ export class MemoryController {
         createdAt: event.createdAt.toISOString()
       })),
       retrieval: result.retrieval
-    };
+    });
   }
 
   @Post("/memory/answer")
@@ -390,7 +503,7 @@ export class MemoryController {
       llm: this.answerLlm
     });
 
-    return {
+    return parseOutput(AnswerOutput, {
       answer,
       evidence: buildGroundingEvidence({
         digest: result.digest,
@@ -399,7 +512,7 @@ export class MemoryController {
         stateRef: snapshot?.digestId ?? null,
         stateSnapshot: snapshot ? { digestId: snapshot.digestId, state: snapshot.state } : null
       })
-    };
+    });
   }
 
   @Post("/memory/runtime/turn")
@@ -499,7 +612,7 @@ export class MemoryController {
       assistantReplySource: "api"
     });
 
-    return session.handleTurn({
+    return parseOutput(RuntimeTurnOutput, await session.handleTurn({
       message: input.message,
       source: input.source ?? "api",
       policyProfile,
@@ -508,6 +621,6 @@ export class MemoryController {
       documentKey: input.documentKey,
       digestMode: input.digestMode ?? "auto",
       metadata: input.metadata
-    });
+    }));
   }
 }

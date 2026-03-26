@@ -121,6 +121,7 @@ interface RuntimeRetrievalPlan {
 
 export interface RuntimeStateSnapshot {
   digestId: string | null;
+  createdAt?: Date;
   state?: {
     stableFacts?: {
       goal?: string;
@@ -210,13 +211,105 @@ export interface GroundingEvidence {
 
 export interface GroundedAnswer {
   answer: string;
+  answerMode?: "direct_state_fast_path" | "llm_fast_path";
   writeTier: MemoryWriteTier;
   digestTriggered: boolean;
   workingMemoryVersion?: number | null;
   stableStateVersion?: string | null;
   usedFastLayerContextSummary?: string;
+  retrievalPlan?: ResolvedRecall["retrievalPlan"];
+  layerAlignment?: LayerAlignment;
+  warnings?: string[];
   notes?: string[];
   evidence: GroundingEvidence;
+}
+
+export interface LayerAlignment {
+  goalAligned: boolean;
+  sharedConstraintCount: number;
+  sharedDecisionCount: number;
+  fastPathReady: boolean;
+}
+
+function normalizeLayerText(value?: string | null) {
+  return value?.trim().replace(/\s+/g, " ").toLowerCase() ?? "";
+}
+
+function overlapCount(left?: string[] | null, right?: string[] | null) {
+  const leftSet = new Set((left ?? []).map((value) => normalizeLayerText(value)).filter(Boolean));
+  const rightSet = new Set((right ?? []).map((value) => normalizeLayerText(value)).filter(Boolean));
+  return [...leftSet].filter((value) => rightSet.has(value)).length;
+}
+
+function detectLayerWarnings(input: {
+  workingGoal?: string | null;
+  stableGoal?: string | null;
+  sharedConstraintCount: number;
+  sharedDecisionCount: number;
+  workingConstraints?: string[] | null;
+  stableConstraints?: string[] | null;
+  workingDecisions?: string[] | null;
+  stableDecisions?: string[] | null;
+}) {
+  const warnings = [];
+  const structuredLeakPattern = /(^|\n|\\n)\s*(constraint|decision|todo|question|open question|risk|status)\s*:/i;
+
+  if (input.workingGoal && structuredLeakPattern.test(input.workingGoal)) {
+    warnings.push("working_goal_contains_structured_lines");
+  }
+  if (input.stableGoal && structuredLeakPattern.test(input.stableGoal)) {
+    warnings.push("stable_goal_contains_structured_lines");
+  }
+  if (input.stableGoal && !input.workingGoal) {
+    warnings.push("working_goal_missing");
+  }
+  if (input.workingGoal && !input.stableGoal) {
+    warnings.push("stable_goal_missing");
+  }
+  if (input.workingGoal && input.stableGoal && normalizeLayerText(input.workingGoal) !== normalizeLayerText(input.stableGoal)) {
+    warnings.push("goal_mismatch");
+  }
+  if ((input.workingConstraints?.length ?? 0) > 0 && (input.stableConstraints?.length ?? 0) > 0 && input.sharedConstraintCount === 0) {
+    warnings.push("constraint_sets_do_not_overlap");
+  }
+  if ((input.workingDecisions?.length ?? 0) > 0 && (input.stableDecisions?.length ?? 0) > 0 && input.sharedDecisionCount === 0) {
+    warnings.push("decision_sets_do_not_overlap");
+  }
+
+  return warnings;
+}
+
+export function computeLayerDiagnostics(input: {
+  workingMemoryView?: WorkingMemoryView | null;
+  stableStateView?: StateLayerView | null;
+  workingMemoryVersion?: number | null;
+  stableStateVersion?: string | null;
+}) {
+  const sharedConstraintCount = overlapCount(input.workingMemoryView?.constraints, input.stableStateView?.constraints);
+  const sharedDecisionCount = overlapCount(input.workingMemoryView?.decisions, input.stableStateView?.decisions);
+  const layerAlignment: LayerAlignment = {
+    goalAligned: Boolean(
+      normalizeLayerText(input.workingMemoryView?.goal)
+      && normalizeLayerText(input.workingMemoryView?.goal) === normalizeLayerText(input.stableStateView?.goal)
+    ),
+    sharedConstraintCount,
+    sharedDecisionCount,
+    fastPathReady: Boolean(input.workingMemoryVersion && input.stableStateVersion)
+  };
+
+  return {
+    layerAlignment,
+    warnings: detectLayerWarnings({
+      workingGoal: input.workingMemoryView?.goal,
+      stableGoal: input.stableStateView?.goal,
+      sharedConstraintCount,
+      sharedDecisionCount,
+      workingConstraints: input.workingMemoryView?.constraints,
+      stableConstraints: input.stableStateView?.constraints,
+      workingDecisions: input.workingMemoryView?.decisions,
+      stableDecisions: input.stableStateView?.decisions
+    })
+  };
 }
 
 function normalizeSnapshotRef(ref?: {
@@ -945,6 +1038,7 @@ export class AssistantSession {
     });
 
     const directAnswer = maybeBuildDirectRuntimeAnswer(input.message, recall);
+    const answerMode = directAnswer ? "direct_state_fast_path" : "llm_fast_path";
     const answer = directAnswer ?? await this.generateGroundedAnswer(input.message, recall);
     if (directAnswer) {
       notes.push("answer:direct_state_fast_path");
@@ -973,13 +1067,25 @@ export class AssistantSession {
 
     this.scheduleBackgroundTasks(input, writeTier, answer, digestTriggered);
 
+    const stableStateView = recall.stableStateView ?? compileStateLayerView(recall.stateSnapshot?.state ?? null);
+    const diagnostics = computeLayerDiagnostics({
+      workingMemoryView: recall.workingMemoryView ?? null,
+      stableStateView,
+      workingMemoryVersion: recall.workingMemorySnapshot?.version ?? null,
+      stableStateVersion: recall.stateRef ?? null
+    });
+
     return {
       answer,
+      answerMode,
       writeTier,
       digestTriggered,
       workingMemoryVersion: recall.workingMemorySnapshot?.version ?? null,
       stableStateVersion: recall.stateRef ?? null,
       usedFastLayerContextSummary: recall.fastLayerContext?.summary,
+      retrievalPlan: recall.retrievalPlan,
+      layerAlignment: diagnostics.layerAlignment,
+      warnings: diagnostics.warnings,
       notes,
       evidence: this.buildEvidence(recall)
     };

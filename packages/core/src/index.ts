@@ -19,8 +19,10 @@ export type { DigestConsistencyResult } from "./digest-control";
 export {
   buildGroundingEvidence,
   buildGroundingStateDetails,
+  computeLayerDiagnostics,
   summarizeGroundingStateSnapshot,
   type GroundingEvidence,
+  type LayerAlignment,
   type ResolvedRecall,
   type RuntimeStateSnapshot
 } from "./assistant-runtime";
@@ -40,6 +42,7 @@ export {
 } from "./working-memory.compiler";
 export {
   extractWorkingMemoryState,
+  selectWorkingMemoryEvents,
   type WorkingMemoryEventLike,
   type WorkingMemoryState
 } from "./working-memory.extractor";

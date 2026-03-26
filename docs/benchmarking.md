@@ -7,6 +7,15 @@ In the three-layer architecture, benchmark output should be read as separating:
 - Fast Layer turn latency
 - Working Memory update latency
 - State Layer digest latency
+- direct-state fast-path rate for runtime turns
+- runtime diagnostic quality (`layerAlignment` / `warnings`)
+- layer freshness quality (`freshness.workingMemoryCaughtUp` / `freshness.stableStateCaughtUp`)
+- consistency between runtime-turn diagnostics and `GET /memory/layer-status`
+
+For runtime consistency metrics, benchmark compares the runtime-turn diagnostics
+against the pre-turn `GET /memory/layer-status` snapshot for the same message.
+That keeps the comparison anchored to the same moment in time rather than mixing
+turn-time state with post-background-update state.
 
 ## Run
 
@@ -30,6 +39,13 @@ Three-layer runtime scenario:
 BENCH_FIXTURE=benchmark-fixtures/three-layer-session.json pnpm benchmark
 ```
 
+If you want benchmark HTTP calls to fail fast instead of hanging on one bad
+request, set a per-request timeout:
+
+```bash
+BENCH_REQUEST_TIMEOUT_MS=15000 BENCH_FIXTURE=benchmark-fixtures/three-layer-session.json pnpm benchmark
+```
+
 `three-layer-session.json` is the fixture to use when you want runtime-facing evidence for the
 new architecture. It simulates a drift-sensitive session where:
 
@@ -37,6 +53,9 @@ new architecture. It simulates a drift-sensitive session where:
 - Working Memory is expected to refresh between turns
 - State Layer remains the durable truth via the digest pipeline
 - benchmark reports should separate fast-path latency from Working Memory and State Layer update latency
+- benchmark reports should also show whether runtime turns hit `direct_state_fast_path`
+- benchmark reports should also show whether runtime turns and `layer-status` agree on goal alignment and warnings
+- benchmark reports now also include runtime warning taxonomy so a bad alignment score is explainable
 
 Generate additional fixtures:
 ```bash

@@ -30,6 +30,19 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
   - returns latest Working Memory snapshot plus compiled Working Memory view
 - **GET /memory/fast-view?scopeId=&message=**
   - returns compiled Fast Layer context for inspection/debug
+  - also returns `retrievalPlan` so you can see whether the runtime selected `none`, `light`, or `full` recall
+- **GET /memory/layer-status?scopeId=&message=**
+  - returns a single inspectable three-layer diagnostic snapshot
+  - includes:
+    - `workingMemoryVersion`
+    - `stableStateVersion`
+    - `workingMemoryView`
+    - `stableStateView`
+    - `fastLayerSummary`
+    - `retrievalPlan`
+    - `layerAlignment`
+    - `freshness`
+    - `warnings`
 - **GET /memory/state/history?scopeId=&limit=&rebuildGroupId=**
   - returns recent `DigestStateSnapshot` items for replay/audit use
   - each item includes `consistency: { ok, errors, warnings } | null`
@@ -58,14 +71,124 @@ Server stores a normalized `identity` per user (e.g. `user:...`, `local:...`, `t
 - **POST /memory/runtime/turn**
   - body: `{ scopeId, message, source?, policyProfile?, policyOverrides?, writeTier?, documentKey?, digestMode?, metadata? }`
   - runs the assistant runtime session flow
-  - returns `{ answer, writeTier, digestTriggered, workingMemoryVersion?, stableStateVersion?, usedFastLayerContextSummary?, notes?, evidence }`
+  - returns `{ answer, answerMode, writeTier, digestTriggered, workingMemoryVersion?, stableStateVersion?, usedFastLayerContextSummary?, retrievalPlan?, layerAlignment?, warnings?, notes?, evidence }`
   - `evidence` now includes both ids and lightweight summaries/snippets
   - `evidence.eventSnippets` now also carries retrieval ranking metadata when available (`sourceType`, scores, `rankingReason`)
   - `evidence.stateSummary` is derived from the latest digest state snapshot when available, not just a snapshot id placeholder
   - `evidence.stateDetails` includes structured state grounding for the latest snapshot, including provenance fields, transition taxonomy, and recent changes when available
+  - `answerMode` is:
+    - `direct_state_fast_path` when the runtime can answer directly from state or retrieved structured events
+    - `llm_fast_path` when the runtime still needs model generation
+  - `retrievalPlan` exposes the selected recall strategy:
+    - `none`
+    - `light`
+    - `full`
+  - `layerAlignment` exposes the runtime's view of current cross-layer health for this turn
+  - `warnings` surfaces suspicious issues detected in the layer views used by the turn
   - requires `FEATURE_LLM=true`
   - reference CLI usage:
     - `pm turn "goal: ship a self-hosted runtime" --policy-profile conservative --write-tier stable --digest-mode force --recall-limit 8`
+
+## Product Smoke
+
+For a quick end-to-end runtime validation with inspectable layer metadata:
+
+```bash
+pnpm smoke:runtime
+```
+
+That smoke checks:
+
+- `POST /memory/digest`
+- `GET /memory/working-state`
+- `GET /memory/stable-state`
+- `GET /memory/layer-status`
+- scope creation
+- event ingestion
+- `POST /memory/runtime/turn`
+- presence of `retrievalPlan` and `answerMode`
+- runtime `layerAlignment.goalAligned`
+- `freshness.workingMemoryCaughtUp`
+- `freshness.stableStateCaughtUp`
+- empty runtime `warnings` for a clean smoke scope
+- `layerAlignment.goalAligned`
+- empty `warnings` for a clean smoke scope
+
+For a broader local product verification pass:
+
+```bash
+pnpm smoke
+```
+
+For GitHub-hosted LLM runtime verification, the repository also includes a manual
+`Runtime Smoke` workflow under `.github/workflows/runtime-smoke.yml`.
+
+For a quick local diagnosis of runtime configuration, active scope, layer versions,
+and fast-view retrieval planning:
+
+```bash
+pnpm dev:cli -- layer-status
+pnpm dev:cli -- doctor
+```
+
+For the same diagnosis plus a real runtime probe with latency, `answerMode`, and
+`retrievalPlan`:
+
+```bash
+pnpm dev:cli -- doctor --probe-turn
+```
+
+For a pass/fail assertion over the same diagnostics:
+
+```bash
+pnpm dev:cli -- doctor --probe-turn --assert-clean
+```
+
+For CI or automation, pin the CLI to a known user id so it reads the intended scope:
+
+```bash
+PROJECT_MEMORY_CLI_USER_ID=runtime-ci-user pnpm dev:cli -- doctor --probe-turn --assert-clean
+```
+
+To persist the diagnosis as a JSON artifact:
+
+```bash
+PROJECT_MEMORY_CLI_USER_ID=runtime-ci-user pnpm dev:cli -- doctor --probe-turn --assert-clean --output-file runtime-doctor.json
+```
+
+When you run that command from the repo root, `runtime-doctor.json` is written
+relative to the invocation directory, so local smoke and CI can pick it up
+directly from the repository root.
+
+The `doctor` summary now reads from `GET /memory/layer-status` and includes `layerAlignment`, which reports:
+
+- whether Working Memory and Stable State agree on the current goal
+- how many constraints overlap
+- how many decisions overlap
+- whether the scope looks ready for direct-state fast-path reads
+- whether the diagnostics see suspicious issues such as structured-field leakage in the goal
+
+`layer-status.freshness` reports:
+
+- the timestamp of the latest ingested event
+- the latest Working Memory update time
+- the latest Stable State creation time
+- lag in milliseconds from the event stream to each layer
+- whether each layer is currently considered caught up
+
+`doctor --assert-clean` exits non-zero when:
+
+- the API is not healthy
+- `FEATURE_LLM` is off
+- there is no diagnosed scope
+- `layerAlignment.goalAligned` is false
+- `layerAlignment.fastPathReady` is false
+- Working Memory is not caught up
+- Stable State is not caught up
+- layer warnings are present
+- the runtime probe returns warnings or missing answer metadata
+
+The manual `Runtime Smoke` GitHub workflow now uploads `runtime-doctor.json` as an artifact.
 
 ## Scopes
 - **POST /scopes**

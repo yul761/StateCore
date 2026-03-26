@@ -5,7 +5,8 @@ import {
   WorkingMemoryService,
   createModelProvider,
   logger,
-  runDigestControlPipeline
+  runDigestControlPipeline,
+  selectWorkingMemoryEvents
 } from "@project-memory/core";
 import type { DigestState, WorkingMemoryState, WorkingMemoryView } from "@project-memory/core";
 import {
@@ -237,18 +238,20 @@ async function runWorkingMemoryUpdateJob(data: { userId: string; scopeId: string
   const recentEvents = await prisma.memoryEvent.findMany({
     where: { scopeId: data.scopeId },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: workerEnv.workingMemoryMaxRecentTurns
+    take: Math.max(workerEnv.workingMemoryMaxRecentTurns * 3, workerEnv.workingMemoryMaxRecentTurns + 8)
   });
 
-  const startedAt = Date.now();
-  const snapshot = await workingMemoryService.updateFromEvents(data.scopeId, recentEvents.reverse().map((event) => ({
+  const selectedEvents = selectWorkingMemoryEvents(recentEvents.reverse().map((event) => ({
     id: event.id,
     type: event.type,
     key: event.key,
     content: event.content,
     createdAt: event.createdAt,
     role: /^assistant reply:/i.test(event.content.trim()) ? "assistant" : "user"
-  })));
+  })), workerEnv.workingMemoryMaxRecentTurns);
+
+  const startedAt = Date.now();
+  const snapshot = await workingMemoryService.updateFromEvents(data.scopeId, selectedEvents);
 
   logger.info({
     scopeId: data.scopeId,
