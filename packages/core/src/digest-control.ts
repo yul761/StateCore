@@ -1219,9 +1219,14 @@ function buildProjectedSummary(state: DigestState, fallbackSummary: string) {
   if (state.stableFacts.goal) {
     appendSummarySentence(parts, `Goal: ${state.stableFacts.goal}.`);
   }
-  const constraints = (state.stableFacts.constraints ?? []).slice(0, 2);
+  const constraints = state.stableFacts.constraints ?? [];
   if (constraints.length) {
-    appendSummarySentence(parts, `Constraints: ${constraints.join("; ")}.`);
+    for (let count = constraints.length; count >= 1; count -= 1) {
+      const sentence = `Constraints: ${constraints.slice(0, count).join("; ")}.`;
+      const before = parts.length;
+      appendSummarySentence(parts, sentence);
+      if (parts.length > before) break;
+    }
   }
   const decisions = state.stableFacts.decisions ?? [];
   if (decisions.length) {

@@ -26,6 +26,7 @@ const cfg = {
   userId: process.env.VISIBLE_COMPARE_USER_ID || "visible-compare-user",
   fixture: process.env.VISIBLE_COMPARE_FIXTURE || "benchmark-fixtures/observable-drift-demo.json",
   timeoutMs: Number(process.env.VISIBLE_COMPARE_TIMEOUT_MS || 180000),
+  requestTimeoutMs: Number(process.env.VISIBLE_COMPARE_REQUEST_TIMEOUT_MS || 15000),
   outputDir: process.env.VISIBLE_COMPARE_OUTPUT_DIR || "benchmark-results",
   modelBaseUrl: process.env.MODEL_CHAT_BASE_URL || process.env.MODEL_BASE_URL || process.env.OPENAI_BASE_URL || "",
   modelApiKey: process.env.MODEL_CHAT_API_KEY || process.env.MODEL_API_KEY || process.env.OPENAI_API_KEY || "",
@@ -47,38 +48,58 @@ function msNow() {
 
 async function apiFetch(method, endpoint, body) {
   const t0 = performance.now();
-  const response = await fetch(`${cfg.apiBaseUrl}${endpoint}`, {
-    method,
-    headers,
-    ...(body ? { body: JSON.stringify(body) } : {})
-  });
-  const text = await response.text();
-  let json;
   try {
-    json = JSON.parse(text);
-  } catch {
-    json = { raw: text };
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), cfg.requestTimeoutMs);
+    const response = await fetch(`${cfg.apiBaseUrl}${endpoint}`, {
+      method,
+      headers,
+      signal: controller.signal,
+      ...(body ? { body: JSON.stringify(body) } : {})
+    });
+    clearTimeout(timer);
+    const text = await response.text();
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = { raw: text };
+    }
+    return {
+      ok: response.ok,
+      status: response.status,
+      json,
+      latencyMs: performance.now() - t0
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 599,
+      json: {
+        error: "fetch_failed",
+        message: error instanceof Error ? error.message : String(error)
+      },
+      latencyMs: performance.now() - t0
+    };
   }
-  return {
-    ok: response.ok,
-    status: response.status,
-    json,
-    latencyMs: performance.now() - t0
-  };
 }
 
 async function chat(messages) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), cfg.requestTimeoutMs);
   const response = await fetch(`${cfg.modelBaseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...(cfg.modelApiKey ? { Authorization: `Bearer ${cfg.modelApiKey}` } : {})
     },
+    signal: controller.signal,
     body: JSON.stringify({
       model: cfg.modelName,
       messages
     })
   });
+  clearTimeout(timer);
   if (!response.ok) {
     throw new Error(`llm_error:${response.status}:${await response.text()}`);
   }
@@ -146,7 +167,7 @@ function evaluateAnswer(answer, question) {
   };
 }
 
-async function waitForNewDigest(scopeId, previousCount) {
+async function waitForNewDigest(scopeId, previousLatestId) {
   const start = Date.now();
   while (Date.now() - start <= cfg.timeoutMs) {
     const result = await apiFetch("GET", `/memory/digests?scopeId=${scopeId}&limit=5`);
@@ -154,7 +175,7 @@ async function waitForNewDigest(scopeId, previousCount) {
       return { ok: false, error: `digest_list_failed:${result.status}` };
     }
     const items = result.json.items || [];
-    if (items.length > previousCount) {
+    if (items[0]?.id && items[0].id !== previousLatestId) {
       return { ok: true, digest: items[0] };
     }
     await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -283,12 +304,12 @@ async function enqueueDigest(scopeId) {
   if (!before.ok) {
     throw new Error(`digest_list_before_failed:${before.status}`);
   }
-  const beforeCount = (before.json.items || []).length;
+  const previousLatestDigestId = before.json.items?.[0]?.id ?? null;
   const enqueue = await apiFetch("POST", "/memory/digest", { scopeId });
   if (!enqueue.ok || enqueue.json.error) {
     throw new Error(`digest_enqueue_failed:${enqueue.status}:${JSON.stringify(enqueue.json)}`);
   }
-  const waited = await waitForNewDigest(scopeId, beforeCount);
+  const waited = await waitForNewDigest(scopeId, previousLatestDigestId);
   if (!waited.ok) {
     throw new Error(waited.error);
   }

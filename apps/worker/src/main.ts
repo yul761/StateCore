@@ -65,7 +65,7 @@ const workingMemoryService = new WorkingMemoryService({
   maxItemsPerField: workerEnv.workingMemoryMaxItemsPerField
 });
 
-const llm = workerEnv.featureLlm
+const structuredOutputModel = workerEnv.featureLlm
   ? createModelProvider({
       provider: workerEnv.modelProvider,
       apiKey: workerEnv.modelApiKey,
@@ -82,6 +82,20 @@ const llm = workerEnv.featureLlm
       embeddingModel: workerEnv.embeddingModelName || undefined,
       timeoutMs: workerEnv.modelTimeoutMs
     })?.structuredOutput ?? null
+  : null;
+
+const llm = structuredOutputModel
+  ? {
+      chat: (messages: { role: "system" | "user"; content: string }[]) =>
+        structuredOutputModel.chat(messages, {
+          ...(typeof workerEnv.structuredOutputMaxOutputTokens === "number"
+            ? { maxOutputTokens: workerEnv.structuredOutputMaxOutputTokens }
+            : {}),
+          ...(workerEnv.structuredOutputReasoningEffort
+            ? { reasoningEffort: workerEnv.structuredOutputReasoningEffort }
+            : {})
+        })
+    }
   : null;
 
 async function sendTelegramMessage(telegramUserId: string, text: string) {

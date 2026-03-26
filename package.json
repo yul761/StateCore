@@ -25,6 +25,7 @@
     "benchmark": "node ./scripts/benchmark/run-benchmark.mjs",
     "benchmark:visible": "node ./scripts/benchmark/run-visible-comparison.mjs",
     "benchmark:trend": "node ./scripts/benchmark/generate-trend-report.mjs",
+    "profile:state-layer": "pnpm --filter @project-memory/worker exec tsx ../../scripts/profile-state-layer.ts",
     "smoke:no-llm": "./scripts/smoke-no-llm.sh",
     "smoke:llm": "./scripts/smoke-llm.sh",
     "smoke:runtime": "./scripts/smoke-runtime.sh",

@@ -1557,6 +1557,40 @@ describe("generateDigestStage2", () => {
     expect(result.summary).toContain("drift metrics may regress during runtime refactors");
   });
 
+  it("keeps all short active constraints in the projected digest summary when they fit", async () => {
+    const llm = {
+      chat: async () => "{\"summary\":\"We are making progress.\",\"changes\":[],\"nextSteps\":[\"document runtime evidence output\"]}"
+    };
+
+    const result = await generateDigestStage2({
+      scope: { id: "s", userId: "u", name: "Demo", goal: "ship alpha", stage: "build", createdAt: new Date() },
+      lastDigest: null,
+      protectedState: {
+        stableFacts: {
+          goal: "ship a self-hosted long-term memory runtime for local models",
+          constraints: [
+            "keep api stable",
+            "self-hosted first",
+            "do not become a general-purpose agent platform"
+          ],
+          decisions: []
+        },
+        workingNotes: {},
+        todos: []
+      },
+      deltaCandidates: [],
+      documents: [],
+      llm,
+      systemPrompt: "system",
+      userPromptTemplate: "{{scopeName}} {{lastDigest}} {{protectedState}} {{deltaCandidates}} {{documents}}",
+      maxRetries: 0
+    });
+
+    expect(result.summary).toContain("keep api stable");
+    expect(result.summary).toContain("self-hosted first");
+    expect(result.summary).toContain("do not become a general-purpose agent platform");
+  });
+
   it("projects recent state transitions back into digest changes", async () => {
     const llm = {
       chat: async () => "{\"summary\":\"We are making progress.\",\"changes\":[],\"nextSteps\":[\"document runtime evidence output\"]}"

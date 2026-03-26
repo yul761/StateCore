@@ -26,6 +26,7 @@ const cfg = {
   userId: process.env.DRIFT_USER_ID || "drift-user",
   runs: Number(process.env.DRIFT_RUNS || 50),
   timeoutMs: Number(process.env.DRIFT_TIMEOUT_MS || 180000),
+  requestTimeoutMs: Number(process.env.DRIFT_REQUEST_TIMEOUT_MS || 15000),
   fixture: process.env.DRIFT_FIXTURE || "benchmark-fixtures/decision-heavy.json",
   outputDir: process.env.DRIFT_OUTPUT_DIR || "benchmark-results"
 };
@@ -38,24 +39,41 @@ function msNow() {
 
 async function apiFetch(method, endpoint, body) {
   const t0 = performance.now();
-  const response = await fetch(`${cfg.apiBaseUrl}${endpoint}`, {
-    method,
-    headers,
-    ...(body ? { body: JSON.stringify(body) } : {})
-  });
-  const text = await response.text();
-  let json;
   try {
-    json = JSON.parse(text);
-  } catch {
-    json = { raw: text };
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), cfg.requestTimeoutMs);
+    const response = await fetch(`${cfg.apiBaseUrl}${endpoint}`, {
+      method,
+      headers,
+      signal: controller.signal,
+      ...(body ? { body: JSON.stringify(body) } : {})
+    });
+    clearTimeout(timer);
+
+    const text = await response.text();
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = { raw: text };
+    }
+    return {
+      ok: response.ok,
+      status: response.status,
+      json,
+      latencyMs: performance.now() - t0
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 599,
+      json: {
+        error: "fetch_failed",
+        message: error instanceof Error ? error.message : String(error)
+      },
+      latencyMs: performance.now() - t0
+    };
   }
-  return {
-    ok: response.ok,
-    status: response.status,
-    json,
-    latencyMs: performance.now() - t0
-  };
 }
 
 function loadFixture(fixturePath) {
@@ -187,13 +205,13 @@ function aggregateDriftRate(parts) {
   return Number(averageDefined(parts).toFixed(3));
 }
 
-async function waitForNewDigest(scopeId, previousCount) {
+async function waitForNewDigest(scopeId, previousLatestId) {
   const start = Date.now();
   while (Date.now() - start <= cfg.timeoutMs) {
     const result = await apiFetch("GET", `/memory/digests?scopeId=${scopeId}&limit=5`);
     if (!result.ok) return { ok: false, error: `digest_list_failed:${result.status}` };
     const items = result.json.items || [];
-    if (items.length > previousCount) return { ok: true, digest: items[0] };
+    if (items[0]?.id && items[0].id !== previousLatestId) return { ok: true, digest: items[0] };
     await new Promise((resolve) => setTimeout(resolve, 3000));
   }
   return { ok: false, error: "digest_timeout" };
@@ -387,13 +405,13 @@ async function run() {
   }
   for (let i = 0; i < cfg.runs; i += 1) {
     const before = await apiFetch("GET", `/memory/digests?scopeId=${scopeId}&limit=5`);
-    const beforeCount = (before.json.items || []).length;
+    const previousLatestId = before.json.items?.[0]?.id ?? null;
     const enqueue = await apiFetch("POST", "/memory/digest", { scopeId });
     if (!enqueue.ok) {
       report.metrics.push({ run: i + 1, ok: false, error: `enqueue_failed:${enqueue.status}` });
       continue;
     }
-    const waited = await waitForNewDigest(scopeId, beforeCount);
+    const waited = await waitForNewDigest(scopeId, previousLatestId);
     if (!waited.ok) {
       report.metrics.push({ run: i + 1, ok: false, error: waited.error });
       continue;

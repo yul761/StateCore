@@ -115,15 +115,21 @@ The three-layer runtime is implemented, benchmarked, and inspectable.
 
 Latest three-layer quick benchmark:
 
-- Fast path: `19.2 ms`
-- Working Memory update: `536 ms`
-- State Layer update: `25284 ms`
+- Fast path: `15.52 ms`
+- Working Memory update: `532 ms`
+- State Layer update: `4132 ms`
 - direct-state fast-path rate: `1`
 - runtime vs layer-status consistency: `1`
 - Working Memory caught-up rate: `1`
 - Stable State caught-up rate: `1`
-- Long-term Memory Reliability: `83.72`
+- Long-term Memory Reliability: `84.2`
 - Replay state match: `yes`
+
+Latest observable drift checks:
+
+- Visible comparison: Project Memory `7/7`, direct baseline `3/7`
+- Goal-evolution drift run: goal / decision / todo drift `0`
+- Remaining drift signal is concentrated in constraints on the goal-evolution fixture
 
 What this means in practice:
 

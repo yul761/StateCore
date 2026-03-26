@@ -46,6 +46,12 @@ request, set a per-request timeout:
 BENCH_REQUEST_TIMEOUT_MS=15000 BENCH_FIXTURE=benchmark-fixtures/three-layer-session.json pnpm benchmark
 ```
 
+The same pattern is now available for drift runs:
+
+```bash
+DRIFT_REQUEST_TIMEOUT_MS=15000 DRIFT_RUNS=10 DRIFT_FIXTURE=benchmark-fixtures/goal-evolution.json node scripts/benchmark/run-drift.mjs
+```
+
 `three-layer-session.json` is the fixture to use when you want runtime-facing evidence for the
 new architecture. It simulates a drift-sensitive session where:
 

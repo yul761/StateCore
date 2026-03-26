@@ -39,6 +39,8 @@ const envSchema = z.object({
   MODEL_STRUCTURED_OUTPUT_API_KEY: z.string().optional(),
   MODEL_STRUCTURED_OUTPUT_BASE_URL: z.string().optional(),
   MODEL_STRUCTURED_OUTPUT_NAME: z.string().optional(),
+  MODEL_STRUCTURED_OUTPUT_REASONING_EFFORT: z.string().optional(),
+  MODEL_STRUCTURED_OUTPUT_MAX_OUTPUT_TOKENS: z.string().optional(),
   MODEL_EMBEDDING_API_KEY: z.string().optional(),
   MODEL_EMBEDDING_BASE_URL: z.string().optional(),
   MODEL_EMBEDDING_NAME: z.string().optional(),
@@ -131,6 +133,10 @@ export const workerEnv = {
   structuredOutputModelApiKey,
   structuredOutputModelBaseUrl,
   structuredOutputModelName,
+  structuredOutputReasoningEffort: env.MODEL_STRUCTURED_OUTPUT_REASONING_EFFORT as "low" | "medium" | "high" | undefined,
+  structuredOutputMaxOutputTokens: env.MODEL_STRUCTURED_OUTPUT_MAX_OUTPUT_TOKENS
+    ? Number(env.MODEL_STRUCTURED_OUTPUT_MAX_OUTPUT_TOKENS)
+    : undefined,
   embeddingModelApiKey,
   embeddingModelBaseUrl,
   embeddingModelName,
