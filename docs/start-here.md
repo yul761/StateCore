@@ -23,12 +23,27 @@ The current curated sample evaluates:
 - Project Memory: 7/7
 - direct baseline: 4/7
 
+## Fastest Interactive Path
+
+Start here if you want to use the product shape instead of reading benchmark output:
+
+- `docs/demo-quickstart.md`
+
+That path gives you:
+
+- the interactive demo shell
+- a scope browser
+- a chat UI on the public runtime surface
+- visible Fast Layer / Working Memory / State Layer feedback
+
 ## Quick Mental Model
 
 If you want the simplest explanation of what this project changes, read:
 
 - `README.md`
 - `docs/observable-comparison.md`
+- `docs/product-surface.md`
+- `docs/demo-web-surface.md`
 
 The short version:
 
@@ -62,6 +77,32 @@ If you want the repo's broader three-layer benchmark instead of the side-by-side
 
 ```bash
 BENCH_FIXTURE=benchmark-fixtures/three-layer-session.json pnpm benchmark
+```
+
+If you want the smallest interactive shell instead of benchmark output:
+
+```bash
+pnpm dev:demo-stack
+```
+
+Then open:
+
+- `http://localhost:3100`
+
+For the full setup sequence and the first questions to try, use:
+
+- `docs/demo-quickstart.md`
+
+If you only want the web shell itself because the API and worker are already running:
+
+```bash
+pnpm dev:demo
+```
+
+To verify that shell is actually bootable against the current API:
+
+```bash
+pnpm smoke:demo-web
 ```
 
 If you want the heavier runtime readiness check used for release-style CI:
@@ -148,6 +189,7 @@ separate `working-state`, `stable-state`, and `fast-view` calls.
 
 Read these next:
 
+- `docs/repo-map.md`
 - `docs/technical-overview.md`
 - `docs/digest-state.md`
 - `docs/drift-definition.md`

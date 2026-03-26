@@ -26,10 +26,64 @@ It is infrastructure for memory continuity.
 
 Choose the fastest path for what you want:
 
+- Try the interactive demo: `docs/demo-quickstart.md`
 - Fastest proof: `artifacts/demos/visible-comparison-latest.md`
 - Quick orientation: `docs/start-here.md`
+- Product API boundary: `docs/product-surface.md`
+- Demo app surface: `docs/demo-web-surface.md`
+- Repo structure: `docs/repo-map.md`
 - Implementation details: `docs/technical-overview.md`
 - Evaluation model: `docs/drift-definition.md`
+
+There is now also a minimal demo shell in `apps/demo-web` that stays on the
+intended public runtime surface.
+
+Fastest local interactive path:
+
+```bash
+pnpm dev:demo-stack
+```
+
+Then open:
+
+- `http://localhost:3100`
+
+That launcher waits until the API and demo shell are reachable before it
+prints `Demo stack ready.`
+
+If you want the fuller local setup path instead of just the final command, use:
+
+- `docs/demo-quickstart.md`
+
+## Try The Demo
+
+The interactive demo is the fastest way to understand the product shape.
+
+What you will see:
+
+- a scope browser for long-running sessions
+- a chat UI backed by `POST /memory/runtime/turn`
+- a hero card showing current goal, versions, and layer health
+- a turn story showing how Fast Layer, Working Memory, and State Layer handled the turn
+- an inspector for Working Memory, Stable State, Fast View, and layer diagnostics
+
+Best first questions in the demo:
+
+- `What is the current goal?`
+- `What constraints still apply?`
+- `What key decisions have we made?`
+- `What work remains open?`
+
+What to watch while those run:
+
+- the hero card for current scope state
+- the turn story for the high-level narrative
+- the turn pipeline for Fast / Working / State progress
+- the inspector summaries for the actual layer snapshots
+
+If you want the exact setup and first-minute walkthrough, use:
+
+- `docs/demo-quickstart.md`
 
 ## Observable Evidence
 
@@ -149,6 +203,17 @@ Useful inspection endpoints:
 - `GET /memory/fast-view`
 - `GET /memory/layer-status`
 - `POST /memory/runtime/turn`
+
+Recommended demo-facing API boundary:
+
+- public runtime surface: `POST /memory/runtime/turn`, `GET /memory/working-state`,
+  `GET /memory/stable-state`, `GET /memory/fast-view`, `GET /memory/layer-status`,
+  plus scope/session endpoints
+- debug surface: raw retrieval, raw answer, raw event/digest inspection
+- internal control surface: manual event ingestion and digest/rebuild operations
+
+See `docs/product-surface.md` for the intended split and `docs/repo-map.md` for
+where product runtime code ends and benchmark/tooling code begins.
 
 The local runtime smoke now validates the full three-layer product path:
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+// Shared primitives
 export const ProjectStage = z.enum(["idea", "build", "test", "launch"]);
 export type ProjectStage = z.infer<typeof ProjectStage>;
 
@@ -12,6 +13,7 @@ export type MemorySource = z.infer<typeof MemorySource>;
 export const ReminderStatus = z.enum(["scheduled", "sent", "cancelled"]);
 export type ReminderStatus = z.infer<typeof ReminderStatus>;
 
+// Scope/session contracts
 export const ScopeCreateInput = z.object({
   name: z.string().min(1),
   goal: z.string().min(1).optional(),
@@ -42,6 +44,7 @@ export const ScopeActivationOutput = z.object({
   activeScopeId: z.string().uuid().nullable()
 });
 
+// Internal control surface contracts
 export const MemoryEventInput = z.object({
   scopeId: z.string().uuid(),
   type: MemoryType,
@@ -106,6 +109,7 @@ export const DigestRebuildInput = z.object({
   strategy: z.enum(["full", "since_last_good"]).optional()
 });
 
+// Debug surface contracts
 export const RetrieveInput = z.object({
   scopeId: z.string().uuid(),
   query: z.string().min(1),
@@ -527,3 +531,108 @@ export const LayerStatusOutput = z.object({
   freshness: LayerFreshnessOutput,
   warnings: z.array(z.string())
 });
+
+// Grouped API surface contracts
+// These maps exist so a demo app or SDK can import the intended contract
+// boundary directly instead of depending on the entire file as one flat list.
+export const PublicRuntimeContracts = {
+  ScopeCreateInput,
+  ScopeOutput,
+  ScopeListOutput,
+  StateOutput,
+  ScopeActivationOutput,
+  RuntimeTurnInput,
+  RuntimeTurnOutput,
+  WorkingMemoryOutput,
+  StableStateOutput,
+  FastLayerViewOutput,
+  LayerStatusOutput,
+  HealthOutput
+} as const;
+
+export const DebugSurfaceContracts = {
+  RetrieveInput,
+  RetrieveOutput,
+  AnswerInput,
+  AnswerOutput,
+  MemoryEventListOutput,
+  DigestListOutput,
+  DigestStateOutput,
+  DigestStateHistoryOutput,
+  ReminderCreateInput,
+  ReminderOutput,
+  ReminderListOutput,
+  ReminderCancelOutput
+} as const;
+
+export const InternalControlContracts = {
+  MemoryEventInput,
+  MemoryEventOutput,
+  DigestRequestInput,
+  DigestEnqueueOutput,
+  DigestRebuildInput,
+  DigestRebuildOutput
+} as const;
+
+export const PublicRuntimeRoutes = {
+  health: "/health",
+  createScope: "/scopes",
+  listScopes: "/scopes",
+  setActiveScope: "/scopes/:id/active",
+  getActiveState: "/state",
+  runtimeTurn: "/memory/runtime/turn",
+  workingState: "/memory/working-state",
+  stableState: "/memory/stable-state",
+  fastView: "/memory/fast-view",
+  layerStatus: "/memory/layer-status"
+} as const;
+
+export const DebugSurfaceRoutes = {
+  retrieve: "/memory/retrieve",
+  answer: "/memory/answer",
+  listEvents: "/memory/events",
+  listDigests: "/memory/digests",
+  getDigestState: "/memory/state",
+  getDigestStateHistory: "/memory/state/history",
+  createReminder: "/reminders",
+  listReminders: "/reminders",
+  cancelReminder: "/reminders/:id/cancel"
+} as const;
+
+export const InternalControlRoutes = {
+  ingestEvent: "/memory/events",
+  enqueueDigest: "/memory/digest",
+  rebuildDigest: "/memory/digest/rebuild"
+} as const;
+
+// Demo-web minimal surface
+// This is the smallest intended set of contracts and routes for a chat-style
+// demo that shows the three-layer runtime without depending on debug or control
+// internals.
+export const DemoWebContracts = {
+  ScopeCreateInput,
+  ScopeOutput,
+  ScopeListOutput,
+  StateOutput,
+  ScopeActivationOutput,
+  RuntimeTurnInput,
+  RuntimeTurnOutput,
+  WorkingMemoryOutput,
+  StableStateOutput,
+  FastLayerViewOutput,
+  LayerStatusOutput,
+  HealthOutput
+} as const;
+
+export const DemoWebRoutes = {
+  health: PublicRuntimeRoutes.health,
+  createScope: PublicRuntimeRoutes.createScope,
+  listScopes: PublicRuntimeRoutes.listScopes,
+  setActiveScope: PublicRuntimeRoutes.setActiveScope,
+  getActiveState: PublicRuntimeRoutes.getActiveState,
+  runtimeTurn: PublicRuntimeRoutes.runtimeTurn,
+  workingState: PublicRuntimeRoutes.workingState,
+  stableState: PublicRuntimeRoutes.stableState,
+  fastView: PublicRuntimeRoutes.fastView,
+  layerStatus: PublicRuntimeRoutes.layerStatus
+} as const;
