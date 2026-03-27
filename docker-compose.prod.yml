@@ -38,6 +38,19 @@ services:
         condition: service_healthy
     restart: "no"
 
+  cleanup-demo-guests:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime-base
+    env_file:
+      - .env.production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["pnpm", "--filter", "@project-memory/db", "exec", "tsx", "../../scripts/cleanup-demo-guests.ts"]
+    restart: "no"
+
   api:
     build:
       context: .

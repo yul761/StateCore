@@ -35,6 +35,7 @@
     "smoke:demo-web": "./scripts/smoke-demo-web.sh",
     "smoke:deploy": "./scripts/smoke-prod-compose.sh",
     "smoke:reminders": "./scripts/smoke-reminders.sh",
+    "cleanup:demo-guests": "pnpm --filter @project-memory/db exec tsx ../../scripts/cleanup-demo-guests.ts",
     "smoke": "pnpm smoke:no-llm && pnpm smoke:llm && pnpm smoke:runtime && pnpm smoke:reminders",
     "db:migrate": "pnpm --filter @project-memory/db prisma migrate dev",
     "db:deploy": "pnpm --filter @project-memory/db prisma migrate deploy",

@@ -4,6 +4,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 type DemoWebRouteMap = typeof import("@project-memory/contracts").DemoWebRoutes;
+type RateBucket = {
+  count: number;
+  resetAt: number;
+};
 
 const demoWebRoutes: DemoWebRouteMap = {
   health: "/health",
@@ -18,14 +22,40 @@ const demoWebRoutes: DemoWebRouteMap = {
   layerStatus: "/memory/layer-status"
 };
 
+const rateBuckets = new Map<string, RateBucket>();
+
+function consumeRateLimit(key: string, windowMs: number, maxRequests: number) {
+  const now = Date.now();
+  const existing = rateBuckets.get(key);
+
+  if (!existing || existing.resetAt <= now) {
+    const next = { count: 1, resetAt: now + windowMs };
+    rateBuckets.set(key, next);
+    return { allowed: true, remaining: maxRequests - 1, retryAfterMs: windowMs };
+  }
+
+  if (existing.count >= maxRequests) {
+    return { allowed: false, remaining: 0, retryAfterMs: existing.resetAt - now };
+  }
+
+  existing.count += 1;
+  rateBuckets.set(key, existing);
+  return { allowed: true, remaining: Math.max(0, maxRequests - existing.count), retryAfterMs: existing.resetAt - now };
+}
+
 async function start() {
   const app = express();
   const port = Number(process.env.DEMO_WEB_PORT || 3100);
   const apiBaseUrl = process.env.DEMO_API_BASE_URL || process.env.API_BASE_URL || "http://localhost:3000";
+  const rateLimitWindowMs = Number(process.env.DEMO_RATE_LIMIT_WINDOW_MS || 60000);
+  const rateLimitMax = Number(process.env.DEMO_RATE_LIMIT_MAX || 120);
+  const turnRateLimitWindowMs = Number(process.env.DEMO_TURN_RATE_LIMIT_WINDOW_MS || 60000);
+  const turnRateLimitMax = Number(process.env.DEMO_TURN_RATE_LIMIT_MAX || 24);
   const serverFile = fileURLToPath(import.meta.url);
   const appRoot = path.resolve(path.dirname(serverFile), "..");
   const isProduction = process.env.NODE_ENV === "production";
 
+  app.set("trust proxy", true);
   app.use(express.json());
 
   app.use(async (req, res, next) => {
@@ -35,6 +65,24 @@ async function start() {
     if (!shouldProxy) {
       next();
       return;
+    }
+
+    if (req.path !== "/health") {
+      const isWriteRoute = (req.method === "POST" && req.path === "/memory/runtime/turn") || (req.method === "POST" && req.path === "/scopes");
+      const ip = req.ip || req.socket.remoteAddress || "unknown";
+      const bucket = consumeRateLimit(
+        `${isWriteRoute ? "write" : "read"}:${ip}`,
+        isWriteRoute ? turnRateLimitWindowMs : rateLimitWindowMs,
+        isWriteRoute ? turnRateLimitMax : rateLimitMax
+      );
+
+      if (!bucket.allowed) {
+        res.setHeader("retry-after", Math.max(1, Math.ceil(bucket.retryAfterMs / 1000)).toString());
+        res.status(429).json({ error: "Rate limit exceeded. Please wait before trying again." });
+        return;
+      }
+
+      res.setHeader("x-rate-limit-remaining", bucket.remaining.toString());
     }
 
     try {

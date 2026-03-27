@@ -35,6 +35,21 @@ Set at minimum:
 - `DATABASE_URL`
 - `FEATURE_LLM=true`
 - `MODEL_API_KEY` or the equivalent model-specific keys
+- the demo protection knobs if you want to change the defaults:
+  - `DEMO_RATE_LIMIT_WINDOW_MS`
+  - `DEMO_RATE_LIMIT_MAX`
+  - `DEMO_TURN_RATE_LIMIT_WINDOW_MS`
+  - `DEMO_TURN_RATE_LIMIT_MAX`
+  - `DEMO_GUEST_RETENTION_DAYS`
+
+Recommended model defaults for the public demo:
+
+- `MODEL_RUNTIME_NAME=gpt-5-nano`
+- `MODEL_RUNTIME_REASONING_EFFORT=low`
+- `MODEL_RUNTIME_MAX_OUTPUT_TOKENS=400`
+- `MODEL_STRUCTURED_OUTPUT_NAME=gpt-5-nano`
+- `MODEL_STRUCTURED_OUTPUT_REASONING_EFFORT=low`
+- `MODEL_STRUCTURED_OUTPUT_MAX_OUTPUT_TOKENS=600`
 
 Important:
 
@@ -102,7 +117,35 @@ That smoke verifies:
 - Stable State commits a goal
 - layer alignment and freshness converge cleanly
 
-## 8. Updates
+## 8. Demo cleanup
+
+Public demo guests are anonymous and browser-local. Old guest scopes will accumulate unless you prune them.
+
+Dry-run cleanup:
+
+```bash
+pnpm cleanup:demo-guests -- --dry-run
+```
+
+Apply cleanup:
+
+```bash
+pnpm cleanup:demo-guests
+```
+
+Or through Docker Compose on the server:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm cleanup-demo-guests
+```
+
+Recommended cron example:
+
+```bash
+0 3 * * * cd /srv/project-memory && docker compose -f docker-compose.prod.yml --env-file .env.production run --rm cleanup-demo-guests
+```
+
+## 9. Updates
 
 Pull new code, then:
 
@@ -124,3 +167,4 @@ BASE_URL=https://your-domain.example pnpm smoke:deploy
 - `worker` must stay running. This project is not API-only.
 - If you do not have a real domain yet, set `CADDY_DOMAIN=:80` and visit the server over plain HTTP first.
 - Anonymous guest isolation is browser-local. Each browser gets its own guest identity without requiring a login system.
+- Public demo traffic is rate-limited in both `demo-web` and `api` using in-memory buckets. This is enough for a single-VPS demo, but not a distributed production setup.

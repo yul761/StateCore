@@ -50,10 +50,16 @@ const envSchema = z.object({
   MODEL_STRUCTURED_OUTPUT_API_KEY: z.string().optional(),
   MODEL_STRUCTURED_OUTPUT_BASE_URL: z.string().optional(),
   MODEL_STRUCTURED_OUTPUT_NAME: z.string().optional(),
+  MODEL_STRUCTURED_OUTPUT_REASONING_EFFORT: z.enum(["low", "medium", "high"]).optional(),
+  MODEL_STRUCTURED_OUTPUT_MAX_OUTPUT_TOKENS: z.string().optional(),
   MODEL_EMBEDDING_API_KEY: z.string().optional(),
   MODEL_EMBEDDING_BASE_URL: z.string().optional(),
   MODEL_EMBEDDING_NAME: z.string().optional(),
   MODEL_TIMEOUT_MS: z.string().optional(),
+  DEMO_RATE_LIMIT_WINDOW_MS: z.string().optional(),
+  DEMO_RATE_LIMIT_MAX: z.string().optional(),
+  DEMO_TURN_RATE_LIMIT_WINDOW_MS: z.string().optional(),
+  DEMO_TURN_RATE_LIMIT_MAX: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
   OPENAI_MODEL: z.string().optional()
@@ -150,8 +156,14 @@ export const apiEnv = {
   structuredOutputModelApiKey,
   structuredOutputModelBaseUrl,
   structuredOutputModelName,
+  structuredOutputModelReasoningEffort: env.MODEL_STRUCTURED_OUTPUT_REASONING_EFFORT || "low",
+  structuredOutputModelMaxOutputTokens: Number(env.MODEL_STRUCTURED_OUTPUT_MAX_OUTPUT_TOKENS || 600),
   embeddingModelApiKey,
   embeddingModelBaseUrl,
   embeddingModelName,
-  modelTimeoutMs: Number(env.MODEL_TIMEOUT_MS || 20000)
+  modelTimeoutMs: Number(env.MODEL_TIMEOUT_MS || 20000),
+  demoRateLimitWindowMs: Number(env.DEMO_RATE_LIMIT_WINDOW_MS || 60000),
+  demoRateLimitMax: Number(env.DEMO_RATE_LIMIT_MAX || 120),
+  demoTurnRateLimitWindowMs: Number(env.DEMO_TURN_RATE_LIMIT_WINDOW_MS || 60000),
+  demoTurnRateLimitMax: Number(env.DEMO_TURN_RATE_LIMIT_MAX || 24)
 };
