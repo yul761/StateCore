@@ -1,10 +1,22 @@
-import { DEMO_BRAND, DEMO_FLOW_STEPS, EMPTY_CHAT_HINTS, PIPELINE_LEGEND, SUGGESTED_DEMO_TURNS } from "./content";
-import { pretty, type DemoHistoryEntry, type DiffEntry, type PipelineState, type ScopeSummary } from "./lib";
+import { DEMO_BRAND, DEMO_FLOW_STEPS, EMPTY_CHAT_HINTS, PIPELINE_LEGEND, type DemoTemplate } from "./content";
+import { pretty, type DemoHistoryEntry, type DiffEntry, type InspectorBundle, type PipelineState, type ScopeSummary } from "./lib";
 import { FactPills, PipelineView } from "./ui";
 
 export function ChatPanel(props: {
   activeScope: ScopeSummary | null;
   activeScopeId: string | null;
+  templates: readonly DemoTemplate[];
+  selectedTemplateId: string;
+  runningTemplateId: string | null;
+  completedScenario: {
+    templateId: string;
+    scopeId: string;
+    scopeName: string;
+    completedAt: string;
+  } | null;
+  onPrepareTemplate: (template: DemoTemplate) => void;
+  onCreateScopeFromTemplate: (template: DemoTemplate) => void;
+  onRunTemplateScenario: (template: DemoTemplate) => void;
   goal: string;
   answerMode: string;
   retrievalMode: string;
@@ -17,13 +29,18 @@ export function ChatPanel(props: {
   pipeline: PipelineState;
   history: DemoHistoryEntry[];
   latestMeta: DemoHistoryEntry["meta"] | null;
-  messageInput: string;
-  onMessageInputChange: (value: string) => void;
-  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  inspector: InspectorBundle;
 }) {
   const {
     activeScope,
     activeScopeId,
+    templates,
+    selectedTemplateId,
+    runningTemplateId,
+    completedScenario,
+    onPrepareTemplate,
+    onCreateScopeFromTemplate,
+    onRunTemplateScenario,
     goal,
     answerMode,
     retrievalMode,
@@ -36,26 +53,98 @@ export function ChatPanel(props: {
     pipeline,
     history,
     latestMeta,
-    messageInput,
-    onMessageInputChange,
-    onSubmit
+    inspector
   } = props;
 
   const turnStoryHeadline =
     answerMode === "direct_state_fast_path"
       ? "The Fast Layer answered directly from tracked state, then handed off background memory upkeep."
       : "The Fast Layer used the LLM path, then Working Memory and State Layer continued in the background.";
+  const selectedTemplate = templates.find((template) => template.id === selectedTemplateId) || null;
+  const otherTemplates = templates.filter((template) => template.id !== selectedTemplateId);
+  const isCompletedScenarioVisible =
+    Boolean(completedScenario) && completedScenario?.templateId === selectedTemplateId && completedScenario.scopeId === activeScopeId;
+  const scenarioStatusLabel =
+    runningTemplateId === selectedTemplateId ? "Running now" : isCompletedScenarioVisible ? `Completed at ${completedScenario?.completedAt}` : "Ready to run";
 
   return (
     <section className="panel chat-panel">
       <div className="panel-header">
         <div>
           <div className="eyebrow">Public Runtime Surface</div>
-          <h2>Chat</h2>
+          <h2>Guided Runtime Demo</h2>
         </div>
       </div>
       <div className="chat-priority-grid">
         <div className="chat-priority-main">
+          {selectedTemplate ? (
+            <div className="template-stack">
+              <div className="template-stack-header">
+                <div>
+                  <div className="eyebrow">Start From A Template</div>
+                  <h3>Run one scenario first, then inspect the live scope</h3>
+                </div>
+                <div className="template-stack-note">The template runner creates state on purpose so the interesting three-layer behavior becomes visible.</div>
+              </div>
+              <article className="template-card template-card-active template-card-selected">
+                <div className="template-card-header">
+                  <div>
+                    <h3>{selectedTemplate.title}</h3>
+                    <div className="template-card-description">{selectedTemplate.description}</div>
+                  </div>
+                  <span className="template-scope-name">{selectedTemplate.scopeName}</span>
+                </div>
+                <div className="template-selected-banner">
+                  <strong>Scenario status:</strong> {scenarioStatusLabel}
+                </div>
+                <div className="template-watch">
+                  <span className="field-label">Watch for</span>
+                  <FactPills items={selectedTemplate.watch} />
+                </div>
+                <div className="template-turns template-turns-static">
+                  {selectedTemplate.turns.map((turn) => (
+                    <div className="template-turn-readonly" key={`${selectedTemplate.id}-${turn.label}`}>
+                      {turn.label}: {turn.prompt}
+                    </div>
+                  ))}
+                </div>
+                <div className="template-actions">
+                  <button
+                    type="button"
+                    onClick={() => onRunTemplateScenario(selectedTemplate)}
+                    disabled={Boolean(runningTemplateId)}
+                  >
+                    {runningTemplateId === selectedTemplate.id ? "Running scenario..." : "Run template"}
+                  </button>
+                </div>
+              </article>
+              <details className="chat-secondary-details template-browser-details">
+                <summary>Browse other templates</summary>
+                <div className="template-grid template-grid-compact">
+                  {otherTemplates.map((template) => (
+                    <article className="template-card template-card-compact" key={template.id}>
+                      <div className="template-card-header">
+                        <div>
+                          <h3>{template.title}</h3>
+                          <div className="template-card-description">{template.description}</div>
+                        </div>
+                        <span className="template-scope-name">{template.scopeName}</span>
+                      </div>
+                      <div className="template-watch">
+                        <span className="field-label">Watch for</span>
+                        <FactPills items={template.watch} />
+                      </div>
+                      <div className="template-actions">
+                        <button className="ghost" type="button" onClick={() => onPrepareTemplate(template)}>
+                          Select template
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </details>
+            </div>
+          ) : null}
           <div className="hero-card hero-card-compact">
             <div className="hero-row">
               <div>
@@ -79,12 +168,25 @@ export function ChatPanel(props: {
               {history.length} {history.length === 1 ? "message" : "messages"}
             </span>
             <span className="chat-status-pill">
-              {latestMeta?.answerMode
-                ? `Last answer: ${latestMeta.answerMode}`
-                : activeScopeId
-                  ? "Ask about goals, constraints, decisions, or open work"
-                  : "Create a scope to begin the demo"}
+              {runningTemplateId === selectedTemplateId
+                ? "Template run in progress"
+                : isCompletedScenarioVisible
+                  ? `Template completed at ${completedScenario?.completedAt}`
+                  : latestMeta?.answerMode
+                    ? `Last answer: ${latestMeta.answerMode}`
+                    : activeScopeId
+                      ? "Run the selected template to build visible state"
+                      : "Create a scope to begin the demo"}
             </span>
+            <span className="chat-status-pill">
+              {inspector.working?.view?.goal || inspector.stable?.view?.goal
+                ? `Current goal: ${inspector.stable?.view?.goal || inspector.working?.view?.goal}`
+                : "No memory snapshot yet"}
+            </span>
+          </div>
+          <div className="transcript-header">
+            <div className="eyebrow">Live Transcript</div>
+            <h3>What the selected template actually sent through the runtime</h3>
           </div>
           <div className="messages">
             {!history.length ? (
@@ -106,25 +208,6 @@ export function ChatPanel(props: {
               ))
             )}
           </div>
-          <form className="chat-form chat-form-below-history" onSubmit={onSubmit}>
-            <textarea
-              value={messageInput}
-              onChange={(event) => onMessageInputChange(event.target.value)}
-              rows={3}
-              placeholder="Ask about the current goal, constraints, or open work."
-              required
-            />
-            <div className="chat-actions chat-actions-inline">
-              <div className="prompt-buttons prompt-buttons-compact">
-                {SUGGESTED_DEMO_TURNS.map(([prompt, label]) => (
-                  <button className="ghost prompt-button" key={prompt} type="button" onClick={() => onMessageInputChange(prompt)}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <button type="submit">Send Turn</button>
-            </div>
-          </form>
         </div>
 
         <aside className="pipeline-focus-card">

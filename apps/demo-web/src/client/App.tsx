@@ -1,11 +1,13 @@
 import type { getDemoConfig } from "./config";
-import { ChatPanel, InspectorPanel, Sidebar } from "./components";
+import { ComparePanel, Sidebar } from "./components";
 import { useDemoRuntime } from "./hooks";
 
 type DemoConfig = ReturnType<typeof getDemoConfig>;
 
 export function App({ config }: { config: DemoConfig }) {
   const demo = useDemoRuntime(config);
+  const compareTemplates = demo.templates.filter((template) => Boolean(template.compare));
+  const compareTemplate = compareTemplates.find((template) => template.id === demo.selectedTemplateId) || compareTemplates[0] || null;
 
   return (
     <div className="app-shell">
@@ -41,36 +43,20 @@ export function App({ config }: { config: DemoConfig }) {
       />
 
       <main className="main-stack">
-        <ChatPanel
-          activeScope={demo.activeScope}
-          activeScopeId={demo.activeScopeId}
-          goal={demo.goal}
-          answerMode={demo.answerMode}
-          retrievalMode={demo.retrievalMode}
-          workingVersion={demo.workingVersion}
-          stableVersion={demo.stableVersion}
-          workingCaughtUp={demo.workingCaughtUp}
-          stableCaughtUp={demo.stableCaughtUp}
-          goalAligned={demo.goalAligned}
-          diff={demo.diff}
-          pipeline={demo.pipeline}
-          history={demo.history}
-          latestMeta={demo.latestMeta}
-          messageInput={demo.messageInput}
-          onMessageInputChange={demo.setMessageInput}
-          onSubmit={(event) => {
-            event.preventDefault();
-            void demo.sendMessage(demo.messageInput);
-          }}
-        />
-
-        <InspectorPanel
-          inspector={demo.inspector}
-          retrievalMode={demo.retrievalMode}
-          goalAligned={demo.goalAligned}
-          workingCaughtUp={demo.workingCaughtUp}
-          stableCaughtUp={demo.stableCaughtUp}
-        />
+        {compareTemplate ? (
+          <ComparePanel
+            templates={compareTemplates}
+            selectedTemplateId={demo.selectedTemplateId}
+            onSelectTemplate={demo.prepareTemplate}
+            template={compareTemplate}
+            runningTemplateId={demo.runningCompareTemplateId}
+            completedScenario={demo.completedCompareScenario}
+            activeScopeName={demo.activeScope?.name || null}
+            onRunTemplateScenario={(template) => {
+              void demo.runCompareScenario(template);
+            }}
+          />
+        ) : null}
       </main>
     </div>
   );

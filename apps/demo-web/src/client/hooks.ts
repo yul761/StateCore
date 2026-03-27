@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { getDemoConfig } from "./config";
 import { activateScopeRemote, createScopeRemote, fetchHealth, fetchInspectorBundle, fetchScopesAndActive, sendRuntimeTurn } from "./api";
+import { DEMO_TEMPLATES, type DemoTemplate } from "./content";
 import {
   cloneView,
   createInitialPipelineState,
@@ -29,6 +30,14 @@ export function useDemoRuntime(config: DemoConfig) {
   const activeScopeIdRef = useRef<string | null>(null);
   const guestUserIdRef = useRef<string>(getOrCreateGuestUserId());
   const [guestUserId, setGuestUserId] = useState<string>(guestUserIdRef.current);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(DEMO_TEMPLATES[0]?.id ?? "");
+  const [runningCompareTemplateId, setRunningCompareTemplateId] = useState<string | null>(null);
+  const [completedCompareScenario, setCompletedCompareScenario] = useState<{
+    templateId: string;
+    scopeId: string;
+    scopeName: string;
+    completedAt: string;
+  } | null>(null);
 
   const [scopesCache, setScopesCache] = useState<ScopeSummary[]>([]);
   const [activeScopeId, setActiveScopeId] = useState<string | null>(null);
@@ -312,13 +321,63 @@ export function useDemoRuntime(config: DemoConfig) {
     setScopeName("");
   }
 
+  async function createScopeFromTemplate(template: DemoTemplate) {
+    setSelectedTemplateId(template.id);
+    setCompletedCompareScenario(null);
+    const scope = await createScopeRemote(config, guestUserIdRef.current, template.scopeName);
+    await activateScope(scope.id);
+    await loadScopes();
+    setScopeName("");
+    setMessageInput(template.turns[0]?.prompt ?? "");
+  }
+
+  function prepareTemplate(template: DemoTemplate) {
+    setSelectedTemplateId(template.id);
+    setScopeName(template.scopeName);
+    setMessageInput(template.turns[0]?.prompt ?? "");
+  }
+
+  function applyTemplatePrompt(templateId: string, prompt: string) {
+    setSelectedTemplateId(templateId);
+    setMessageInput(prompt);
+  }
+
+  async function runCompareScenario(template: DemoTemplate) {
+    setSelectedTemplateId(template.id);
+    setRunningCompareTemplateId(template.id);
+    setCompletedCompareScenario(null);
+
+    try {
+      const scope = await createScopeRemote(config, guestUserIdRef.current, `${template.scopeName} run`);
+      await activateScope(scope.id);
+      await loadScopes();
+      setScopeName("");
+
+      for (const turn of template.turns) {
+        setMessageInput(turn.prompt);
+        await sendMessage(turn.prompt);
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+      }
+
+      setCompletedCompareScenario({
+        templateId: template.id,
+        scopeId: scope.id,
+        scopeName: scope.name,
+        completedAt: formatClockTime()
+      });
+    } finally {
+      setRunningCompareTemplateId(null);
+    }
+  }
+
   async function selectScope(scopeId: string) {
     if (!scopeId || scopeId === activeScopeId) return;
     await activateScope(scopeId);
   }
 
   async function sendMessage(message: string) {
-    if (!activeScopeId) return;
+    const scopeId = activeScopeIdRef.current;
+    if (!scopeId) return;
     const trimmedMessage = message.trim();
     if (!trimmedMessage) return;
 
@@ -328,23 +387,23 @@ export function useDemoRuntime(config: DemoConfig) {
     const previousWorkingView = cloneView(lastInspectorSnapshots.working || null);
     const previousStableView = cloneView(lastInspectorSnapshots.stable || null);
 
-    resetTimeline(activeScopeId, trimmedMessage);
+    resetTimeline(scopeId, trimmedMessage);
 
-    const nextUserHistory = [...readHistory(activeScopeId), { role: "user", content: trimmedMessage } as DemoHistoryEntry];
-    writeHistoryState(activeScopeId, nextUserHistory);
+    const nextUserHistory = [...readHistory(scopeId), { role: "user", content: trimmedMessage } as DemoHistoryEntry];
+    writeHistoryState(scopeId, nextUserHistory);
     setMessageInput("");
 
     setPipelineStage("fast", "running", "Responding", "Fast Layer is building prompt context and generating the synchronous reply.");
     setPipelineStage("working", "pending", "Queued", "Working Memory will refresh after the current answer returns.");
     setPipelineStage("stable", "idle", "Waiting", "State Layer will only run if this turn triggers digest consolidation.");
     pushTimeline(
-      activeScopeId,
+      scopeId,
       "Fast Layer Started",
       `Fast Layer is answering from the current prompt context. Previous versions: working=${previousWorkingVersion ?? "none"}, stable=${previousStableVersion ?? "none"}.`
     );
 
     try {
-      const result = await sendRuntimeTurn(config, guestUserIdRef.current, activeScopeId, trimmedMessage);
+      const result = await sendRuntimeTurn(config, guestUserIdRef.current, scopeId, trimmedMessage);
 
       setRuntimeSnapshot({
         answerMode: result.answerMode || null,
@@ -359,7 +418,7 @@ export function useDemoRuntime(config: DemoConfig) {
       );
 
       pushTimeline(
-        activeScopeId,
+        scopeId,
         "Fast Layer Answered",
         `Answer mode: ${result.answerMode || "unknown"}. Retrieval: ${result.retrievalPlan?.mode || "unknown"}. Versions after reply: working=${result.workingMemoryVersion ?? "none"}, stable=${result.stableStateVersion ?? "none"}.`
       );
@@ -379,13 +438,13 @@ export function useDemoRuntime(config: DemoConfig) {
           }
         } satisfies DemoHistoryEntry
       ];
-      writeHistoryState(activeScopeId, nextAssistantHistory);
+      writeHistoryState(scopeId, nextAssistantHistory);
 
-      const nextInspector = await loadInspector(activeScopeId, trimmedMessage);
+      const nextInspector = await loadInspector(scopeId, trimmedMessage);
       const nextWorkingView = cloneView(nextInspector.working?.view || null);
       const nextStableView = cloneView(nextInspector.stable?.view || null);
 
-      writeDiffState(activeScopeId, {
+      writeDiffState(scopeId, {
         working: diffViews(previousWorkingView as Record<string, unknown> | null, nextWorkingView as Record<string, unknown> | null, {
           goal: "Goal",
           constraints: "Constraints",
@@ -405,7 +464,7 @@ export function useDemoRuntime(config: DemoConfig) {
       });
 
       pushTimeline(
-        activeScopeId,
+        scopeId,
         "Inspector Refreshed",
         `Layer status now shows working=${nextInspector.layer?.workingMemoryVersion ?? "none"} and stable=${nextInspector.layer?.stableStateVersion ?? "none"}.`
       );
@@ -422,20 +481,20 @@ export function useDemoRuntime(config: DemoConfig) {
             : "No digest triggered on this turn, and there is no committed stable snapshot yet."
         );
         pushTimeline(
-          activeScopeId,
+          scopeId,
           "State Layer Not Triggered",
           "This turn did not enqueue a new State Layer digest. The UI is still showing the latest committed authoritative snapshot."
         );
       }
 
-      void monitorLifecycle(activeScopeId, trimmedMessage, result);
+      void monitorLifecycle(scopeId, trimmedMessage, result);
     } catch (error) {
       const messageText = String((error as Error).message || error);
       setPipelineStage("fast", "warning", "Error", `Fast Layer request failed: ${messageText}`);
       setPipelineStage("working", "idle", "Idle", "No background update was confirmed for this failed turn.");
       setPipelineStage("stable", "idle", "Idle", "No digest ran because the turn failed.");
-      pushTimeline(activeScopeId, "Fast Layer Error", `The runtime turn failed before the pipeline could complete: ${messageText}`);
-      writeHistoryState(activeScopeId, [...nextUserHistory, { role: "assistant", content: `Error: ${messageText}` }]);
+      pushTimeline(scopeId, "Fast Layer Error", `The runtime turn failed before the pipeline could complete: ${messageText}`);
+      writeHistoryState(scopeId, [...nextUserHistory, { role: "assistant", content: `Error: ${messageText}` }]);
     }
   }
 
@@ -514,6 +573,14 @@ export function useDemoRuntime(config: DemoConfig) {
     messageInput,
     setMessageInput,
     sendMessage,
-    inspector
+    inspector,
+    templates: DEMO_TEMPLATES,
+    selectedTemplateId,
+    runningCompareTemplateId,
+    completedCompareScenario,
+    createScopeFromTemplate,
+    prepareTemplate,
+    applyTemplatePrompt,
+    runCompareScenario
   };
 }
