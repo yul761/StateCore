@@ -27,6 +27,7 @@ The current curated sample evaluates:
 
 Start here if you want to use the product shape instead of reading benchmark output:
 
+- Public demo: `http://147.182.174.191`
 - `docs/demo-quickstart.md`
 
 That path gives you:
@@ -87,6 +88,7 @@ pnpm dev:demo-stack
 
 Then open:
 
+- `http://147.182.174.191`
 - `http://localhost:3100`
 
 For the full setup sequence and the first questions to try, use:

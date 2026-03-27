@@ -26,6 +26,7 @@ It is infrastructure for memory continuity.
 
 Choose the fastest path for what you want:
 
+- Try the public demo: `http://147.182.174.191`
 - Try the interactive demo: `docs/demo-quickstart.md`
 - Deploy the demo stack: `deploy.md`
 - Fastest proof: `artifacts/demos/visible-comparison-latest.md`
@@ -59,6 +60,10 @@ If you want the fuller local setup path instead of just the final command, use:
 ## Try The Demo
 
 The interactive demo is the fastest way to understand the product shape.
+
+Public demo:
+
+- `http://147.182.174.191`
 
 What you will see:
 
