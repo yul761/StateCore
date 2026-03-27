@@ -51,9 +51,10 @@ demo_pid=$!
 wait_for_url() {
   local url="$1"
   local label="$2"
+  shift 2
   local deadline=$((SECONDS + 45))
   while [[ $SECONDS -lt $deadline ]]; do
-    if curl -fsS "$url" >/dev/null 2>&1; then
+    if curl -fsS "$@" "$url" >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -62,7 +63,7 @@ wait_for_url() {
   return 1
 }
 
-wait_for_url "${API_BASE_URL}/health" "API" || {
+wait_for_url "${API_BASE_URL}/health" "API" -H "x-user-id: demo-stack-check" || {
   echo "API log tail:" >&2
   tail -n 40 "${API_LOG}" >&2 || true
   exit 1

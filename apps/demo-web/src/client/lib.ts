@@ -49,7 +49,7 @@ export type WorkingMemoryOutputShape = {
 };
 
 export type StableStateOutputShape = {
-  snapshotId?: string | null;
+  digestId?: string | null;
   createdAt?: string | null;
   view?: {
     goal?: string;
@@ -151,8 +151,6 @@ export type ScopeSummary = {
   createdAt: string;
 };
 
-export const USER_ID = "demo-web-user";
-
 export function pretty(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
@@ -226,12 +224,12 @@ export function createInitialPipelineState(): PipelineState {
   };
 }
 
-export async function apiFetch<T>(apiBaseUrl: string, route: string, method: string, body?: unknown) {
+export async function apiFetch<T>(apiBaseUrl: string, userId: string, route: string, method: string, body?: unknown) {
   const response = await fetch(`${apiBaseUrl}${route}`, {
     method,
     headers: {
       "Content-Type": "application/json",
-      "x-user-id": USER_ID
+      "x-user-id": userId
     },
     ...(body ? { body: JSON.stringify(body) } : {})
   });

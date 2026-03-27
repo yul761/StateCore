@@ -19,7 +19,7 @@ import {
   type StableStateOutputShape,
   type WorkingMemoryOutputShape,
 } from "./lib";
-import { latestAssistantMeta, readDiff, readHistory, readTimeline, writeDiff, writeHistory, writeTimeline } from "./storage";
+import { getOrCreateGuestUserId, latestAssistantMeta, readDiff, readHistory, readTimeline, resetGuestUserId, writeDiff, writeHistory, writeTimeline } from "./storage";
 import { buildDemoViewModel } from "./view-model";
 
 type DemoConfig = ReturnType<typeof getDemoConfig>;
@@ -27,6 +27,8 @@ type DemoConfig = ReturnType<typeof getDemoConfig>;
 export function useDemoRuntime(config: DemoConfig) {
   const lifecycleTokenRef = useRef(0);
   const activeScopeIdRef = useRef<string | null>(null);
+  const guestUserIdRef = useRef<string>(getOrCreateGuestUserId());
+  const [guestUserId, setGuestUserId] = useState<string>(guestUserIdRef.current);
 
   const [scopesCache, setScopesCache] = useState<ScopeSummary[]>([]);
   const [activeScopeId, setActiveScopeId] = useState<string | null>(null);
@@ -131,7 +133,7 @@ export function useDemoRuntime(config: DemoConfig) {
 
   async function loadHealth() {
     try {
-      setHealth(await fetchHealth(config));
+      setHealth(await fetchHealth(config, guestUserIdRef.current));
     } catch (error) {
       setHealth({
         status: String((error as Error).message || error)
@@ -152,7 +154,7 @@ export function useDemoRuntime(config: DemoConfig) {
       return emptyBundle;
     }
 
-    const nextBundle = await fetchInspectorBundle(config, scopeId, message);
+      const nextBundle = await fetchInspectorBundle(config, guestUserIdRef.current, scopeId, message);
     if (scopeId === activeScopeIdRef.current) {
       setInspector(nextBundle);
       setLastInspectorSnapshots({
@@ -164,7 +166,7 @@ export function useDemoRuntime(config: DemoConfig) {
   }
 
   async function loadScopes() {
-    const { scopesResponse, state } = await fetchScopesAndActive(config);
+    const { scopesResponse, state } = await fetchScopesAndActive(config, guestUserIdRef.current);
     setScopesCache(scopesResponse.items);
     const nextActiveScopeId = state.activeScopeId || activeScopeIdRef.current || scopesResponse.items[0]?.id || null;
     setActiveScopeId(nextActiveScopeId);
@@ -174,7 +176,7 @@ export function useDemoRuntime(config: DemoConfig) {
 
   async function activateScope(scopeId: string) {
     lifecycleTokenRef.current += 1;
-    const result = await activateScopeRemote(config, scopeId);
+    const result = await activateScopeRemote(config, guestUserIdRef.current, scopeId);
     setActiveScopeId(result.activeScopeId);
     syncLocalScopeState(result.activeScopeId);
     resetPipeline();
@@ -194,7 +196,7 @@ export function useDemoRuntime(config: DemoConfig) {
       const layer = nextBundle.layer;
       const workingCaughtUp = Boolean(layer?.freshness?.workingMemoryCaughtUp);
       const stableCaughtUp = Boolean(layer?.freshness?.stableStateCaughtUp);
-      const hasStableSnapshot = Boolean(nextBundle.stable?.snapshotId || layer?.stableStateVersion);
+      const hasStableSnapshot = Boolean(nextBundle.stable?.digestId || layer?.stableStateVersion);
 
       if (workingCaughtUp) {
         setPipelineStage(
@@ -304,7 +306,7 @@ export function useDemoRuntime(config: DemoConfig) {
     const name = scopeName.trim();
     if (!name) return;
 
-    const scope = await createScopeRemote(config, name);
+    const scope = await createScopeRemote(config, guestUserIdRef.current, name);
     await activateScope(scope.id);
     await loadScopes();
     setScopeName("");
@@ -342,7 +344,7 @@ export function useDemoRuntime(config: DemoConfig) {
     );
 
     try {
-      const result = await sendRuntimeTurn(config, activeScopeId, trimmedMessage);
+      const result = await sendRuntimeTurn(config, guestUserIdRef.current, activeScopeId, trimmedMessage);
 
       setRuntimeSnapshot({
         answerMode: result.answerMode || null,
@@ -409,7 +411,7 @@ export function useDemoRuntime(config: DemoConfig) {
       );
 
       if (!result.digestTriggered) {
-        const hasStableSnapshot = Boolean(nextInspector.stable?.snapshotId || nextInspector.layer?.stableStateVersion);
+        const hasStableSnapshot = Boolean(nextInspector.stable?.digestId || nextInspector.layer?.stableStateVersion);
         const stableCaughtUp = Boolean(nextInspector.layer?.freshness?.stableStateCaughtUp);
         setPipelineStage(
           "stable",
@@ -442,15 +444,52 @@ export function useDemoRuntime(config: DemoConfig) {
     await loadInspector(scopeId);
   }
 
+  async function resetGuestSession() {
+    lifecycleTokenRef.current += 1;
+    const nextGuestUserId = resetGuestUserId();
+    guestUserIdRef.current = nextGuestUserId;
+    setGuestUserId(nextGuestUserId);
+
+    setScopesCache([]);
+    setActiveScopeId(null);
+    activeScopeIdRef.current = null;
+    setScopeName("");
+    setMessageInput("");
+    setHistory([]);
+    setTimeline([]);
+    setDiff({ working: [], stable: [] });
+    setRuntimeSnapshot({
+      answerMode: null,
+      retrievalMode: null
+    });
+    setInspector({
+      working: null,
+      stable: null,
+      fast: null,
+      layer: null
+    });
+    setLastInspectorSnapshots({
+      working: null,
+      stable: null
+    });
+    resetPipeline();
+
+    await loadHealth();
+    const nextScopeId = await loadScopes();
+    await loadInspector(nextScopeId);
+  }
+
   return {
     scopeName,
     setScopeName,
+    guestUserId,
     activeScope,
     activeScopeId,
     scopeCards,
     createScope,
     selectScope,
     refreshScopesAndInspector,
+    resetGuestSession,
     health,
     healthSummarySections,
     turnOutcomeHeadline,

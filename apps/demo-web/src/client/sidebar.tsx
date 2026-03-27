@@ -8,6 +8,8 @@ export type ScopeCard = ScopeSummary & {
 };
 
 export function Sidebar(props: {
+  guestUserId: string;
+  onResetGuestSession: () => void;
   scopeName: string;
   onScopeNameChange: (value: string) => void;
   onCreateScope: (event: React.FormEvent<HTMLFormElement>) => void;
@@ -27,6 +29,8 @@ export function Sidebar(props: {
   diff: { working: DiffEntry[]; stable: DiffEntry[] };
 }) {
   const {
+    guestUserId,
+    onResetGuestSession,
     scopeName,
     onScopeNameChange,
     onCreateScope,
@@ -56,6 +60,20 @@ export function Sidebar(props: {
 
       <div className="panel">
         <h2>Session</h2>
+        <div className="guest-session-card">
+          <div className="guest-session-row">
+            <div>
+              <div className="field-label">Guest Session</div>
+              <div className="guest-session-id" title={guestUserId}>
+                {guestUserId}
+              </div>
+            </div>
+            <button className="ghost" type="button" onClick={onResetGuestSession}>
+              Reset Guest
+            </button>
+          </div>
+          <div className="guest-session-detail">This browser keeps a private anonymous guest id so scopes stay isolated from other visitors.</div>
+        </div>
         <form className="stack" onSubmit={onCreateScope}>
           <input
             value={scopeName}

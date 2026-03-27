@@ -1,8 +1,39 @@
 import type { DemoHistoryEntry, StoredDiff, TimelineEntry } from "./lib";
 
+export const GUEST_USER_ID_STORAGE_KEY = "project-memory-demo-guest-user-id";
 export const HISTORY_STORAGE_PREFIX = "project-memory-demo-history:";
 export const TIMELINE_STORAGE_PREFIX = "project-memory-demo-timeline:";
 export const DIFF_STORAGE_PREFIX = "project-memory-demo-diff:";
+
+function createGuestUserId() {
+  const randomId =
+    typeof window !== "undefined" && window.crypto?.randomUUID
+      ? window.crypto.randomUUID()
+      : `guest-${Math.random().toString(36).slice(2, 10)}`;
+  return `demo-guest-${randomId}`;
+}
+
+export function getOrCreateGuestUserId() {
+  try {
+    const existing = window.localStorage.getItem(GUEST_USER_ID_STORAGE_KEY)?.trim();
+    if (existing) return existing;
+    const next = createGuestUserId();
+    window.localStorage.setItem(GUEST_USER_ID_STORAGE_KEY, next);
+    return next;
+  } catch {
+    return createGuestUserId();
+  }
+}
+
+export function resetGuestUserId() {
+  const next = createGuestUserId();
+  try {
+    window.localStorage.setItem(GUEST_USER_ID_STORAGE_KEY, next);
+  } catch {
+    // Ignore storage failures and return the in-memory fallback id.
+  }
+  return next;
+}
 
 export function historyKey(scopeId: string) {
   return `${HISTORY_STORAGE_PREFIX}${scopeId}`;

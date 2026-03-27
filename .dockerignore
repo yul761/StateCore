@@ -1,0 +1,16 @@
+.git
+.github
+.changeset
+node_modules
+apps/*/node_modules
+packages/*/node_modules
+benchmark-results
+.tmp-*.log
+runtime-doctor*.json
+dist
+apps/*/dist
+packages/*/dist
+.env
+.env.production
+coverage
+.DS_Store

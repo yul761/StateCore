@@ -20,7 +20,7 @@ export function buildDemoViewModel(params: {
   const stableVersion = inspector.layer?.stableStateVersion || "none";
   const workingCaughtUp = Boolean(inspector.layer?.freshness?.workingMemoryCaughtUp);
   const stableCaughtUp = Boolean(inspector.layer?.freshness?.stableStateCaughtUp);
-  const hasStableSnapshot = Boolean(inspector.stable?.snapshotId || inspector.layer?.stableStateVersion);
+  const hasStableSnapshot = Boolean(inspector.stable?.digestId || inspector.layer?.stableStateVersion);
   const goalAligned = inspector.layer?.layerAlignment?.goalAligned;
 
   const healthSummarySections = createHealthSummarySections(health);

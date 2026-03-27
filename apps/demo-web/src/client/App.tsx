@@ -10,6 +10,10 @@ export function App({ config }: { config: DemoConfig }) {
   return (
     <div className="app-shell">
       <Sidebar
+        guestUserId={demo.guestUserId}
+        onResetGuestSession={() => {
+          void demo.resetGuestSession();
+        }}
         scopeName={demo.scopeName}
         onScopeNameChange={demo.setScopeName}
         onCreateScope={(event) => {

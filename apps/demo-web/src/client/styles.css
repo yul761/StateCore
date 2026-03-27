@@ -240,6 +240,37 @@ h3 {
   gap: 10px;
 }
 
+.guest-session-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.guest-session-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.guest-session-id {
+  margin-top: 4px;
+  font-size: 0.86rem;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.guest-session-detail {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
 .scope-browser {
   display: flex;
   flex-direction: column;

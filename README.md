@@ -27,6 +27,7 @@ It is infrastructure for memory continuity.
 Choose the fastest path for what you want:
 
 - Try the interactive demo: `docs/demo-quickstart.md`
+- Deploy the demo stack: `deploy.md`
 - Fastest proof: `artifacts/demos/visible-comparison-latest.md`
 - Quick orientation: `docs/start-here.md`
 - Product API boundary: `docs/product-surface.md`
