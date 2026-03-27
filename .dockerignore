@@ -12,5 +12,7 @@ apps/*/dist
 packages/*/dist
 .env
 .env.production
+apps/*/.env
+packages/*/.env
 coverage
 .DS_Store

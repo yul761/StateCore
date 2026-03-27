@@ -12,6 +12,7 @@ function loadEnvFile(filePath: string) {
     if (idx < 0) continue;
     const key = trimmed.slice(0, idx).trim();
     const value = trimmed.slice(idx + 1).trim();
+    if (process.env[key] !== undefined) continue;
     process.env[key] = value;
   }
 }
@@ -67,23 +68,27 @@ if (!parsed.success) {
 
 const env = parsed.data;
 const toBool = (value?: string) => value === "true";
+const clean = (value?: string) => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+};
 const requiresApiKeyForBaseUrl = (baseUrl: string) => /(^https?:\/\/)?api\.openai\.com\/?/i.test(baseUrl);
-const modelBaseUrl = env.MODEL_BASE_URL || env.OPENAI_BASE_URL || "https://api.openai.com/v1";
-const modelName = env.MODEL_NAME || env.OPENAI_MODEL || "gpt-4o-mini";
-const chatModelBaseUrl = env.MODEL_CHAT_BASE_URL || modelBaseUrl;
-const runtimeModelBaseUrl = env.MODEL_RUNTIME_BASE_URL || chatModelBaseUrl;
-const structuredOutputModelBaseUrl = env.MODEL_STRUCTURED_OUTPUT_BASE_URL || modelBaseUrl;
-const embeddingModelBaseUrl = env.MODEL_EMBEDDING_BASE_URL || modelBaseUrl;
-const chatModelApiKey = env.MODEL_CHAT_API_KEY ?? env.MODEL_API_KEY ?? env.OPENAI_API_KEY ?? "";
-const runtimeModelApiKey = env.MODEL_RUNTIME_API_KEY ?? env.MODEL_CHAT_API_KEY ?? env.MODEL_API_KEY ?? env.OPENAI_API_KEY ?? "";
-const structuredOutputModelApiKey = env.MODEL_STRUCTURED_OUTPUT_API_KEY ?? env.MODEL_API_KEY ?? env.OPENAI_API_KEY ?? "";
-const embeddingModelApiKey = env.MODEL_EMBEDDING_API_KEY ?? env.MODEL_API_KEY ?? env.OPENAI_API_KEY ?? "";
-const chatModelName = env.MODEL_CHAT_NAME || modelName;
-const runtimeModelName = env.MODEL_RUNTIME_NAME || chatModelName;
-const structuredOutputModelName = env.MODEL_STRUCTURED_OUTPUT_NAME || modelName;
-const embeddingModelName = env.MODEL_EMBEDDING_NAME || "";
-const modelApiKey = env.MODEL_API_KEY || env.OPENAI_API_KEY || "";
-const modelProvider = env.MODEL_PROVIDER || "openai-compatible";
+const modelBaseUrl = clean(env.MODEL_BASE_URL) || clean(env.OPENAI_BASE_URL) || "https://api.openai.com/v1";
+const modelName = clean(env.MODEL_NAME) || clean(env.OPENAI_MODEL) || "gpt-4o-mini";
+const chatModelBaseUrl = clean(env.MODEL_CHAT_BASE_URL) || modelBaseUrl;
+const runtimeModelBaseUrl = clean(env.MODEL_RUNTIME_BASE_URL) || chatModelBaseUrl;
+const structuredOutputModelBaseUrl = clean(env.MODEL_STRUCTURED_OUTPUT_BASE_URL) || modelBaseUrl;
+const embeddingModelBaseUrl = clean(env.MODEL_EMBEDDING_BASE_URL) || modelBaseUrl;
+const chatModelApiKey = clean(env.MODEL_CHAT_API_KEY) ?? clean(env.MODEL_API_KEY) ?? clean(env.OPENAI_API_KEY) ?? "";
+const runtimeModelApiKey = clean(env.MODEL_RUNTIME_API_KEY) ?? clean(env.MODEL_CHAT_API_KEY) ?? clean(env.MODEL_API_KEY) ?? clean(env.OPENAI_API_KEY) ?? "";
+const structuredOutputModelApiKey = clean(env.MODEL_STRUCTURED_OUTPUT_API_KEY) ?? clean(env.MODEL_API_KEY) ?? clean(env.OPENAI_API_KEY) ?? "";
+const embeddingModelApiKey = clean(env.MODEL_EMBEDDING_API_KEY) ?? clean(env.MODEL_API_KEY) ?? clean(env.OPENAI_API_KEY) ?? "";
+const chatModelName = clean(env.MODEL_CHAT_NAME) || modelName;
+const runtimeModelName = clean(env.MODEL_RUNTIME_NAME) || chatModelName;
+const structuredOutputModelName = clean(env.MODEL_STRUCTURED_OUTPUT_NAME) || modelName;
+const embeddingModelName = clean(env.MODEL_EMBEDDING_NAME) || "";
+const modelApiKey = clean(env.MODEL_API_KEY) || clean(env.OPENAI_API_KEY) || "";
+const modelProvider = clean(env.MODEL_PROVIDER) || "openai-compatible";
 const requiresApiKey = requiresApiKeyForBaseUrl(modelBaseUrl);
 
 if (toBool(env.FEATURE_LLM) && requiresApiKey && !modelApiKey) {

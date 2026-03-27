@@ -33,6 +33,7 @@
     "smoke:llm": "./scripts/smoke-llm.sh",
     "smoke:runtime": "./scripts/smoke-runtime.sh",
     "smoke:demo-web": "./scripts/smoke-demo-web.sh",
+    "smoke:deploy": "./scripts/smoke-prod-compose.sh",
     "smoke:reminders": "./scripts/smoke-reminders.sh",
     "smoke": "pnpm smoke:no-llm && pnpm smoke:llm && pnpm smoke:runtime && pnpm smoke:reminders",
     "db:migrate": "pnpm --filter @project-memory/db prisma migrate dev",

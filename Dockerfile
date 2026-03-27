@@ -44,6 +44,8 @@ WORKDIR /app
 
 COPY --from=build /app /app
 
+RUN node -e "const fs=require('fs'); const path=require('path'); for (const rel of ['packages/core/package.json','packages/contracts/package.json','packages/prompts/package.json','packages/db/package.json']) { const file=path.join('/app', rel); const pkg=JSON.parse(fs.readFileSync(file,'utf8')); pkg.main='dist/index.js'; pkg.types='dist/index.d.ts'; fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n'); }"
+
 FROM runtime-base AS api-runtime
 
 EXPOSE 3000

@@ -87,6 +87,21 @@ If you want to verify the API from inside the server, remember the API expects a
 curl -H 'x-user-id: deploy-check' http://localhost:3000/health
 ```
 
+Run a real end-to-end smoke through the public entrypoint:
+
+```bash
+BASE_URL=https://your-domain.example pnpm smoke:deploy
+```
+
+That smoke verifies:
+
+- the public entrypoint is reachable
+- a scope can be created
+- a natural-language runtime turn succeeds
+- Working Memory captures a goal
+- Stable State commits a goal
+- layer alignment and freshness converge cleanly
+
 ## 8. Updates
 
 Pull new code, then:
@@ -95,6 +110,12 @@ Pull new code, then:
 docker compose -f docker-compose.prod.yml --env-file .env.production build
 docker compose -f docker-compose.prod.yml --env-file .env.production run --rm migrate
 docker compose -f docker-compose.prod.yml --env-file .env.production up -d api worker demo-web caddy
+```
+
+Then rerun:
+
+```bash
+BASE_URL=https://your-domain.example pnpm smoke:deploy
 ```
 
 ## Notes
