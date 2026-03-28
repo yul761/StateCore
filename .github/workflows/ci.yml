@@ -40,4 +40,4 @@ jobs:
         run: pnpm -r --filter "./apps/**" --filter "./packages/**" build
 
       - name: Run unit tests
-        run: pnpm --filter @project-memory/core test
+        run: pnpm --filter @statecore/core test

@@ -1,6 +1,6 @@
-# Project Memory Philosophy
+# StateCore Philosophy
 
-Project Memory is a **long-term memory engine**, not a personal assistant. It provides primitives for ingesting events, producing layered digests, retrieving memory, and (optionally) generating answers grounded in that memory.
+StateCore is a **long-term memory engine**, not a personal assistant. It provides primitives for ingesting events, producing layered digests, retrieving memory, and (optionally) generating answers grounded in that memory.
 
 Principles:
 - **Engine, not app**: no UI or hosted service. You own infra and secrets.

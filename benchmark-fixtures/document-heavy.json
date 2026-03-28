@@ -32,7 +32,7 @@
   "events": [
     { "type": "document", "key": "doc:goal", "content": "goal: ship a self-hosted long-term memory runtime with low drift" },
     { "type": "document", "key": "doc:constraints", "content": "constraint: self-hosted first\nconstraint: keep api stable\nconstraint: make memory decisions auditable" },
-    { "type": "document", "key": "doc:architecture", "content": "Architecture update:\nProject Memory now treats the assistant runtime as a first-class product boundary. Runtime sessions should preserve evidence-backed answers, explicit write tiers, and digest trigger policy notes. This long-form spec is intentionally document-heavy so memory profiles can choose whether to preserve it as documented memory or reduce it to candidate context." },
+    { "type": "document", "key": "doc:architecture", "content": "Architecture update:\nStateCore now treats the assistant runtime as a first-class product boundary. Runtime sessions should preserve evidence-backed answers, explicit write tiers, and digest trigger policy notes. This long-form spec is intentionally document-heavy so memory profiles can choose whether to preserve it as documented memory or reduce it to candidate context." },
     { "type": "stream", "content": "We decide to expose assistant runtime policy profiles" },
     { "type": "stream", "content": "TODO: benchmark runtime profiles" },
     { "type": "document", "key": "doc:evaluation", "content": "Evaluation protocol update:\nReplay consistency, contradiction tracking, and runtime evidence coverage should be reported together. The benchmark should also surface which runtime policy profile was used, so developers can compare conservative and document-heavy behavior under the same fixture." },

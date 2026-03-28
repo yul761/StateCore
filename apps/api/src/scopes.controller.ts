@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Inject, Param, Post, Req } from "@nestjs/common";
-import { ScopeActivationOutput, ScopeCreateInput, ScopeListOutput, ScopeOutput, StateOutput } from "@project-memory/contracts";
+import { ScopeActivationOutput, ScopeCreateInput, ScopeListOutput, ScopeOutput, StateOutput } from "@statecore/contracts";
 import { DomainService } from "./domain.service";
 import { parseOutput } from "./output";
 import type { RequestWithUser } from "./types";

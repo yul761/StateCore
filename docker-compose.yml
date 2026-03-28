@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: project_memory
+      POSTGRES_DB: statecore
     ports:
       - "5433:5432"
     volumes:

@@ -6,7 +6,7 @@ This repository now has three different kinds of content:
 - research and benchmark tooling
 - curated evidence and docs
 
-If you are trying to build on top of Project Memory, use this map first.
+If you are trying to build on top of StateCore, use this map first.
 
 ## Product Runtime
 

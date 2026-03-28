@@ -221,7 +221,7 @@ if [[ -n "${DOCTOR_OUTPUT_PATH:-}" ]]; then
   if [[ "${doctor_output_path}" != /* ]]; then
     doctor_output_path="${ROOT_DIR}/${doctor_output_path}"
   fi
-  PROJECT_MEMORY_CLI_USER_ID="$USER_ID" pnpm dev:cli -- doctor --probe-turn --assert-clean --message "What is the current architecture goal?" --output-file "$doctor_output_path"
+  STATECORE_CLI_USER_ID="$USER_ID" pnpm dev:cli -- doctor --probe-turn --assert-clean --message "What is the current architecture goal?" --output-file "$doctor_output_path"
 else
-  PROJECT_MEMORY_CLI_USER_ID="$USER_ID" pnpm dev:cli -- doctor --probe-turn --assert-clean --message "What is the current architecture goal?"
+  STATECORE_CLI_USER_ID="$USER_ID" pnpm dev:cli -- doctor --probe-turn --assert-clean --message "What is the current architecture goal?"
 fi

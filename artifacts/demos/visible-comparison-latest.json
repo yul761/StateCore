@@ -12,7 +12,7 @@
     "currentQuestion": null
   },
   "fixture": "benchmark-fixtures/observable-drift-demo.json",
-  "fixtureSource": "/Users/yuchenlin/ProjectMemoryApi/project-memory/benchmark-fixtures/observable-drift-demo.json",
+  "fixtureSource": "/Users/yuchenlin/StateCoreApi/statecore/benchmark-fixtures/observable-drift-demo.json",
   "demoName": "Observable Drift Demo",
   "baselineMode": "rolling-summary",
   "model": "gpt-5-nano",

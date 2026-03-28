@@ -1,6 +1,6 @@
 # Benchmarking
 
-Project Memory includes a reproducible benchmark runner for research-facing claims (latency, throughput, reliability, digest consistency).
+StateCore includes a reproducible benchmark runner for research-facing claims (latency, throughput, reliability, digest consistency).
 
 In the three-layer architecture, benchmark output should be read as separating:
 

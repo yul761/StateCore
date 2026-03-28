@@ -1,8 +1,8 @@
 # Provider Abstraction Specification
 
-This document defines the intended model-provider abstraction for Project Memory.
+This document defines the intended model-provider abstraction for StateCore.
 
-Project Memory should support local models, remote models, and OpenAI-compatible endpoints without turning into a model hosting platform. The project owns the memory runtime, not the model lifecycle.
+StateCore should support local models, remote models, and OpenAI-compatible endpoints without turning into a model hosting platform. The project owns the memory runtime, not the model lifecycle.
 
 ## Purpose
 
@@ -43,7 +43,7 @@ The current code paths that depend on this setup include:
 
 Provider abstraction should make model choice a configuration concern, not a memory architecture concern.
 
-Project Memory should continue to own:
+StateCore should continue to own:
 
 - event ingestion
 - digest control
@@ -52,7 +52,7 @@ Project Memory should continue to own:
 - answer grounding
 - replay and evaluation
 
-Project Memory should not take ownership of:
+StateCore should not take ownership of:
 
 - model downloads
 - model serving infrastructure
@@ -176,7 +176,7 @@ Local model support should be practical, not ceremonial.
 
 The near-term goal is not "support every local runtime". The near-term goal is:
 
-- a developer can point Project Memory at a local OpenAI-compatible endpoint
+- a developer can point StateCore at a local OpenAI-compatible endpoint
 - the memory runtime works without code changes
 - evaluation and replay workflows still behave consistently
 
@@ -350,7 +350,7 @@ The first supported path can still be OpenAI-compatible, but the wording should 
 
 The provider abstraction is successful when:
 
-- a developer can use Project Memory with a local or remote compatible model endpoint
+- a developer can use StateCore with a local or remote compatible model endpoint
 - core memory logic does not change across providers
 - configuration names communicate neutrality rather than vendor lock-in
 - evaluation reports can compare memory behavior across providers

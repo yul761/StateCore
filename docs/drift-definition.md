@@ -1,12 +1,12 @@
 # Drift Definition
 
-This document defines what "drift" means in Project Memory.
+This document defines what "drift" means in StateCore.
 
 The goal is to make drift a concrete, testable property of the memory system instead of a vague description of "the model forgot something" or "the summary feels off".
 
 ## Why This Exists
 
-Project Memory is not primarily optimizing for open-ended conversation quality. It is optimizing for long-term memory reliability under repeated interaction.
+StateCore is not primarily optimizing for open-ended conversation quality. It is optimizing for long-term memory reliability under repeated interaction.
 
 That means the system needs a shared definition for:
 
@@ -28,7 +28,7 @@ It does not assume that every change is bad. Some state changes are legitimate. 
 
 ## Core Definition
 
-In Project Memory, **drift** is a harmful divergence between memory state or memory-backed output and the supported historical evidence available to the system.
+In StateCore, **drift** is a harmful divergence between memory state or memory-backed output and the supported historical evidence available to the system.
 
 Drift can appear in five primary forms:
 

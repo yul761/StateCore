@@ -8,7 +8,7 @@
 
 ## Validation
 
-- [ ] `pnpm --filter @project-memory/core test`
+- [ ] `pnpm --filter @statecore/core test`
 - [ ] `pnpm -r --filter "./apps/**" --filter "./packages/**" build`
 - [ ] docs/env updated (if needed)
 

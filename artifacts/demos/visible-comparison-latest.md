@@ -12,9 +12,9 @@
 
 - Rounds evaluated: 3
 - Questions evaluated: 7
-- Project Memory passed: 7/7
+- StateCore passed: 7/7
 - Direct model passed: 4/7
-- Project Memory wins: 3
+- StateCore wins: 3
 - Direct model wins: 0
 - Ties: 4
 
@@ -65,7 +65,7 @@ constraint: self-hosted first
 
 **Answers**
 
-- Project Memory (pass): The current project goal is to ship a generic local chat UI.
+- StateCore (pass): The current project goal is to ship a generic local chat UI.
 - Direct model (pass): The current project goal is to ship a generic local chat UI.
 
 ## Round 2: After Pivot
@@ -120,7 +120,7 @@ constraint: self-hosted first
 
 **Answers**
 
-- Project Memory (pass): Goal: ship a self-hosted memory layer for project assistants.
+- StateCore (pass): Goal: ship a self-hosted memory layer for project assistants.
 - Direct model (pass): The goal is to ship a self-hosted memory layer for project assistants.
 
 Focusing on API stability, self-hosted-first design, and high reliability (low drift) before adding integrations.
@@ -134,7 +134,7 @@ Focusing on API stability, self-hosted-first design, and high reliability (low d
 
 **Answers**
 
-- Project Memory (pass): There is no item explicitly labeled as "out of scope" in the retrieved memory.
+- StateCore (pass): There is no item explicitly labeled as "out of scope" in the retrieved memory.
 
 The memory does specify scope-related constraints instead:
 - Do not become a general-purpose agent platform.
@@ -201,7 +201,7 @@ The memory does specify scope-related constraints instead:
 
 **Answers**
 
-- Project Memory (pass): Ship a self-hosted long-term memory runtime for local models.
+- StateCore (pass): Ship a self-hosted long-term memory runtime for local models.
 - Direct model (fail): The current project goal is to ship a self-hosted memory runtime for local models.
 
 ### Question: What constraints still apply?
@@ -213,7 +213,7 @@ The memory does specify scope-related constraints instead:
 
 **Answers**
 
-- Project Memory (pass): - API stability must be maintained.
+- StateCore (pass): - API stability must be maintained.
 - Self-hosted first (priority).
 - Do not become a general-purpose agent platform.
 - Hosted platform work is explicitly out of scope.
@@ -237,7 +237,7 @@ The memory does specify scope-related constraints instead:
 
 **Answers**
 
-- Project Memory (pass): Key decisions:
+- StateCore (pass): Key decisions:
 - We decide to focus on memory continuity for long-running projects.
 - We decide to focus on low-drift memory reliability before expanding integrations.
 - We decide to treat assistant runtime as a product boundary, not just loose APIs.
@@ -263,7 +263,7 @@ The memory does specify scope-related constraints instead:
 
 **Answers**
 
-- Project Memory (pass): Open work items (TODOs) from the retrieved records:
+- StateCore (pass): Open work items (TODOs) from the retrieved records:
 - Define assistant runtime policies
 - Add replay consistency checks
 - Formalize drift metrics

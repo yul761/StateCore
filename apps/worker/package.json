@@ -1,5 +1,5 @@
 {
-  "name": "@project-memory/worker",
+  "name": "@statecore/worker",
   "version": "1.0.0",
   "private": true,
   "main": "dist/main.js",
@@ -10,9 +10,9 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
-    "@project-memory/core": "workspace:*",
-    "@project-memory/db": "workspace:*",
-    "@project-memory/prompts": "workspace:*",
+    "@statecore/core": "workspace:*",
+    "@statecore/db": "workspace:*",
+    "@statecore/prompts": "workspace:*",
     "bullmq": "^5.22.2",
     "pino": "^9.5.0",
     "zod": "^3.24.1"

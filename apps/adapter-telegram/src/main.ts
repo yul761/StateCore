@@ -122,7 +122,7 @@ app.post(adapterEnv.webhookPath, async (req, res) => {
 
   if (text.startsWith("/start")) {
     await apiFetch("/scopes", telegramUserId);
-    await sendMessage(chatId, "Project Memory Engine. Commands: /new <name>, /p, /use <name|id>, /digest, /remind <minutes> <text>");
+    await sendMessage(chatId, "StateCore Engine. Commands: /new <name>, /p, /use <name|id>, /digest, /remind <minutes> <text>");
     return res.json({ ok: true });
   }
 

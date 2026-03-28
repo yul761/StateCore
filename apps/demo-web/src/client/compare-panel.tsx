@@ -29,7 +29,7 @@ export function ComparePanel(props: {
       <div className="panel-header">
         <div>
           <div className="eyebrow">Low-Drift Evidence</div>
-          <h2>Project Memory vs plain LLM</h2>
+          <h2>StateCore vs plain LLM</h2>
         </div>
       </div>
 
@@ -71,8 +71,8 @@ export function ComparePanel(props: {
         <>
           {compare.score ? (
             <div className="compare-result-strip">
-              <article className="compare-result-pill compare-result-pill-project-memory">
-                <span className="compare-checkpoint-label">Project Memory</span>
+              <article className="compare-result-pill compare-result-pill-statecore">
+                <span className="compare-checkpoint-label">StateCore</span>
                 <strong>{compare.score.projectMemory}</strong>
               </article>
               <article className="compare-result-pill compare-result-pill-plain-llm">
@@ -110,8 +110,8 @@ export function ComparePanel(props: {
                 </div>
 
                 <div className="compare-checkpoint-grid">
-                  <div className="compare-checkpoint-answer compare-checkpoint-answer-project-memory">
-                    <span className="compare-preview-label">Project Memory Answer</span>
+                  <div className="compare-checkpoint-answer compare-checkpoint-answer-statecore">
+                    <span className="compare-preview-label">StateCore Answer</span>
                     <div className="compare-preview-body">{checkpoint.projectMemoryAnswer}</div>
                   </div>
                   <div className="compare-checkpoint-answer compare-checkpoint-answer-plain-llm">
@@ -162,7 +162,7 @@ export function ComparePanel(props: {
           <div className="compare-preview-body">
             {isRunning
               ? "Once the replay completes, this page will expand into per-step answer comparisons, score cards, and result takeaways."
-              : "The transcript above shows the exact scenario. Click replay to unlock the result view and see where Project Memory and a plain LLM start to diverge."}
+              : "The transcript above shows the exact scenario. Click replay to unlock the result view and see where StateCore and a plain LLM start to diverge."}
           </div>
         </div>
       )}

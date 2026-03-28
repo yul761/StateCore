@@ -1,6 +1,6 @@
-# Project Memory v1.0.0
+# StateCore v1.0.0
 
-Project Memory v1.0.0 is the first release that clearly centers the project around a self-hosted, developer-facing long-term memory engine rather than a generic chat memory API.
+StateCore v1.0.0 is the first release that clearly centers the project around a self-hosted, developer-facing long-term memory engine rather than a generic chat memory API.
 
 ## Highlights
 

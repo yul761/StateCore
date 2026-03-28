@@ -1,9 +1,9 @@
 import type { DemoHistoryEntry, StoredDiff, TimelineEntry } from "./lib";
 
-export const GUEST_USER_ID_STORAGE_KEY = "project-memory-demo-guest-user-id";
-export const HISTORY_STORAGE_PREFIX = "project-memory-demo-history:";
-export const TIMELINE_STORAGE_PREFIX = "project-memory-demo-timeline:";
-export const DIFF_STORAGE_PREFIX = "project-memory-demo-diff:";
+export const GUEST_USER_ID_STORAGE_KEY = "statecore-demo-guest-user-id";
+export const HISTORY_STORAGE_PREFIX = "statecore-demo-history:";
+export const TIMELINE_STORAGE_PREFIX = "statecore-demo-timeline:";
+export const DIFF_STORAGE_PREFIX = "statecore-demo-diff:";
 
 function createGuestUserId() {
   const randomId =

@@ -2,11 +2,11 @@
 
 ## One-line Direction
 
-Project Memory exists to help local or self-hosted models retain critical facts, goals, constraints, decisions, and todos over long-running interaction with as little memory drift as possible.
+StateCore exists to help local or self-hosted models retain critical facts, goals, constraints, decisions, and todos over long-running interaction with as little memory drift as possible.
 
 ## Project Definition
 
-Project Memory is an open-source, self-hosted, developer-oriented long-term memory runtime.
+StateCore is an open-source, self-hosted, developer-oriented long-term memory runtime.
 
 It does not aim to be the best chat shell, model hosting platform, or general-purpose agent framework. Its purpose is to provide a reusable memory layer that developers can attach to local models, remote models, or OpenAI-compatible endpoints.
 
@@ -43,7 +43,7 @@ Build a memory-first runtime that makes long-term assistant memory:
 
 - **Memory-first**: long-term memory is the product, not a side feature.
 - **Self-hosted first**: users should not need a centralized memory SaaS.
-- **BYOM**: model choice belongs to the developer; Project Memory owns the memory layer.
+- **BYOM**: model choice belongs to the developer; StateCore owns the memory layer.
 - **Low drift over flashy demos**: stability matters more than broad but shallow features.
 - **Evidence over intuition**: memory quality claims should be backed by benchmarks and reproducible methods.
 - **Developer convenience**: integration cost and setup complexity should stay low.
@@ -60,7 +60,7 @@ Most models do not maintain stable long-term project memory on their own. Storin
 
 Developers often end up writing substantial glue code for event storage, summarization, retrieval, prompt assembly, reminders, state maintenance, and evaluation. Even after that effort, it is often hard to answer whether the system actually retained key information, whether it drifted, and whether its answers were grounded in memory.
 
-Project Memory addresses this gap by focusing on a memory runtime for local and self-hosted assistants, with explicit drift control and evaluation.
+StateCore addresses this gap by focusing on a memory runtime for local and self-hosted assistants, with explicit drift control and evaluation.
 
 ## Target Users
 
@@ -70,7 +70,7 @@ Project Memory addresses this gap by focusing on a memory runtime for local and 
 
 ## Positioning
 
-Project Memory is:
+StateCore is:
 
 - an event store for memory-relevant interaction
 - a digest generation and control pipeline
@@ -80,7 +80,7 @@ Project Memory is:
 - a benchmark and evaluation framework
 - an assistant memory runtime
 
-Project Memory is not:
+StateCore is not:
 
 - a model deployment platform
 - a general chat UI
@@ -422,6 +422,6 @@ If a proposed feature does not help any of these, it should not be a near-term p
 
 ## Positioning Statement
 
-Project Memory is an open-source, self-hosted long-term memory runtime for developers.
+StateCore is an open-source, self-hosted long-term memory runtime for developers.
 
 It does not host models. Instead, it gives local or bring-your-own models a low-drift, measurable, replayable memory layer so developers can build assistants with real continuity over time.

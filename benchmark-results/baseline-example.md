@@ -1,4 +1,4 @@
-# Project Memory Benchmark Report (Baseline Example)
+# StateCore Benchmark Report (Baseline Example)
 
 This is a placeholder example report to illustrate the expected output format.
 

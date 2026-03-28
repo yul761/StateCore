@@ -31,7 +31,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "Starting Project Memory demo stack..."
+echo "Starting StateCore demo stack..."
 echo "Logs:"
 echo "  API:    ${API_LOG}"
 echo "  Worker: ${WORKER_LOG}"

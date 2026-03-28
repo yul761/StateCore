@@ -54,7 +54,7 @@ Recommended model defaults for the public demo:
 Important:
 
 - `DATABASE_URL` must point at the internal Compose hostname:
-  - `postgresql://project_memory:...@postgres:5432/project_memory`
+  - `postgresql://statecore:...@postgres:5432/statecore`
 - `REDIS_URL` should stay:
   - `redis://redis:6379`
 
@@ -142,7 +142,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.production run --rm cl
 Recommended cron example:
 
 ```bash
-0 3 * * * cd /srv/project-memory && docker compose -f docker-compose.prod.yml --env-file .env.production run --rm cleanup-demo-guests
+0 3 * * * cd /srv/statecore && docker compose -f docker-compose.prod.yml --env-file .env.production run --rm cleanup-demo-guests
 ```
 
 ## 9. Updates

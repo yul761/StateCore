@@ -1,6 +1,6 @@
 # Research Overview
 
-Project Memory is positioned as a research-grade long-term memory engine. The goal is to provide a reproducible baseline for studying layered digests, consistency constraints, and memory retrieval under controlled workloads.
+StateCore is positioned as a research-grade long-term memory engine. The goal is to provide a reproducible baseline for studying layered digests, consistency constraints, and memory retrieval under controlled workloads.
 
 ## Scope
 - Focus on system behavior, not end-user UI.

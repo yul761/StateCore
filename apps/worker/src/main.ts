@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { Queue, Worker } from "bullmq";
-import { prisma } from "@project-memory/db";
+import { prisma } from "@statecore/db";
 import {
   WorkingMemoryService,
   createModelProvider,
@@ -8,14 +8,14 @@ import {
   mergeWorkingMemoryState,
   runDigestControlPipeline,
   selectWorkingMemoryEvents
-} from "@project-memory/core";
-import type { DigestState, WorkingMemoryState, WorkingMemoryView } from "@project-memory/core";
+} from "@statecore/core";
+import type { DigestState, WorkingMemoryState, WorkingMemoryView } from "@statecore/core";
 import {
   digestClassifySystemPrompt,
   digestClassifyUserPrompt,
   digestStage2SystemPrompt,
   digestStage2UserPrompt
-} from "@project-memory/prompts";
+} from "@statecore/prompts";
 import { workerEnv } from "./env";
 
 const connection = {

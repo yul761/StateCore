@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve Project Memory.
+Thanks for helping improve StateCore.
 
 ## Development Setup
 
@@ -29,7 +29,7 @@ Thanks for helping improve Project Memory.
 - `pnpm dev:worker`
 - `pnpm dev:telegram`
 - `pnpm dev:cli -- scopes`
-- `pnpm --filter @project-memory/core test`
+- `pnpm --filter @statecore/core test`
 - `pnpm -r --filter "./apps/**" --filter "./packages/**" build`
 
 ## Pull Request Rules

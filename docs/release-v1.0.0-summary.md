@@ -1,6 +1,6 @@
-# Project Memory v1.0.0 Release Summary
+# StateCore v1.0.0 Release Summary
 
-This summary captures the validation snapshot used to release Project Memory as a self-hosted long-term memory engine.
+This summary captures the validation snapshot used to release StateCore as a self-hosted long-term memory engine.
 
 ## Validation Snapshot
 
@@ -36,7 +36,7 @@ This summary captures the validation snapshot used to release Project Memory as 
 
 ## Release Claim
 
-Project Memory v1.0.0 is ready to ship as a self-hosted, developer-facing long-term memory engine.
+StateCore v1.0.0 is ready to ship as a self-hosted, developer-facing long-term memory engine.
 
 The release claim is backed by three properties that now hold simultaneously on the release validation path:
 

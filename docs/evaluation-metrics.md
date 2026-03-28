@@ -1,6 +1,6 @@
 # Evaluation Metrics Specification
 
-This document defines the intended metric system for Project Memory.
+This document defines the intended metric system for StateCore.
 
 The project should not rely on a single benchmark score or on vague claims that memory "feels better". It should measure whether the system retains important information, avoids drift, grounds its answers in evidence, and reproduces stable state over time.
 
@@ -17,7 +17,7 @@ This document extends the existing benchmark and evaluation docs rather than rep
 
 ## Metric Layers
 
-Project Memory should track metrics at five layers:
+StateCore should track metrics at five layers:
 
 1. system performance
 2. retention
@@ -237,7 +237,7 @@ The fraction of repeated digest runs on the same evidence that produce compatibl
 
 ## 6. Developer Experience Metrics
 
-Project Memory also claims to reduce integration overhead. That needs its own metric family.
+StateCore also claims to reduce integration overhead. That needs its own metric family.
 
 ### Time to First Memory
 
@@ -261,7 +261,7 @@ The fraction of tested environments where a documented local setup succeeds with
 
 Definition:
 
-Elapsed time for a developer to wire Project Memory into a reference assistant integration.
+Elapsed time for a developer to wire StateCore into a reference assistant integration.
 
 ## North Star Metric
 
@@ -434,7 +434,7 @@ Every serious evaluation report should include:
 
 ## Success Criteria
 
-The metric system is doing its job when Project Memory can answer, with evidence:
+The metric system is doing its job when StateCore can answer, with evidence:
 
 - what the system remembered
 - what the system forgot

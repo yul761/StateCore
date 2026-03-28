@@ -12,7 +12,7 @@ Current artifacts:
 
 The visible comparison artifact shows the same event sequence evaluated two ways:
 
-- Project Memory
+- StateCore
 - a direct-model rolling-summary baseline
 
 The goal is to make drift reduction observable in plain language rather than only in aggregate metrics.

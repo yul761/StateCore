@@ -143,7 +143,7 @@ function computeDoctorFailures(summary: Record<string, any>, probeTurnEnabled: b
 
 function writeOutputFile(filePath: string, value: unknown) {
   const baseDir =
-    process.env.PROJECT_MEMORY_CLI_BASE_DIR ||
+    process.env.STATECORE_CLI_BASE_DIR ||
     process.env.PWD ||
     process.env.INIT_CWD ||
     process.cwd();
@@ -154,7 +154,7 @@ function writeOutputFile(filePath: string, value: unknown) {
 }
 
 const program = new Command();
-program.name("pm").description("Project Memory CLI");
+program.name("pm").description("StateCore CLI");
 
 program
   .command("scopes")

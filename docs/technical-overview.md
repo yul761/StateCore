@@ -4,7 +4,7 @@ This document explains the backend architecture, technology choices, and the thr
 
 ## Memory Layers
 
-Project Memory now separates memory into three explicit layers:
+StateCore now separates memory into three explicit layers:
 
 - Fast Layer
   - synchronous prompt-building context for the current turn

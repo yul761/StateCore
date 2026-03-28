@@ -34,10 +34,10 @@ if [[ "${health_status}" != "ok" ]]; then
   exit 1
 fi
 
-pnpm --filter @project-memory/demo-web build >/dev/null
+pnpm --filter @statecore/demo-web build >/dev/null
 
 DEMO_WEB_PORT="$DEMO_WEB_PORT" DEMO_API_BASE_URL="$DEMO_API_BASE_URL" \
-  pnpm --filter @project-memory/demo-web start >"$LOG_PATH" 2>&1 &
+  pnpm --filter @statecore/demo-web start >"$LOG_PATH" 2>&1 &
 server_pid=$!
 
 cleanup() {
@@ -67,13 +67,13 @@ fi
 
 index_html=$(curl -sS "http://localhost:${DEMO_WEB_PORT}/")
 
-if [[ "${index_html}" != *"Project Memory Demo"* ]]; then
+if [[ "${index_html}" != *"StateCore Demo"* ]]; then
   echo "demo-web index did not contain expected title" >&2
   exit 1
 fi
 
-if [[ "${config_js}" != *"PROJECT_MEMORY_DEMO_CONFIG"* ]]; then
-  echo "demo-web config missing PROJECT_MEMORY_DEMO_CONFIG" >&2
+if [[ "${config_js}" != *"STATECORE_DEMO_CONFIG"* ]]; then
+  echo "demo-web config missing STATECORE_DEMO_CONFIG" >&2
   exit 1
 fi
 

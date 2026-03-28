@@ -312,10 +312,10 @@ async function answerFromRollingSummary(summary, question) {
   ]);
 }
 
-async function answerFromProjectMemory(scopeId, question) {
+async function answerFromStateCore(scopeId, question) {
   const response = await apiFetch("POST", "/memory/answer", { scopeId, question });
   if (!response.ok || response.json.error) {
-    throw new Error(`project_memory_answer_failed:${response.status}:${JSON.stringify(response.json)}`);
+    throw new Error(`statecore_answer_failed:${response.status}:${JSON.stringify(response.json)}`);
   }
   return response.json.answer;
 }
@@ -406,9 +406,9 @@ async function run() {
       "",
       `- Rounds evaluated: ${report.checkpoints.length}`,
       `- Questions evaluated: ${flattened.length}`,
-      `- Project Memory passed: ${projectMemoryScore}/${flattened.length || 0}`,
+      `- StateCore passed: ${projectMemoryScore}/${flattened.length || 0}`,
       `- Direct model passed: ${directModelScore}/${flattened.length || 0}`,
-      `- Project Memory wins: ${projectMemoryWins}`,
+      `- StateCore wins: ${projectMemoryWins}`,
       `- Direct model wins: ${directModelWins}`,
       `- Ties: ${ties}`,
       ""
@@ -464,7 +464,7 @@ async function run() {
         lines.push("");
         lines.push("**Answers**");
         lines.push("");
-        lines.push(`- Project Memory (${pmVerdict}): ${answer.projectMemory.answer}`);
+        lines.push(`- StateCore (${pmVerdict}): ${answer.projectMemory.answer}`);
         lines.push(`- Direct model (${directVerdict}): ${answer.directModel.answer}`);
         lines.push("");
       }
@@ -520,10 +520,10 @@ async function run() {
         const answers = [];
 
         for (const question of checkpoint.questions) {
-          report.progress.phase = "project_memory_answer";
+          report.progress.phase = "statecore_answer";
           report.progress.currentQuestion = question.question;
           writeReport();
-          const projectMemoryAnswer = await answerFromProjectMemory(scopeId, question.question);
+          const projectMemoryAnswer = await answerFromStateCore(scopeId, question.question);
           report.progress.phase = "direct_model_answer";
           writeReport();
           const directModelAnswer = await answerFromRollingSummary(rollingSummary, question.question);

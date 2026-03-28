@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Inject, Param, Post, Query, Req } from "@nestjs/common";
-import { ReminderCreateInput, ReminderStatus } from "@project-memory/contracts";
+import { ReminderCreateInput, ReminderStatus } from "@statecore/contracts";
 import { DomainService } from "./domain.service";
 import type { RequestWithUser } from "./types";
 import { reminderQueue } from "./queue";

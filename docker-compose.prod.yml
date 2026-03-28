@@ -3,13 +3,13 @@ services:
     image: postgres:16
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-project_memory}
+      POSTGRES_USER: ${POSTGRES_USER:-statecore}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
-      POSTGRES_DB: ${POSTGRES_DB:-project_memory}
+      POSTGRES_DB: ${POSTGRES_DB:-statecore}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-project_memory} -d ${POSTGRES_DB:-project_memory}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-statecore} -d ${POSTGRES_DB:-statecore}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -48,7 +48,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["pnpm", "--filter", "@project-memory/db", "exec", "tsx", "../../scripts/cleanup-demo-guests.ts"]
+    command: ["pnpm", "--filter", "@statecore/db", "exec", "tsx", "../../scripts/cleanup-demo-guests.ts"]
     restart: "no"
 
   api:

@@ -1,5 +1,5 @@
 {
-  "name": "@project-memory/adapter-telegram",
+  "name": "@statecore/adapter-telegram",
   "version": "1.0.0",
   "private": true,
   "main": "dist/main.js",

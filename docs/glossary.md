@@ -1,6 +1,6 @@
 # Glossary
 
-This glossary defines core terms used across the Project Memory engine.
+This glossary defines core terms used across the StateCore engine.
 
 ## Scope
 A logical container for memory. Typically a project or domain. All memory events, digests, and reminders are scoped to a scope.

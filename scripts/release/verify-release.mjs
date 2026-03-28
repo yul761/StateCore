@@ -8,7 +8,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const steps = [
   ["pnpm", ["format:check"]],
   ["pnpm", ["lint"]],
-  ["pnpm", ["--filter", "@project-memory/core", "test"]],
+  ["pnpm", ["--filter", "@statecore/core", "test"]],
   ["pnpm", ["build"]],
   ["node", ["--check", "scripts/benchmark/run-benchmark.mjs"]],
   ["node", ["--check", "scripts/benchmark/run-ablations.mjs"]],

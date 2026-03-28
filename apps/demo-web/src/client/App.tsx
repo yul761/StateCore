@@ -1,13 +1,27 @@
+import { useState } from "react";
+
 import type { getDemoConfig } from "./config";
-import { ComparePanel, Sidebar } from "./components";
+import { AgentDemoPanel, ChatPanel, ComparePanel, InspectorPanel, OverviewPanel, Sidebar } from "./components";
 import { useDemoRuntime } from "./hooks";
+import type { DemoTemplate } from "./content";
 
 type DemoConfig = ReturnType<typeof getDemoConfig>;
+type DemoPage = "overview" | "chat" | "compare" | "agents";
 
 export function App({ config }: { config: DemoConfig }) {
   const demo = useDemoRuntime(config);
+  const [page, setPage] = useState<DemoPage>("overview");
   const compareTemplates = demo.templates.filter((template) => Boolean(template.compare));
   const compareTemplate = compareTemplates.find((template) => template.id === demo.selectedTemplateId) || compareTemplates[0] || null;
+  const selectedTemplate = demo.templates.find((template) => template.id === demo.selectedTemplateId) || null;
+  const compareStatus =
+    page === "compare"
+      ? demo.runningCompareTemplateId === demo.selectedTemplateId
+        ? "Replay running"
+        : demo.completedCompareScenario?.templateId === demo.selectedTemplateId
+          ? `Replay completed at ${demo.completedCompareScenario.completedAt}`
+          : "No compare run yet"
+      : "Guided runtime mode";
 
   return (
     <div className="app-shell">
@@ -40,10 +54,75 @@ export function App({ config }: { config: DemoConfig }) {
         whyAnswerFacts={demo.whyAnswerFacts}
         timeline={demo.timeline}
         diff={demo.diff}
+        page={page}
+        selectedTemplate={selectedTemplate as DemoTemplate | null}
+        compareStatus={compareStatus}
       />
 
       <main className="main-stack">
-        {compareTemplate ? (
+        <section className="panel surface-tabs">
+          <div className="eyebrow">Demo Modes</div>
+          <div className="surface-tab-row">
+            <button className={`ghost surface-tab${page === "overview" ? " surface-tab-active" : ""}`} type="button" onClick={() => setPage("overview")}>
+              Overview
+            </button>
+            <button className={`ghost surface-tab${page === "chat" ? " surface-tab-active" : ""}`} type="button" onClick={() => setPage("chat")}>
+              Chat Demo
+            </button>
+            <button className={`ghost surface-tab${page === "compare" ? " surface-tab-active" : ""}`} type="button" onClick={() => setPage("compare")}>
+              Baseline Compare
+            </button>
+            <button className={`ghost surface-tab${page === "agents" ? " surface-tab-active" : ""}`} type="button" onClick={() => setPage("agents")}>
+              Agent Demo
+            </button>
+          </div>
+        </section>
+
+        {page === "overview" ? (
+          <OverviewPanel onOpenChat={() => setPage("chat")} onOpenCompare={() => setPage("compare")} onOpenAgents={() => setPage("agents")} />
+        ) : null}
+
+        {page === "chat" ? (
+          <>
+            <ChatPanel
+              activeScope={demo.activeScope}
+              activeScopeId={demo.activeScopeId}
+              templates={demo.templates}
+              selectedTemplateId={demo.selectedTemplateId}
+              runningTemplateId={demo.runningCompareTemplateId}
+              completedScenario={demo.completedCompareScenario}
+              onPrepareTemplate={demo.prepareTemplate}
+              onCreateScopeFromTemplate={(template) => {
+                void demo.createScopeFromTemplate(template);
+              }}
+              onRunTemplateScenario={(template) => {
+                void demo.runCompareScenario(template);
+              }}
+              goal={demo.goal}
+              answerMode={demo.answerMode}
+              retrievalMode={demo.retrievalMode}
+              workingVersion={demo.workingVersion}
+              stableVersion={demo.stableVersion}
+              workingCaughtUp={demo.workingCaughtUp}
+              stableCaughtUp={demo.stableCaughtUp}
+              goalAligned={demo.goalAligned}
+              diff={demo.diff}
+              pipeline={demo.pipeline}
+              history={demo.history}
+              latestMeta={demo.latestMeta}
+              inspector={demo.inspector}
+            />
+            <InspectorPanel
+              inspector={demo.inspector}
+              retrievalMode={demo.retrievalMode}
+              goalAligned={demo.goalAligned}
+              workingCaughtUp={demo.workingCaughtUp}
+              stableCaughtUp={demo.stableCaughtUp}
+            />
+          </>
+        ) : null}
+
+        {page === "compare" && compareTemplate ? (
           <ComparePanel
             templates={compareTemplates}
             selectedTemplateId={demo.selectedTemplateId}
@@ -56,6 +135,10 @@ export function App({ config }: { config: DemoConfig }) {
               void demo.runCompareScenario(template);
             }}
           />
+        ) : null}
+
+        {page === "agents" ? (
+          <AgentDemoPanel onOpenChat={() => setPage("chat")} onOpenCompare={() => setPage("compare")} />
         ) : null}
       </main>
     </div>

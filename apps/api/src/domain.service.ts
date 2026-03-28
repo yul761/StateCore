@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { prisma } from "@project-memory/db";
+import { prisma } from "@statecore/db";
 import {
   DigestService,
   MemoryService,
@@ -9,8 +9,8 @@ import {
   WorkingMemoryService,
   compileStateLayerView,
   createModelProvider
-} from "@project-memory/core";
-import type { DigestConsistencyResult, DigestState, WorkingMemorySnapshot, WorkingMemoryState, WorkingMemoryView } from "@project-memory/core";
+} from "@statecore/core";
+import type { DigestConsistencyResult, DigestState, WorkingMemorySnapshot, WorkingMemoryState, WorkingMemoryView } from "@statecore/core";
 import { apiEnv } from "./env";
 
 @Injectable()

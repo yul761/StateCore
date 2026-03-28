@@ -1,5 +1,5 @@
 export const DEMO_BRAND = {
-  eyebrow: "Project Memory",
+  eyebrow: "StateCore",
   title: "Demo Web",
   subtitle: "A React demo shell that stays on the intended public runtime surface."
 };
@@ -69,7 +69,7 @@ export const DEMO_TEMPLATES: DemoTemplate[] = [
           question: "What is the current goal and what constraints should still apply?",
           projectMemoryAnswer: "Get fit, with the 200kg squat target still in view, while keeping the approach sustainable and knee-safe.",
           plainLlmAnswer: "Get fit in a sustainable way.",
-          takeaway: "Project Memory keeps both the target and the safety constraint; the baseline collapses them into generic advice."
+          takeaway: "StateCore keeps both the target and the safety constraint; the baseline collapses them into generic advice."
         }
       ]
     },
@@ -124,7 +124,7 @@ export const DEMO_TEMPLATES: DemoTemplate[] = [
           question: "What is the current product goal?",
           projectMemoryAnswer: "Ship a self-hosted long-term memory runtime for local models.",
           plainLlmAnswer: "Ship a self-hosted memory runtime for local models.",
-          takeaway: "Project Memory keeps the final goal intact; the baseline drops the long-term part."
+          takeaway: "StateCore keeps the final goal intact; the baseline drops the long-term part."
         }
       ]
     },
@@ -178,7 +178,7 @@ export const DEMO_TEMPLATES: DemoTemplate[] = [
           question: "What constraints still apply?",
           projectMemoryAnswer: "API stability, self-hosted first, and not turning into a general-purpose agent platform still all apply.",
           plainLlmAnswer: "Stay self-hosted and keep the scope narrow.",
-          takeaway: "Project Memory keeps the full set; the baseline turns them into vague summary language."
+          takeaway: "StateCore keeps the full set; the baseline turns them into vague summary language."
         }
       ]
     },
@@ -225,7 +225,7 @@ export const DEMO_TEMPLATES: DemoTemplate[] = [
           question: "What decisions have we made so far?",
           projectMemoryAnswer: "Use Working Memory as a fast bridge, keep State Layer authoritative, and never let Fast Layer wait for stable digest.",
           plainLlmAnswer: "Keep memory fast and avoid blocking too much.",
-          takeaway: "Project Memory preserves the exact decisions; the baseline blurs them into general principles."
+          takeaway: "StateCore preserves the exact decisions; the baseline blurs them into general principles."
         },
         {
           label: "After Step 3",
@@ -253,12 +253,12 @@ export const DEMO_TEMPLATES: DemoTemplate[] = [
   },
   {
     id: "plain-llm-compare",
-    title: "Project Memory vs plain LLM",
-    description: "Replay a pivot-heavy scenario and compare what Project Memory preserves versus a rolling-summary baseline.",
+    title: "StateCore vs plain LLM",
+    description: "Replay a pivot-heavy scenario and compare what StateCore preserves versus a rolling-summary baseline.",
     scopeName: "Baseline compare demo",
     watch: ["Latest goal wording", "Constraint retention", "Decision recall"],
     compare: {
-      projectMemory: "In the curated drift demo, Project Memory passed 7/7 checks and kept the final goal as \"self-hosted long-term memory runtime for local models.\"",
+      projectMemory: "In the curated drift demo, StateCore passed 7/7 checks and kept the final goal as \"self-hosted long-term memory runtime for local models.\"",
       plainLlm: "The direct rolling-summary baseline passed 4/7 and dropped the \"long-term\" part of the final goal.",
       whyItMatters: "The point is not that the model changed. The same model sees the same sequence; the memory mechanism is what changes the outcome.",
       score: {

@@ -13,14 +13,14 @@ Start here if you want to know whether the core claim is real:
 
 That demo shows the same event sequence evaluated in two ways:
 
-- Project Memory
+- StateCore
 - a direct-model rolling-summary baseline
 
 The current curated sample evaluates:
 
 - 3 rounds
 - 7 questions
-- Project Memory: 7/7
+- StateCore: 7/7
 - direct baseline: 4/7
 
 ## Fastest Interactive Path
@@ -49,7 +49,7 @@ If you want the simplest explanation of what this project changes, read:
 The short version:
 
 - direct model memory: events -> rolling summary -> answer
-- Project Memory: events -> selection -> protected state -> digest -> grounded answer
+- StateCore: events -> selection -> protected state -> digest -> grounded answer
 
 The project is not trying to make one summary prompt better.
 It is changing the memory update mechanism itself.
@@ -168,13 +168,13 @@ pnpm dev:cli -- doctor --probe-turn --assert-clean
 If you are running that in automation, set a stable CLI identity:
 
 ```bash
-PROJECT_MEMORY_CLI_USER_ID=runtime-ci-user pnpm dev:cli -- doctor --probe-turn --assert-clean
+STATECORE_CLI_USER_ID=runtime-ci-user pnpm dev:cli -- doctor --probe-turn --assert-clean
 ```
 
 If you also want a JSON artifact from that check:
 
 ```bash
-PROJECT_MEMORY_CLI_USER_ID=runtime-ci-user pnpm dev:cli -- doctor --probe-turn --assert-clean --output-file runtime-doctor.json
+STATECORE_CLI_USER_ID=runtime-ci-user pnpm dev:cli -- doctor --probe-turn --assert-clean --output-file runtime-doctor.json
 ```
 
 When you invoke `pnpm dev:cli` from the repo root, `runtime-doctor.json` is written

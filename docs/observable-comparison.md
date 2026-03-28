@@ -4,7 +4,7 @@ This repository now includes a side-by-side drift demo intended for humans, not 
 
 It runs the same event sequence through:
 
-- Project Memory
+- StateCore
 - a direct-model baseline that keeps only one rolling summary
 
 The direct-model baseline is deliberately simple because it mirrors the common pattern that causes visible drift:
@@ -13,7 +13,7 @@ The direct-model baseline is deliberately simple because it mirrors the common p
 - overwrite that summary over time
 - answer from the summary later
 
-Project Memory uses the normal control path instead:
+StateCore uses the normal control path instead:
 
 - ingest events
 - build digest state

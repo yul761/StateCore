@@ -1,5 +1,5 @@
 {
-  "name": "@project-memory/core",
+  "name": "@statecore/core",
   "version": "1.0.0",
   "private": true,
   "main": "src/index.ts",

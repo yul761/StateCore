@@ -1819,7 +1819,7 @@ async function run() {
   writeFileSync(jsonPath, JSON.stringify(report, null, 2));
 
   const md = [
-    "# Project Memory Benchmark Report",
+    "# StateCore Benchmark Report",
     "",
     `- Started: ${report.startedAt}`,
     `- Ended: ${report.endedAt}`,

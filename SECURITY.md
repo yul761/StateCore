@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Project Memory is actively maintained on the `main` branch.
+StateCore is actively maintained on the `main` branch.
 
 ## Reporting A Vulnerability
 

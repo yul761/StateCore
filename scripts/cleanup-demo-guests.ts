@@ -1,4 +1,4 @@
-import { prisma } from "@project-memory/db";
+import { prisma } from "@statecore/db";
 
 const retentionDays = Number(process.env.DEMO_GUEST_RETENTION_DAYS || 7);
 const dryRun = process.argv.includes("--dry-run");

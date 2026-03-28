@@ -1,6 +1,6 @@
-import { prisma } from "@project-memory/db";
-import { createModelProvider, runDigestControlPipeline } from "@project-memory/core";
-import { digestClassifySystemPrompt, digestClassifyUserPrompt, digestStage2SystemPrompt, digestStage2UserPrompt } from "@project-memory/prompts";
+import { prisma } from "@statecore/db";
+import { createModelProvider, runDigestControlPipeline } from "@statecore/core";
+import { digestClassifySystemPrompt, digestClassifyUserPrompt, digestStage2SystemPrompt, digestStage2UserPrompt } from "@statecore/prompts";
 import { workerEnv } from "../apps/worker/src/env";
 import { Queue } from "bullmq";
 
@@ -52,7 +52,7 @@ async function resolveScopeId(args: Args) {
     return args.scopeId;
   }
 
-  const userId = args.userId || process.env.BENCH_USER_ID || process.env.PROJECT_MEMORY_CLI_USER_ID || "benchmark-user";
+  const userId = args.userId || process.env.BENCH_USER_ID || process.env.STATECORE_CLI_USER_ID || "benchmark-user";
   const state = await prisma.userState.findUnique({ where: { userId } });
   if (state?.activeProjectId) {
     return state.activeProjectId;

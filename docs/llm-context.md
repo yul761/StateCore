@@ -1,7 +1,7 @@
-# LLM Context: Project Memory
+# LLM Context: StateCore
 
 ## One-Line Summary
-Project Memory is an OSS, developer-first long-term memory engine (API + worker + adapters), not a consumer assistant app.
+StateCore is an OSS, developer-first long-term memory engine (API + worker + adapters), not a consumer assistant app.
 
 ## Scope and Boundaries
 - Backend-only system (no UI/mobile).

@@ -207,13 +207,13 @@ For CI or automation, pin the CLI to a known user id so it reads the intended
 scope:
 
 ```bash
-PROJECT_MEMORY_CLI_USER_ID=runtime-ci-user pnpm dev:cli -- doctor --probe-turn --assert-clean
+STATECORE_CLI_USER_ID=runtime-ci-user pnpm dev:cli -- doctor --probe-turn --assert-clean
 ```
 
 To persist the diagnosis as a JSON artifact:
 
 ```bash
-PROJECT_MEMORY_CLI_USER_ID=runtime-ci-user pnpm dev:cli -- doctor --probe-turn --assert-clean --output-file runtime-doctor.json
+STATECORE_CLI_USER_ID=runtime-ci-user pnpm dev:cli -- doctor --probe-turn --assert-clean --output-file runtime-doctor.json
 ```
 
 When you run that command from the repo root, `runtime-doctor.json` is written

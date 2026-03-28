@@ -1,5 +1,5 @@
 import type { NextFunction, Response } from "express";
-import { prisma } from "@project-memory/db";
+import { prisma } from "@statecore/db";
 import type { RequestWithUser } from "./types";
 import { apiEnv } from "./env";
 

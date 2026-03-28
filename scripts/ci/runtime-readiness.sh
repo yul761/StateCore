@@ -21,9 +21,9 @@ trap cleanup EXIT
 pnpm db:generate
 pnpm db:deploy
 
-pnpm --filter @project-memory/api start >"$API_LOG" 2>&1 &
+pnpm --filter @statecore/api start >"$API_LOG" 2>&1 &
 API_PID=$!
-pnpm --filter @project-memory/worker start >"$WORKER_LOG" 2>&1 &
+pnpm --filter @statecore/worker start >"$WORKER_LOG" 2>&1 &
 WORKER_PID=$!
 
 for i in {1..60}; do

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-type DemoWebRouteMap = typeof import("@project-memory/contracts").DemoWebRoutes;
+type DemoWebRouteMap = typeof import("@statecore/contracts").DemoWebRoutes;
 type RateBucket = {
   count: number;
   resetAt: number;
@@ -121,7 +121,7 @@ async function start() {
   app.get("/config.js", (_req, res) => {
     res.type("application/javascript");
     res.send(
-      `window.PROJECT_MEMORY_DEMO_CONFIG = ${JSON.stringify({
+      `window.STATECORE_DEMO_CONFIG = ${JSON.stringify({
         apiBaseUrl: "",
         routes: demoWebRoutes
       })};\n`

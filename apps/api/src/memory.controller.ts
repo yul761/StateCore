@@ -21,7 +21,7 @@ import {
   RetrieveInput,
   StableStateOutput,
   WorkingMemoryOutput
-} from "@project-memory/contracts";
+} from "@statecore/contracts";
 import {
   AssistantSession,
   buildGroundingEvidence,
@@ -34,13 +34,13 @@ import {
   createRuntimeRecallPolicy,
   createModelProvider,
   generateAnswer
-} from "@project-memory/core";
+} from "@statecore/core";
 import { digestQueue, workingMemoryQueue } from "./queue";
 import { DomainService } from "./domain.service";
 import { parseOutput } from "./output";
 import type { RequestWithUser } from "./types";
 import { apiEnv } from "./env";
-import { answerSystemPrompt, answerUserPrompt, runtimeSystemPrompt, runtimeUserPrompt } from "@project-memory/prompts";
+import { answerSystemPrompt, answerUserPrompt, runtimeSystemPrompt, runtimeUserPrompt } from "@statecore/prompts";
 
 const WORKING_MEMORY_CAUGHT_UP_WINDOW_MS = 15_000;
 const STABLE_STATE_CAUGHT_UP_WINDOW_MS = 60_000;

@@ -1,16 +1,16 @@
-# Project Memory
+# StateCore
 
-[![CI](https://github.com/yul761/ProjectMemory/actions/workflows/ci.yml/badge.svg)](https://github.com/yul761/ProjectMemory/actions/workflows/ci.yml)
-[![Integration Smoke](https://github.com/yul761/ProjectMemory/actions/workflows/integration-smoke.yml/badge.svg)](https://github.com/yul761/ProjectMemory/actions/workflows/integration-smoke.yml)
+[![CI](https://github.com/yul761/StateCore/actions/workflows/ci.yml/badge.svg)](https://github.com/yul761/StateCore/actions/workflows/ci.yml)
+[![Integration Smoke](https://github.com/yul761/StateCore/actions/workflows/integration-smoke.yml/badge.svg)](https://github.com/yul761/StateCore/actions/workflows/integration-smoke.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Latest Release](https://img.shields.io/github/v/release/yul761/ProjectMemory)](https://github.com/yul761/ProjectMemory/releases)
+[![Latest Release](https://img.shields.io/github/v/release/yul761/StateCore)](https://github.com/yul761/StateCore/releases)
 
 LLM memory systems don't fail because of prompts.
 They fail because memory is treated as uncontrolled text.
 
 If memory matters, it must be treated as state — not context.
 
-Project Memory is a self-hosted memory control layer for AI systems.
+StateCore is a self-hosted memory control layer for AI systems.
 
 It turns memory from accumulated text into controlled state:
 
@@ -101,21 +101,21 @@ If you want one concrete result before reading the architecture, start with the 
 
 That sample evaluates the same event stream in two ways:
 
-- Project Memory
+- StateCore
 - a direct-model rolling-summary baseline
 
 Current curated sample result:
 
 - rounds evaluated: `3`
 - questions evaluated: `7`
-- Project Memory: `7/7`
+- StateCore: `7/7`
 - direct baseline: `4/7`
 
 Most visible failure in the baseline:
 
 - it compresses the final goal into `self-hosted memory runtime for local models`
 - it drops `long-term`
-- Project Memory preserves the full goal state
+- StateCore preserves the full goal state
 
 ## At A Glance
 
@@ -130,19 +130,19 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  E[Project Memory] --> F[Events]
+  E[StateCore] --> F[Events]
   F --> G[Selection]
   G --> H[Protected State]
   H --> I[Digest]
   I --> J[Grounded Answer]
 ```
 
-Project Memory is not trying to make one summary prompt slightly better.
+StateCore is not trying to make one summary prompt slightly better.
 It changes the memory update mechanism itself.
 
 ## Three-Layer Architecture
 
-Project Memory now separates memory into three layers on purpose:
+StateCore now separates memory into three layers on purpose:
 
 - Fast Layer
   - synchronous
@@ -182,7 +182,7 @@ Latest three-layer quick benchmark:
 
 Latest observable drift checks:
 
-- Visible comparison: Project Memory `7/7`, direct baseline `4/7`
+- Visible comparison: StateCore `7/7`, direct baseline `4/7`
 - Goal-evolution drift run: goal / constraint / decision / todo drift `0`
 - Goal-evolution digest drift: `0`
 - Goal-evolution runs succeeded: `10/10`
@@ -265,7 +265,7 @@ That breaks down over time:
 - todos turn into noisy summaries
 - memory state becomes hard to replay or debug
 
-Project Memory solves that by treating memory as state transitions with explicit control over how information is selected, consolidated, checked, and committed.
+StateCore solves that by treating memory as state transitions with explicit control over how information is selected, consolidated, checked, and committed.
 
 ## Why Not RAG Memory?
 
@@ -282,7 +282,7 @@ That helps recall, but it does not solve:
 - unstable long-term state
 - non-replayable memory evolution
 
-Project Memory instead:
+StateCore instead:
 
 - models memory as protected state
 - uses a controlled digest pipeline
@@ -302,7 +302,7 @@ Project Memory instead:
 
 ## Comparison
 
-|                       | Traditional RAG Memory | Project Memory    |
+|                       | Traditional RAG Memory | StateCore    |
 | --------------------- | ---------------------- | ----------------- |
 | Model                 | Text accumulation      | State transitions |
 | Drift control         | ❌                     | ✅                |
@@ -389,13 +389,13 @@ pnpm dev:cli -- doctor --probe-turn --assert-clean
 For automation, you can pin the CLI to a stable identity:
 
 ```bash
-PROJECT_MEMORY_CLI_USER_ID=runtime-ci-user pnpm dev:cli -- doctor --probe-turn --assert-clean
+STATECORE_CLI_USER_ID=runtime-ci-user pnpm dev:cli -- doctor --probe-turn --assert-clean
 ```
 
 If you want a machine-readable diagnosis artifact:
 
 ```bash
-PROJECT_MEMORY_CLI_USER_ID=runtime-ci-user pnpm dev:cli -- doctor --probe-turn --assert-clean --output-file runtime-doctor.json
+STATECORE_CLI_USER_ID=runtime-ci-user pnpm dev:cli -- doctor --probe-turn --assert-clean --output-file runtime-doctor.json
 ```
 
 When you run `pnpm dev:cli` from the repo root, relative `--output-file` paths now
@@ -427,7 +427,7 @@ If memory matters, it has to be treated as state:
 - validated before commit
 - rebuildable from history
 
-That is the core bet behind Project Memory.
+That is the core bet behind StateCore.
 
 ## Design Philosophy
 
@@ -488,7 +488,7 @@ Optional hybrid retrieval can be enabled with:
 
 ## Architecture
 
-Project Memory sits between your interaction layer and your model endpoint.
+StateCore sits between your interaction layer and your model endpoint.
 It owns the fast-turn context path, Working Memory updates, State Layer consolidation, replay, and grounded answer generation.
 
 ```mermaid
@@ -520,7 +520,7 @@ Core responsibilities:
 
 ## Benchmarking
 
-Project Memory includes built-in evaluation for:
+StateCore includes built-in evaluation for:
 
 - ingest and retrieval performance
 - fast-turn latency

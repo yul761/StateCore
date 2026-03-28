@@ -50,17 +50,17 @@ FROM runtime-base AS api-runtime
 
 EXPOSE 3000
 
-CMD ["pnpm", "--filter", "@project-memory/api", "start"]
+CMD ["pnpm", "--filter", "@statecore/api", "start"]
 
 FROM runtime-base AS worker-runtime
 
-CMD ["pnpm", "--filter", "@project-memory/worker", "start"]
+CMD ["pnpm", "--filter", "@statecore/worker", "start"]
 
 FROM runtime-base AS demo-web-runtime
 
 EXPOSE 3100
 
-CMD ["pnpm", "--filter", "@project-memory/demo-web", "start"]
+CMD ["pnpm", "--filter", "@statecore/demo-web", "start"]
 
 FROM runtime-base AS migrate
 

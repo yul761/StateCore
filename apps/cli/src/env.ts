@@ -22,11 +22,11 @@ loadEnvFile(path.join(repoRoot, "apps/cli/.env"));
 
 const envSchema = z.object({
   API_BASE_URL: z.string().min(1),
-  PROJECT_MEMORY_CLI_USER_ID: z.string().min(1).optional()
+  STATECORE_CLI_USER_ID: z.string().min(1).optional()
 });
 
 const parsed = envSchema.parse(process.env);
 export const cliEnv = {
   apiBaseUrl: parsed.API_BASE_URL,
-  cliUserId: parsed.PROJECT_MEMORY_CLI_USER_ID ?? null
+  cliUserId: parsed.STATECORE_CLI_USER_ID ?? null
 };

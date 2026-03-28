@@ -1,6 +1,6 @@
-# Project Memory v0.1.0
+# StateCore v0.1.0
 
-Project Memory v0.1.0 is the first public OSS release of the developer-first long-term memory engine.
+StateCore v0.1.0 is the first public OSS release of the developer-first long-term memory engine.
 
 ## Highlights
 

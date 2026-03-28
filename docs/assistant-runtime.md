@@ -1,8 +1,8 @@
 # Assistant Runtime Specification
 
-This document defines the intended assistant runtime layer for Project Memory.
+This document defines the intended assistant runtime layer for StateCore.
 
-Project Memory should not stop at exposing low-level memory primitives. It should provide a developer-facing runtime that makes long-term memory usable without forcing every integrator to rebuild the same ingestion, recall, prompt assembly, answer grounding, and digest-trigger logic.
+StateCore should not stop at exposing low-level memory primitives. It should provide a developer-facing runtime that makes long-term memory usable without forcing every integrator to rebuild the same ingestion, recall, prompt assembly, answer grounding, and digest-trigger logic.
 
 In the current architecture, the assistant runtime is the Fast Layer orchestrator.
 It should return quickly while Working Memory and State Layer updates continue in the background.
@@ -31,7 +31,7 @@ The current runtime also exposes explicit decision metadata so callers can inspe
 
 ## Position in the Architecture
 
-Project Memory should be understood as four layers:
+StateCore should be understood as four layers:
 
 1. model layer
 2. memory runtime layer
@@ -64,7 +64,7 @@ The current repository already provides useful primitives, but an integrator sti
 - when to trigger digest generation
 - how to return evidence with an answer
 
-If every developer solves these questions differently, Project Memory remains a memory toolkit rather than a reusable runtime.
+If every developer solves these questions differently, StateCore remains a memory toolkit rather than a reusable runtime.
 
 ## Runtime Goals
 
@@ -440,7 +440,7 @@ The safest rollout path is:
 
 ## Success Criteria
 
-The assistant runtime is successful when a developer can attach Project Memory to a local or remote model assistant and avoid rebuilding:
+The assistant runtime is successful when a developer can attach StateCore to a local or remote model assistant and avoid rebuilding:
 
 - session handling
 - memory write classification
@@ -448,4 +448,4 @@ The assistant runtime is successful when a developer can attach Project Memory t
 - answer grounding
 - digest trigger logic
 
-At that point, Project Memory stops being only a memory engine and becomes a usable long-term memory runtime.
+At that point, StateCore stops being only a memory engine and becomes a usable long-term memory runtime.

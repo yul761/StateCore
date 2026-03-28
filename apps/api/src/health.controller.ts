@@ -1,5 +1,5 @@
 import { Controller, Get } from "@nestjs/common";
-import { HealthOutput } from "@project-memory/contracts";
+import { HealthOutput } from "@statecore/contracts";
 import { apiEnv } from "./env";
 import { parseOutput } from "./output";
 

@@ -1,16 +1,16 @@
-# Project Memory: A Research-Oriented Long-Term Memory Engine
+# StateCore: A Research-Oriented Long-Term Memory Engine
 
 ## 1. Abstract
 
-This article presents Project Memory, a research-grade long-term memory engine designed to study layered digests, consistency constraints, and retrieval quality under controlled workloads. We describe the system architecture, the digest control pipeline, and a reproducible benchmarking methodology. We then report baseline and ablation results that illuminate the trade-offs between event budget, novelty thresholds, and optional classification. The goal is not to claim state-of-the-art performance, but to provide a transparent, reproducible baseline for future work on long-term memory systems.
+This article presents StateCore, a research-grade long-term memory engine designed to study layered digests, consistency constraints, and retrieval quality under controlled workloads. We describe the system architecture, the digest control pipeline, and a reproducible benchmarking methodology. We then report baseline and ablation results that illuminate the trade-offs between event budget, novelty thresholds, and optional classification. The goal is not to claim state-of-the-art performance, but to provide a transparent, reproducible baseline for future work on long-term memory systems.
 
 ## 2. Introduction
 
 Long-term memory in assistant systems requires a balance between fidelity, cost, and stability. Naively appending the entire interaction history is infeasible: context windows are limited, latency rises with input size, and unrestricted accumulation increases the risk of contradictory or stale information. At the same time, aggressive compression can erase the specific, time‑sensitive details that matter for decision‑making. The central challenge is therefore not only how to store more data, but how to preserve the *right* data and present it reliably under constrained budgets.
 
-Project Memory approaches this problem by generating *layered digests* from recent events with explicit, deterministic constraints. Rather than treating summarization as an opaque LLM operation, the system enforces a structured pipeline that selects evidence, computes novelty, merges protected state, and then validates output against consistency rules. This design enables attribution of errors to specific stages and supports controlled ablations that isolate each component’s contribution.
+StateCore approaches this problem by generating *layered digests* from recent events with explicit, deterministic constraints. Rather than treating summarization as an opaque LLM operation, the system enforces a structured pipeline that selects evidence, computes novelty, merges protected state, and then validates output against consistency rules. This design enables attribution of errors to specific stages and supports controlled ablations that isolate each component’s contribution.
 
-This work sits at the intersection of two research lines. Retrieval‑augmented language modeling (e.g., RAG, REALM, RETRO) shows that explicit external memory can improve knowledge‑intensive tasks while reducing reliance on model parameters. Memory hierarchy approaches (e.g., MemGPT) focus on managing long‑term context by paging and prioritizing memory fragments. Project Memory differs in emphasis: it targets *digest consistency* and *reproducibility* under a fixed evaluation protocol, enabling careful measurement of trade‑offs between recall, stability, and cost.
+This work sits at the intersection of two research lines. Retrieval‑augmented language modeling (e.g., RAG, REALM, RETRO) shows that explicit external memory can improve knowledge‑intensive tasks while reducing reliance on model parameters. Memory hierarchy approaches (e.g., MemGPT) focus on managing long‑term context by paging and prioritizing memory fragments. StateCore differs in emphasis: it targets *digest consistency* and *reproducibility* under a fixed evaluation protocol, enabling careful measurement of trade‑offs between recall, stability, and cost.
 
 The remainder of this article presents the system design, formalizes the evaluation protocol, and reports baseline and ablation results. Our goal is not to optimize a single metric, but to provide a rigorous, reproducible baseline for future research on long‑term memory pipelines.
 
@@ -18,7 +18,7 @@ This article documents the system as a research artifact. It summarizes its desi
 
 ## 3. System Design
 
-Project Memory is organized as a backend engine with four primary subsystems:
+StateCore is organized as a backend engine with four primary subsystems:
 
 1. **Ingest**: Events enter as either append-only streams or keyed documents (upserts).
 2. **Digest**: Events are compressed into layered summaries via a controlled pipeline.
@@ -171,19 +171,19 @@ Planned extensions:
 - Compare snapshot-enabled vs snapshot-disabled runs.
 - Introduce multi-model evaluation (different LLM providers or settings).
 
-Project Memory is best viewed as a research testbed: a controlled, reproducible environment for exploring the design space of long‑term memory systems. The system is intentionally conservative and transparent, prioritizing reproducibility over maximum raw performance.
+StateCore is best viewed as a research testbed: a controlled, reproducible environment for exploring the design space of long‑term memory systems. The system is intentionally conservative and transparent, prioritizing reproducibility over maximum raw performance.
 
 ## 9. Related Work
 
-Retrieval‑augmented approaches (RAG, REALM, RETRO) demonstrate that an external memory can improve accuracy on knowledge‑intensive tasks, effectively trading off parametric storage for retrieval quality. Memory hierarchy strategies (e.g., MemGPT) focus on managing limited context windows by paging and prioritizing relevant fragments. Project Memory complements these lines by providing a digest‑centric pipeline with explicit constraints and reproducible evaluation, enabling controlled tests of how summarization and selection policies affect stability over time.
+Retrieval‑augmented approaches (RAG, REALM, RETRO) demonstrate that an external memory can improve accuracy on knowledge‑intensive tasks, effectively trading off parametric storage for retrieval quality. Memory hierarchy strategies (e.g., MemGPT) focus on managing limited context windows by paging and prioritizing relevant fragments. StateCore complements these lines by providing a digest‑centric pipeline with explicit constraints and reproducible evaluation, enabling controlled tests of how summarization and selection policies affect stability over time.
 
 ## 9.1 Positioning and Differentiation
 
-While related work emphasizes retrieval quality or memory paging strategies, Project Memory is framed as a **reproducible systems baseline** for digest stability. The primary contribution is not a new retrieval algorithm, but an explicit control pipeline with measurable constraints (budgets, novelty thresholds, consistency checks) and a fixed evaluation protocol. This makes it possible to isolate *which* design levers most strongly affect drift and stability, and to report results that can be replicated across environments.
+While related work emphasizes retrieval quality or memory paging strategies, StateCore is framed as a **reproducible systems baseline** for digest stability. The primary contribution is not a new retrieval algorithm, but an explicit control pipeline with measurable constraints (budgets, novelty thresholds, consistency checks) and a fixed evaluation protocol. This makes it possible to isolate *which* design levers most strongly affect drift and stability, and to report results that can be replicated across environments.
 
 ## 10. Practical Implications for Market Products
 
-Although Project Memory is positioned as a research artifact rather than a commercial product, its results have implications for existing memory‑enabled systems in the market. Many production assistants and enterprise copilots rely on a mixture of retrieval and summarization. The ablation findings suggest that **how much evidence is admitted** and **how aggressively novelty is filtered** can have a larger impact on stability than additional classification or reranking layers.
+Although StateCore is positioned as a research artifact rather than a commercial product, its results have implications for existing memory‑enabled systems in the market. Many production assistants and enterprise copilots rely on a mixture of retrieval and summarization. The ablation findings suggest that **how much evidence is admitted** and **how aggressively novelty is filtered** can have a larger impact on stability than additional classification or reranking layers.
 
 ### 10.1 Implications for Retrieval‑First Systems
 

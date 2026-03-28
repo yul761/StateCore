@@ -1,6 +1,6 @@
 # Evaluation Protocol
 
-This protocol defines a minimal, reproducible evaluation for Project Memory.
+This protocol defines a minimal, reproducible evaluation for StateCore.
 
 ## Environment
 - Record OS, Node version, and hardware.

@@ -63,7 +63,7 @@
     "overall": 96.49
   },
   "notes": [
-    "Using fixture: /Users/yuchenlin/ProjectMemoryApi/project-memory/benchmark-fixtures/basic.json"
+    "Using fixture: /Users/yuchenlin/StateCoreApi/statecore/benchmark-fixtures/basic.json"
   ],
   "endedAt": "2026-02-08T06:25:36.599Z"
 }
