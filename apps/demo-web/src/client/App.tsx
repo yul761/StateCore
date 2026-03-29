@@ -61,7 +61,7 @@ export function App({ config }: { config: DemoConfig }) {
 
       <main className="main-stack">
         <section className="panel surface-tabs">
-          <div className="eyebrow">Product Views</div>
+          <div className="eyebrow">Explore StateCore</div>
           <div className="surface-tab-row">
             <button className={`ghost surface-tab${page === "overview" ? " surface-tab-active" : ""}`} type="button" onClick={() => setPage("overview")}>
               Overview

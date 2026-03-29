@@ -1,7 +1,7 @@
 export const DEMO_BRAND = {
   eyebrow: "StateCore",
   title: "StateCore",
-  subtitle: "A public window into low-drift memory for long-running LLM systems."
+  subtitle: "Shared memory runtime for low-drift LLM systems."
 };
 
 export type DemoTemplate = {

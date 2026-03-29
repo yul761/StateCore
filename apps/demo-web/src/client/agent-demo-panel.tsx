@@ -205,43 +205,43 @@ export function AgentDemoPanel(props: {
 
       <div className="agent-score-strip">
         <article className="compare-result-pill compare-result-pill-statecore">
-          <span className="compare-checkpoint-label">With StateCore</span>
+          <span className="compare-checkpoint-label">StateCore Preserves</span>
           <strong>{scenario.scorecard.withStateCore.length}</strong>
-          <div className="muted">signals kept aligned across handoff</div>
+          <div className="muted">signal types kept aligned across the handoff</div>
         </article>
         <article className="compare-result-pill compare-result-pill-plain-llm">
-          <span className="compare-checkpoint-label">Without shared state</span>
+          <span className="compare-checkpoint-label">Plain Stack Loses</span>
           <strong>{scenario.scorecard.withoutSharedState.length}</strong>
-          <div className="muted">ways the handoff drifts</div>
+          <div className="muted">signal types that typically drift without StateCore</div>
         </article>
         <article className="compare-result-pill">
-          <span className="compare-checkpoint-label">Replay progress</span>
+          <span className="compare-checkpoint-label">Step Progress</span>
           <strong>
             {completedSteps}/{scenario.steps.length}
           </strong>
-          <div className="muted">{isStarted ? "steps revealed" : "ready to play"}</div>
+          <div className="muted">{isStarted ? "handoff steps revealed so far" : "ready to play"}</div>
         </article>
       </div>
 
       <div className="agent-runtime-grid">
         <article className="overview-card overview-card-accent">
-          <div className="eyebrow">Shared Memory Rail</div>
-          <h3>What the next agent receives with StateCore</h3>
+          <div className="eyebrow">Shared State Flow</div>
+          <h3>How one agent turn becomes shared state for the next one</h3>
           {!isStarted ? (
-            <p className="muted">Play the handoff to reveal how Working Memory and State Layer accumulate durable mission state.</p>
+            <p className="muted">Play the handoff to reveal what gets extracted now, what becomes durable, and what the next agent actually receives.</p>
           ) : (
             <div className="agent-memory-columns">
               <div className="agent-memory-column">
-                <div className="summary-label">Working Memory</div>
-                <FactPills items={latestWorkingWrites.length ? latestWorkingWrites : ["No working-memory writes yet"]} />
+                <div className="summary-label">1. What was extracted this step</div>
+                <FactPills items={latestWorkingWrites.length ? latestWorkingWrites : ["No short-term state extracted yet"]} />
               </div>
               <div className="agent-memory-column">
-                <div className="summary-label">State Layer</div>
-                <FactPills items={latestStableWrites.length ? latestStableWrites : ["No stable-state commit yet"]} />
+                <div className="summary-label">2. What became durable</div>
+                <FactPills items={latestStableWrites.length ? latestStableWrites : ["Nothing has been committed into durable state yet"]} />
               </div>
               <div className="agent-memory-column">
-                <div className="summary-label">Next Agent Sees</div>
-                <FactPills items={latestReads.length ? latestReads : ["No shared read yet"]} />
+                <div className="summary-label">3. What the next agent actually receives</div>
+                <FactPills items={latestReads.length ? latestReads : ["The next agent has not received shared state yet"]} />
               </div>
             </div>
           )}
@@ -249,9 +249,12 @@ export function AgentDemoPanel(props: {
 
         <article className="overview-card">
           <div className="eyebrow">Without StateCore</div>
-          <h3>What the next agent sees in a plain stack</h3>
-          {isStarted ? <FactPills items={latestBaselineReads.length ? latestBaselineReads : ["No baseline read yet"]} /> : null}
-          <p className="muted">{currentStep?.baselineFailure || "Plain multi-agent handoffs usually sound coherent while still forgetting the exact mission or constraint that mattered."}</p>
+          <h3>What the next agent is missing in a plain stack</h3>
+          {isStarted ? <FactPills items={latestBaselineReads.length ? latestBaselineReads : ["The plain stack has not revealed a degraded handoff yet"]} /> : null}
+          <p className="muted">
+            {currentStep?.baselineFailure ||
+              "A plain multi-agent handoff often sounds coherent while still dropping the exact goal, constraint, risk, or decision that mattered."}
+          </p>
           <div className="compare-preview-footer">{scenario.payoff}</div>
         </article>
       </div>
@@ -314,7 +317,7 @@ export function AgentDemoPanel(props: {
                       {isVisible ? <FactPills items={step.preservedChecks} /> : null}
                     </div>
                     <div className="agent-handoff-lane agent-handoff-lane-baseline">
-                      <div className="summary-label">Without shared state</div>
+                      <div className="summary-label">Without StateCore</div>
                       <div className="agent-story-step-output">
                         {isVisible ? step.baselineFailure : "Replay to reveal the baseline failure."}
                       </div>

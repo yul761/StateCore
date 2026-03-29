@@ -72,7 +72,7 @@ export function Sidebar(props: {
       <div className="panel">
         {isChatPage ? (
           <>
-            <h2>Workspace</h2>
+            <h2>Runtime Workspace</h2>
             <div className="guest-session-card">
               <div className="guest-session-row">
                 <div>
@@ -85,7 +85,7 @@ export function Sidebar(props: {
                   Reset
                 </button>
               </div>
-              <div className="guest-session-detail">This browser keeps a private anonymous visitor id so scopes stay isolated from other visitors.</div>
+              <div className="guest-session-detail">This browser keeps a private anonymous visitor id so runtime scopes stay isolated per visitor.</div>
             </div>
             <form className="stack" onSubmit={onCreateScope}>
               <input
@@ -151,7 +151,7 @@ export function Sidebar(props: {
           </>
         ) : (
           <>
-            <h2>{isOverviewPage ? "Overview" : isComparePage ? "Compare Guide" : "Agents"}</h2>
+            <h2>{isOverviewPage ? "StateCore" : isComparePage ? "Compare Guide" : "Agent Handoffs"}</h2>
             <div className="guest-session-card">
               <div className="guest-session-row">
                 <div>
@@ -164,14 +164,22 @@ export function Sidebar(props: {
                   Reset
                 </button>
               </div>
-              <div className="guest-session-detail">Anonymous sessions keep this public site lightweight while isolating saved runtime state per visitor.</div>
+              <div className="guest-session-detail">Anonymous sessions keep the site lightweight while isolating saved runtime state per visitor.</div>
             </div>
             <div className="sidebar-mode-card">
               {isOverviewPage ? (
                 <>
-                  <div className="sidebar-mode-title">StateCore at a glance</div>
-                  <div className="sidebar-mode-body">Start here for the product story: what drift looks like, why the three-layer split exists, and which view to open next.</div>
-                  <FactPills items={["Product overview", "Three-layer flow", "Runtime", "Compare"]} />
+                  <div className="sidebar-mode-title">What StateCore is</div>
+                  <div className="sidebar-mode-body">
+                    StateCore is a shared memory runtime for LLM systems that need goals, constraints, decisions, and risks to survive long
+                    sessions and agent handoffs.
+                  </div>
+                  <FactPills items={["Shared memory runtime", "Low-drift state", "Long-running systems", "Agent handoffs"]} />
+                  <div className="sidebar-mode-list">
+                    <div>Start here for the product story.</div>
+                    <div>Then open Compare to see the same scenario side by side.</div>
+                    <div>Open Agents to see why shared state matters at handoff.</div>
+                  </div>
                 </>
               ) : null}
               {isComparePage ? (
@@ -179,17 +187,30 @@ export function Sidebar(props: {
                   <div className="sidebar-mode-title">How to read compare mode</div>
                   <div className="sidebar-mode-body">
                     {selectedTemplate
-                      ? `You are comparing the same scenario through StateCore and a plain rolling-summary baseline. Current scenario: ${selectedTemplate.title}.`
+                      ? `This page compares the same scenario through StateCore and a plain rolling-summary baseline. Current scenario: ${selectedTemplate.title}.`
                       : "Pick a scenario to see where low-drift state starts to diverge from a plain LLM."}
                   </div>
                   <FactPills items={[selectedTemplate?.title || "No scenario", compareStatus, "Same model", "Same sequence"]} />
+                  <div className="sidebar-mode-list">
+                    <div>1. Read the prompt sequence once.</div>
+                    <div>2. Run replay to unlock the result view.</div>
+                    <div>3. Compare the answers checkpoint by checkpoint.</div>
+                  </div>
                 </>
               ) : null}
               {isAgentPage ? (
                 <>
-                  <div className="sidebar-mode-title">What this page previews</div>
-                  <div className="sidebar-mode-body">The next product surface is a scripted multi-agent handoff where researcher, planner, and executor all read the same durable mission without drifting apart.</div>
-                  <FactPills items={["Shared state", "Handoff", "Planner", "Executor"]} />
+                  <div className="sidebar-mode-title">What this page proves</div>
+                  <div className="sidebar-mode-body">
+                    The point is not that StateCore can run several agents. The point is that multiple agents can hand work off without
+                    losing the current mission.
+                  </div>
+                  <FactPills items={["Shared state", "Goal continuity", "Constraint carryover", "Decision continuity"]} />
+                  <div className="sidebar-mode-list">
+                    <div>1. Play a handoff scenario.</div>
+                    <div>2. Watch what StateCore writes into shared memory.</div>
+                    <div>3. Compare that with what a plain stack loses.</div>
+                  </div>
                 </>
               ) : null}
             </div>
@@ -202,7 +223,7 @@ export function Sidebar(props: {
           <div className="sidebar-section-label">Explain The Turn</div>
 
           <div className="panel">
-            <h2>Status</h2>
+            <h2>System Status</h2>
             <div className="summary-inline">
               <SummarySections sections={healthSummarySections} emptyText="Loading health..." />
             </div>
@@ -230,6 +251,7 @@ export function Sidebar(props: {
               </div>
             </div>
           </div>
+
           <div className="sidebar-section-label">Deep Diagnostics</div>
 
           <details className="panel diagnostics-panel" open>
@@ -259,43 +281,46 @@ export function Sidebar(props: {
                 <div className="diff-list">
                   {diff.working.length ? (
                     diff.working.map((item) => (
-                      <div className="diff-item" key={`working-${item.field}-${item.detail}`}>
-                        <strong>{item.field}</strong>: {item.detail}
+                      <div className="diff-item" key={`working-${item.field}`}>
+                        <div className="diff-label">{item.field}</div>
+                        <div className="diff-values">
+                          <span className="diff-after">{item.detail}</span>
+                        </div>
                       </div>
                     ))
                   ) : (
-                    "No working-memory diff yet."
+                    <div className="diff-empty">No working-memory field changed on the last visible turn.</div>
                   )}
                 </div>
               </article>
+
               <article className="diff-card">
-                <h3>State Layer Diff</h3>
+                <h3>Stable State Diff</h3>
                 <div className="diff-list">
                   {diff.stable.length ? (
                     diff.stable.map((item) => (
-                      <div className="diff-item" key={`stable-${item.field}-${item.detail}`}>
-                        <strong>{item.field}</strong>: {item.detail}
+                      <div className="diff-item" key={`stable-${item.field}`}>
+                        <div className="diff-label">{item.field}</div>
+                        <div className="diff-values">
+                          <span className="diff-after">{item.detail}</span>
+                        </div>
                       </div>
                     ))
                   ) : (
-                    "No state-layer diff yet."
+                    <div className="diff-empty">No stable-state field changed on the last visible turn.</div>
                   )}
                 </div>
               </article>
             </div>
           </details>
         </>
-      ) : (
-        <div className="panel">
-          <h2>Status</h2>
-          <div className="summary-inline">
-            <SummarySections sections={healthSummarySections} emptyText="Loading health..." />
-          </div>
-          <CodeDetails value={health} />
-        </div>
-      )}
+      ) : null}
 
-      <div className="chat-hint">{CHAT_HINT}</div>
+      <div className="panel">
+        <div className="eyebrow">Product Thesis</div>
+        <h2>What StateCore protects</h2>
+        <p className="muted">{CHAT_HINT}</p>
+      </div>
     </aside>
   );
 }
