@@ -314,6 +314,9 @@ body {
   border-radius: 22px;
   padding: 18px;
   background: linear-gradient(180deg, #fffefb 0%, #fff7ed 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(320px, 1.05fr);
+  gap: 18px;
 }
 
 .agent-handoff-rail {
@@ -331,6 +334,20 @@ body {
   padding: 18px;
   background: linear-gradient(180deg, #fff 0%, #fff7ee 100%);
   overflow: hidden;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.agent-handoff-card-active {
+  border-color: var(--accent);
+  box-shadow: 0 14px 28px rgba(156, 76, 43, 0.12);
+  transform: translateY(-2px);
+}
+
+.agent-handoff-card-complete {
+  background: linear-gradient(180deg, #fff 0%, #f7fbf7 100%);
 }
 
 .agent-badge {
@@ -345,6 +362,170 @@ body {
   font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.agent-control-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 16px;
+}
+
+.agent-scenario-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.agent-panel-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.agent-panel-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.agent-runtime-grid,
+.agent-story-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.agent-score-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.agent-memory-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.agent-memory-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 14px;
+}
+
+.agent-story-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: 20px;
+  padding: 18px;
+  background: linear-gradient(180deg, #fff 0%, #fff9f2 100%);
+}
+
+.agent-story-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.agent-story-step {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px dashed var(--panel-border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.55);
+  padding: 16px;
+  opacity: 0.62;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease;
+}
+
+.agent-story-step-visible {
+  opacity: 1;
+  transform: translateY(-1px);
+  border-style: solid;
+  border-color: var(--accent-soft);
+  background: linear-gradient(180deg, #fff 0%, #fff6ee 100%);
+}
+
+.agent-story-step-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-story-step-badge,
+.agent-story-step-agent {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  background: #fff;
+  padding: 6px 10px;
+}
+
+.agent-story-step-badge {
+  color: var(--accent);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.agent-story-step-agent {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.agent-story-step-turn,
+.agent-story-step-output {
+  line-height: 1.55;
+}
+
+.agent-story-step-turn {
+  font-weight: 600;
+}
+
+.agent-story-step-output {
+  color: var(--muted);
+}
+
+.agent-handoff-compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.agent-handoff-lane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.agent-handoff-lane-statecore {
+  background: linear-gradient(180deg, #fff 0%, #f4fbf5 100%);
+}
+
+.agent-handoff-lane-baseline {
+  background: linear-gradient(180deg, #fff 0%, #fff6ef 100%);
 }
 
 @keyframes overview-float {
@@ -2006,11 +2187,20 @@ button.ghost {
 
   .overview-hero,
   .overview-grid,
+  .agent-score-strip,
+  .agent-runtime-grid,
+  .agent-story-grid,
   .agent-handoff-rail {
     grid-template-columns: 1fr;
   }
 
   .overview-flow-rail {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-hero,
+  .agent-memory-columns,
+  .agent-handoff-compare {
     grid-template-columns: 1fr;
   }
 
