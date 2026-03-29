@@ -138,7 +138,7 @@ export function App({ config }: { config: DemoConfig }) {
         ) : null}
 
         {page === "agents" ? (
-          <AgentDemoPanel onOpenChat={() => setPage("chat")} onOpenCompare={() => setPage("compare")} />
+          <AgentDemoPanel config={config} guestUserId={demo.guestUserId} onOpenChat={() => setPage("chat")} onOpenCompare={() => setPage("compare")} />
         ) : null}
       </main>
     </div>

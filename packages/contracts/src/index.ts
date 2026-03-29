@@ -532,6 +532,35 @@ export const LayerStatusOutput = z.object({
   warnings: z.array(z.string())
 });
 
+export const AgentScenarioRunStepOutput = z.object({
+  label: z.string(),
+  activeAgent: z.enum(["researcher", "planner", "executor"]),
+  userTurn: z.string(),
+  answer: z.string(),
+  answerMode: z.enum(["direct_state_fast_path", "llm_fast_path"]).nullable().optional(),
+  retrievalPlan: RetrievalPlanOutput.nullable().optional(),
+  digestTriggered: z.boolean(),
+  workingMemoryVersion: z.number().int().min(0).nullable(),
+  stableStateVersion: z.string().nullable(),
+  workingMemoryView: WorkingMemoryView.nullable(),
+  stableStateView: StateLayerView.nullable(),
+  layerAlignment: LayerAlignmentOutput.nullable().optional(),
+  warnings: z.array(z.string()).optional(),
+  workingWrites: z.array(z.string()),
+  stableWrites: z.array(z.string()),
+  nextAgentSees: z.array(z.string()),
+  completedAt: z.string()
+});
+
+export const AgentScenarioRunOutput = z.object({
+  scenarioId: z.string(),
+  title: z.string(),
+  scopeId: z.string().uuid(),
+  scopeName: z.string(),
+  completedAt: z.string(),
+  steps: z.array(AgentScenarioRunStepOutput)
+});
+
 // Grouped API surface contracts
 // These maps exist so a demo app or SDK can import the intended contract
 // boundary directly instead of depending on the entire file as one flat list.
@@ -547,7 +576,8 @@ export const PublicRuntimeContracts = {
   StableStateOutput,
   FastLayerViewOutput,
   LayerStatusOutput,
-  HealthOutput
+  HealthOutput,
+  AgentScenarioRunOutput
 } as const;
 
 export const DebugSurfaceContracts = {
@@ -617,6 +647,7 @@ export const DemoWebContracts = {
   ScopeActivationOutput,
   RuntimeTurnInput,
   RuntimeTurnOutput,
+  AgentScenarioRunOutput,
   WorkingMemoryOutput,
   StableStateOutput,
   FastLayerViewOutput,
@@ -631,8 +662,12 @@ export const DemoWebRoutes = {
   setActiveScope: PublicRuntimeRoutes.setActiveScope,
   getActiveState: PublicRuntimeRoutes.getActiveState,
   runtimeTurn: PublicRuntimeRoutes.runtimeTurn,
+  agentScenarioRun: "/demo/agent-scenarios/:id/run",
   workingState: PublicRuntimeRoutes.workingState,
   stableState: PublicRuntimeRoutes.stableState,
   fastView: PublicRuntimeRoutes.fastView,
   layerStatus: PublicRuntimeRoutes.layerStatus
 } as const;
+
+export { AGENT_SCENARIOS } from "./agent-scenarios";
+export type { AgentRole, AgentScenario, AgentScenarioStep } from "./agent-scenarios";

@@ -1,29 +1,51 @@
 import { useEffect, useState } from "react";
 
+import type { getDemoConfig } from "./config";
+import { runAgentScenarioRemote } from "./api";
 import { AGENT_SCENARIOS } from "./agent-scenarios";
 import { FactPills } from "./ui";
+import type { AgentScenarioRunShape } from "./lib";
 
 export function AgentDemoPanel(props: {
+  config: ReturnType<typeof getDemoConfig>;
+  guestUserId: string;
   onOpenChat: () => void;
   onOpenCompare: () => void;
 }) {
-  const { onOpenChat, onOpenCompare } = props;
+  const { config, guestUserId, onOpenChat, onOpenCompare } = props;
   const [selectedScenarioId, setSelectedScenarioId] = useState(AGENT_SCENARIOS[0]?.id ?? "");
   const [currentStepIndex, setCurrentStepIndex] = useState(-1);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [runResults, setRunResults] = useState<Record<string, AgentScenarioRunShape>>({});
+  const [runningScenarioId, setRunningScenarioId] = useState<string | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
 
   const scenario = AGENT_SCENARIOS.find((item) => item.id === selectedScenarioId) || AGENT_SCENARIOS[0];
+  const liveRun = scenario ? runResults[scenario.id] ?? null : null;
+  const renderedSteps = scenario
+    ? scenario.steps.map((step, index) => {
+        const liveStep = liveRun?.steps[index];
+        return {
+          ...step,
+          agentOutput: liveStep?.answer ?? step.agentOutput,
+          workingWrites: liveStep?.workingWrites.length ? liveStep.workingWrites : step.workingWrites,
+          stableWrites: liveStep?.stableWrites.length ? liveStep.stableWrites : step.stableWrites,
+          nextAgentSees: liveStep?.nextAgentSees.length ? liveStep.nextAgentSees : step.nextAgentSees
+        };
+      })
+    : [];
   const isStarted = currentStepIndex >= 0;
-  const isComplete = scenario ? currentStepIndex >= scenario.steps.length - 1 && currentStepIndex >= 0 : false;
+  const isComplete = scenario ? currentStepIndex >= renderedSteps.length - 1 && currentStepIndex >= 0 : false;
 
   useEffect(() => {
     setCurrentStepIndex(-1);
     setIsPlaying(false);
+    setRunError(null);
   }, [selectedScenarioId]);
 
   useEffect(() => {
     if (!scenario || !isPlaying) return;
-    if (currentStepIndex >= scenario.steps.length - 1) {
+    if (currentStepIndex >= renderedSteps.length - 1) {
       setIsPlaying(false);
       return;
     }
@@ -33,12 +55,12 @@ export function AgentDemoPanel(props: {
     }, 1600);
 
     return () => window.clearTimeout(timer);
-  }, [currentStepIndex, isPlaying, scenario]);
+  }, [currentStepIndex, isPlaying, renderedSteps.length, scenario]);
 
   if (!scenario) return null;
 
-  const visibleSteps = scenario.steps.slice(0, Math.max(currentStepIndex + 1, 0));
-  const currentStep = isStarted ? scenario.steps[Math.min(currentStepIndex, scenario.steps.length - 1)] : null;
+  const visibleSteps = renderedSteps.slice(0, Math.max(currentStepIndex + 1, 0));
+  const currentStep = isStarted ? renderedSteps[Math.min(currentStepIndex, renderedSteps.length - 1)] : null;
   const currentAgent = currentStep ? scenario.agents.find((agent) => agent.id === currentStep.activeAgent) || null : null;
 
   const latestWorkingWrites = visibleSteps.flatMap((step) => step.workingWrites);
@@ -47,7 +69,23 @@ export function AgentDemoPanel(props: {
   const latestBaselineReads = currentStep?.baselineSees || [];
   const completedSteps = Math.max(currentStepIndex + 1, 0);
 
-  function handlePlay() {
+  async function handlePlay() {
+    if (!scenario) return;
+    setRunError(null);
+
+    if (!runResults[scenario.id]) {
+      try {
+        setRunningScenarioId(scenario.id);
+        const result = await runAgentScenarioRemote(config, guestUserId, scenario.id);
+        setRunResults((current) => ({ ...current, [scenario.id]: result }));
+      } catch (error) {
+        setRunError(String((error as Error).message || error));
+        return;
+      } finally {
+        setRunningScenarioId(null);
+      }
+    }
+
     if (isComplete) {
       setCurrentStepIndex(0);
       setIsPlaying(true);
@@ -66,7 +104,7 @@ export function AgentDemoPanel(props: {
 
   function handleNext() {
     setIsPlaying(false);
-    setCurrentStepIndex((value) => Math.min(value + 1, scenario.steps.length - 1));
+    setCurrentStepIndex((value) => Math.min(value + 1, renderedSteps.length - 1));
   }
 
   function handleReset() {
@@ -107,12 +145,12 @@ export function AgentDemoPanel(props: {
           </div>
           <div className="agent-panel-toolbar">
             <button type="button" onClick={handlePlay}>
-              {isPlaying ? "Playing..." : isComplete ? "Replay handoff" : "Play handoff"}
+              {runningScenarioId === scenario.id ? "Running live handoff..." : isPlaying ? "Playing..." : isComplete ? "Replay handoff" : liveRun ? "Play handoff" : "Run live handoff"}
             </button>
             <button className="ghost" type="button" onClick={handlePause} disabled={!isPlaying}>
               Pause
             </button>
-            <button className="ghost" type="button" onClick={handleNext} disabled={isComplete}>
+            <button className="ghost" type="button" onClick={handleNext} disabled={isComplete || runningScenarioId === scenario.id}>
               Step forward
             </button>
             <button className="ghost" type="button" onClick={handleReset} disabled={!isStarted}>
@@ -122,11 +160,24 @@ export function AgentDemoPanel(props: {
           <div className="agent-panel-facts">
             <span className="compare-score-pill">Current step: {isStarted ? currentStep?.label : "Not started"}</span>
             <span className="compare-score-pill">
-              {isPlaying ? "Replay running" : isComplete ? "Replay complete" : isStarted ? "Replay paused" : "Ready to play"}
+              {runningScenarioId === scenario.id
+                ? "Live handoff running"
+                : isPlaying
+                  ? "Replay running"
+                  : isComplete
+                    ? "Replay complete"
+                    : isStarted
+                      ? "Replay paused"
+                      : liveRun
+                        ? "Live run ready"
+                        : "Ready to run"}
             </span>
+            {liveRun ? <span className="compare-score-pill">Live scope: {liveRun.scopeName}</span> : null}
+            {liveRun ? <span className="compare-score-pill">Completed: {new Date(liveRun.completedAt).toLocaleTimeString()}</span> : null}
           </div>
         </div>
       </div>
+      {runError ? <div className="compare-empty-state">Live handoff failed: {runError}</div> : null}
 
       <div className="agent-handoff-rail">
         {scenario.agents.map((agent) => {
@@ -244,7 +295,7 @@ export function AgentDemoPanel(props: {
           <div className="eyebrow">Handoff Timeline</div>
           <h3>Same step, two different handoffs</h3>
           <div className="agent-story-list">
-            {scenario.steps.map((step, index) => {
+            {renderedSteps.map((step, index) => {
               const isVisible = index <= currentStepIndex;
               const agent = scenario.agents.find((item) => item.id === step.activeAgent);
               return (
@@ -258,7 +309,7 @@ export function AgentDemoPanel(props: {
                     <div className="agent-handoff-lane agent-handoff-lane-statecore">
                       <div className="summary-label">With StateCore</div>
                       <div className="agent-story-step-output">
-                        {isVisible ? step.agentOutput : "Replay to reveal the StateCore handoff."}
+                        {isVisible ? step.agentOutput : liveRun ? "Replay to reveal the live StateCore handoff." : "Run the live handoff to reveal the StateCore path."}
                       </div>
                       {isVisible ? <FactPills items={step.preservedChecks} /> : null}
                     </div>

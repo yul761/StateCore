@@ -1,6 +1,8 @@
-import { BadRequestException, Body, Controller, Get, Inject, Post, Query, Req } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Inject, Param, Post, Query, Req } from "@nestjs/common";
 import { createHash, randomUUID } from "crypto";
 import {
+  AGENT_SCENARIOS,
+  AgentScenarioRunOutput,
   AnswerInput,
   AnswerOutput,
   DigestEnqueueOutput,
@@ -44,6 +46,26 @@ import { answerSystemPrompt, answerUserPrompt, runtimeSystemPrompt, runtimeUserP
 
 const WORKING_MEMORY_CAUGHT_UP_WINDOW_MS = 15_000;
 const STABLE_STATE_CAUGHT_UP_WINDOW_MS = 60_000;
+const AGENT_SCENARIO_TIMEOUT_MS = 15_000;
+const AGENT_SCENARIO_STABLE_SOFT_WAIT_MS = 8_000;
+
+type SimpleWorkingView = {
+  goal?: string;
+  constraints?: string[];
+  decisions?: string[];
+  progressSummary?: string;
+  openQuestions?: string[];
+  taskFrame?: string;
+} | null;
+
+type SimpleStableView = {
+  goal?: string;
+  constraints?: string[];
+  decisions?: string[];
+  todos?: string[];
+  openQuestions?: string[];
+  risks?: string[];
+} | null;
 
 function splitStructuredTurnLines(message: string) {
   const lines = message
@@ -65,6 +87,76 @@ function splitStructuredTurnLines(message: string) {
   }
 
   return lines;
+}
+
+function summarizeFieldDiff(
+  label: string,
+  previousValue: unknown,
+  nextValue: unknown
+) {
+  if (Array.isArray(previousValue) || Array.isArray(nextValue)) {
+    const previousItems = Array.isArray(previousValue) ? previousValue : [];
+    const nextItems = Array.isArray(nextValue) ? nextValue : [];
+    const added = nextItems.filter((item) => !previousItems.includes(item));
+    const removed = previousItems.filter((item) => !nextItems.includes(item));
+    if (!added.length && !removed.length) {
+      return null;
+    }
+
+    const parts = [
+      added.length ? `added ${added.join(" | ")}` : null,
+      removed.length ? `removed ${removed.join(" | ")}` : null
+    ].filter(Boolean);
+    return `${label}: ${parts.join("; ")}`;
+  }
+
+  const normalizedPrevious = previousValue ?? null;
+  const normalizedNext = nextValue ?? null;
+  if (normalizedPrevious === normalizedNext) {
+    return null;
+  }
+
+  return `${label}: ${normalizedPrevious || "none"} -> ${normalizedNext || "none"}`;
+}
+
+function diffWorkingView(previous: SimpleWorkingView, next: SimpleWorkingView) {
+  return [
+    summarizeFieldDiff("Goal", previous?.goal, next?.goal),
+    summarizeFieldDiff("Constraints", previous?.constraints, next?.constraints),
+    summarizeFieldDiff("Decisions", previous?.decisions, next?.decisions),
+    summarizeFieldDiff("Progress", previous?.progressSummary, next?.progressSummary),
+    summarizeFieldDiff("Open Questions", previous?.openQuestions, next?.openQuestions),
+    summarizeFieldDiff("Task Frame", previous?.taskFrame, next?.taskFrame)
+  ].filter((value): value is string => Boolean(value));
+}
+
+function diffStableView(previous: SimpleStableView, next: SimpleStableView) {
+  return [
+    summarizeFieldDiff("Goal", previous?.goal, next?.goal),
+    summarizeFieldDiff("Constraints", previous?.constraints, next?.constraints),
+    summarizeFieldDiff("Decisions", previous?.decisions, next?.decisions),
+    summarizeFieldDiff("Todos", previous?.todos, next?.todos),
+    summarizeFieldDiff("Open Questions", previous?.openQuestions, next?.openQuestions),
+    summarizeFieldDiff("Risks", previous?.risks, next?.risks)
+  ].filter((value): value is string => Boolean(value));
+}
+
+function buildNextAgentSees(workingView: SimpleWorkingView, stableView: SimpleStableView) {
+  const goal = stableView?.goal ?? workingView?.goal;
+  const constraints = stableView?.constraints?.length ? stableView.constraints : workingView?.constraints;
+  const decisions = stableView?.decisions?.length ? stableView.decisions : workingView?.decisions;
+  const risks = stableView?.risks ?? [];
+
+  return [
+    goal ? `Goal: ${goal}` : null,
+    constraints?.length ? `Constraints: ${constraints.join("; ")}` : null,
+    decisions?.length ? `Decisions: ${decisions.join("; ")}` : null,
+    risks.length ? `Risks: ${risks.join("; ")}` : null
+  ].filter((value): value is string => Boolean(value));
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 @Controller()
@@ -195,6 +287,196 @@ export class MemoryController {
       freshness,
       warnings
     });
+  }
+
+  private createRuntimeSession(
+    userId: string,
+    scopeId: string,
+    policyProfile: "default" | "conservative" | "document-heavy",
+    policyOverrides?: {
+      recallLimit?: number;
+      promoteLongFormToDocumented?: boolean;
+      digestOnCandidate?: boolean;
+      }
+  ) {
+    if (!this.runtimeLlm) {
+      throw new BadRequestException("FEATURE_LLM disabled");
+    }
+    const policies = createRuntimePolicyBundle(policyProfile);
+    return new AssistantSession({
+      userId,
+      scopeId,
+      memoryService: this.domain.memoryService,
+      recallPolicy: createRuntimeRecallPolicy(this.domain.retrieveService, {
+        profile: policyProfile,
+        overrides: policyOverrides,
+        scopeStateLoader: async (value) => this.domain.getLatestDigestState(value),
+        workingMemoryLoader: async (value) => {
+          const snapshot = await this.domain.getLatestWorkingMemory(value);
+          return snapshot
+            ? {
+                scopeId: snapshot.scopeId,
+                id: snapshot.id,
+                version: snapshot.version,
+                state: snapshot.state,
+                view: snapshot.view,
+                updatedAt: snapshot.updatedAt,
+                createdAt: snapshot.createdAt
+              }
+            : null;
+        },
+        recentTurnsLoader: async (value, limit) => this.domain.listRecentTurns(value, limit)
+      }),
+      llm: this.runtimeLlm,
+      prompts: {
+        system: runtimeSystemPrompt,
+        user: runtimeUserPrompt
+      },
+      runtimeResponseOptions: {
+        maxOutputTokens: apiEnv.runtimeModelMaxOutputTokens,
+        reasoningEffort: apiEnv.runtimeModelReasoningEffort
+      },
+      memoryWritePolicy: policies.memoryWritePolicy,
+      digestPolicy: policies.digestPolicy,
+      digestTrigger: {
+        requestDigest: async (value) => {
+          await digestQueue.add("digest_scope", { userId, scopeId: value });
+        }
+      },
+      backgroundProcessor: {
+        persistTurnArtifacts: async ({ turn, writeTier, answer, assistantReplySource }) => {
+          if (writeTier === "documented") {
+            const documentKey = turn.documentKey
+              ?? (typeof turn.metadata?.documentKey === "string" ? turn.metadata.documentKey : null)
+              ?? `runtime:${createHash("sha1").update(turn.message).digest("hex").slice(0, 12)}`;
+            await this.domain.memoryService.ingestEvent({
+              userId,
+              scopeId,
+              type: "document",
+              source: turn.source ?? "api",
+              key: documentKey,
+              content: turn.message
+            });
+          } else {
+            for (const line of splitStructuredTurnLines(turn.message)) {
+              await this.domain.memoryService.ingestEvent({
+                userId,
+                scopeId,
+                type: "stream",
+                source: turn.source ?? "api",
+                content: line
+              });
+            }
+          }
+
+          await this.domain.memoryService.ingestEvent({
+            userId,
+            scopeId,
+            type: "stream",
+            source: assistantReplySource,
+            content: `Assistant reply: ${answer}`
+          });
+        },
+        requestWorkingMemoryUpdate: async (value) => {
+          await workingMemoryQueue.add("working_memory_update", { userId, scopeId: value });
+        },
+        requestStableStateDigest: async (value) => {
+          await digestQueue.add("digest_scope", { userId, scopeId: value });
+        }
+      },
+      assistantReplySource: "api"
+    });
+  }
+
+  private async executeRuntimeTurn(
+    userId: string,
+    input: {
+      scopeId: string;
+      message: string;
+      source?: "telegram" | "cli" | "api" | "sdk";
+      policyProfile?: "default" | "conservative" | "document-heavy";
+      policyOverrides?: {
+        recallLimit?: number;
+        promoteLongFormToDocumented?: boolean;
+        digestOnCandidate?: boolean;
+      };
+      writeTier?: "ephemeral" | "candidate" | "stable" | "documented";
+      documentKey?: string;
+      digestMode?: "auto" | "force" | "skip";
+      metadata?: Record<string, unknown>;
+    }
+  ) {
+    const policyProfile = input.policyProfile ?? "default";
+    const session = this.createRuntimeSession(userId, input.scopeId, policyProfile, input.policyOverrides);
+    return session.handleTurn({
+      message: input.message,
+      source: input.source ?? "api",
+      policyProfile,
+      policyOverrides: input.policyOverrides,
+      writeTier: input.writeTier,
+      documentKey: input.documentKey,
+      digestMode: input.digestMode ?? "auto",
+      metadata: input.metadata
+    });
+  }
+
+  private async waitForRuntimeArtifacts(scopeId: string, message: string, digestTriggered: boolean) {
+    const deadline = Date.now() + AGENT_SCENARIO_TIMEOUT_MS;
+    const stableSoftDeadline = Date.now() + AGENT_SCENARIO_STABLE_SOFT_WAIT_MS;
+    let latestWorking = await this.domain.getLatestWorkingMemory(scopeId);
+    let latestStable = await this.domain.getStateLayerView(scopeId);
+    let latestLayer = parseOutput(LayerStatusOutput, {
+      scopeId,
+      message,
+      workingMemoryVersion: latestWorking?.version ?? null,
+      stableStateVersion: latestStable?.digestId ?? null,
+      workingMemoryView: latestWorking?.view ?? null,
+      stableStateView: latestStable?.view ?? null,
+      fastLayerSummary: "",
+      retrievalPlan: null,
+      layerAlignment: {
+        goalAligned: false,
+        sharedConstraintCount: 0,
+        sharedDecisionCount: 0,
+        fastPathReady: false
+      },
+      freshness: {
+        latestEventCreatedAt: null,
+        workingMemoryUpdatedAt: latestWorking?.updatedAt?.toISOString() ?? null,
+        stableStateCreatedAt: latestStable?.createdAt?.toISOString() ?? null,
+        workingMemoryLagMs: null,
+        stableStateLagMs: null,
+        workingMemoryCaughtUp: !latestWorking,
+        stableStateCaughtUp: !latestStable
+      },
+      warnings: []
+    });
+
+    while (Date.now() < deadline) {
+      const recall = await this.resolveRuntimeRecall(scopeId, message);
+      latestLayer = await this.buildLayerStatus(scopeId, message, recall);
+      latestWorking = await this.domain.getLatestWorkingMemory(scopeId);
+      latestStable = await this.domain.getStateLayerView(scopeId);
+
+      if (
+        latestLayer.freshness.workingMemoryCaughtUp
+        && (
+          !digestTriggered
+          || latestLayer.freshness.stableStateCaughtUp
+          || Date.now() >= stableSoftDeadline
+        )
+      ) {
+        break;
+      }
+
+      await sleep(1500);
+    }
+
+    return {
+      working: latestWorking,
+      stable: latestStable,
+      layer: latestLayer
+    };
   }
 
   @Post("/memory/events")
@@ -526,101 +808,81 @@ export class MemoryController {
       return { error: "Scope not found" };
     }
 
-    const policyProfile = input.policyProfile ?? "default";
-    const policies = createRuntimePolicyBundle(policyProfile);
-    const session = new AssistantSession({
-      userId: req.userId,
-      scopeId: input.scopeId,
-      memoryService: this.domain.memoryService,
-      recallPolicy: createRuntimeRecallPolicy(this.domain.retrieveService, {
-        profile: policyProfile,
-        overrides: input.policyOverrides,
-        scopeStateLoader: async (scopeId) => this.domain.getLatestDigestState(scopeId),
-        workingMemoryLoader: async (scopeId) => {
-          const snapshot = await this.domain.getLatestWorkingMemory(scopeId);
-          return snapshot
-            ? {
-                scopeId: snapshot.scopeId,
-                id: snapshot.id,
-                version: snapshot.version,
-                state: snapshot.state,
-                view: snapshot.view,
-                updatedAt: snapshot.updatedAt,
-                createdAt: snapshot.createdAt
-              }
-            : null;
-        },
-        recentTurnsLoader: async (scopeId, limit) => this.domain.listRecentTurns(scopeId, limit)
-      }),
-      llm: this.runtimeLlm,
-      prompts: {
-        system: runtimeSystemPrompt,
-        user: runtimeUserPrompt
-      },
-      runtimeResponseOptions: {
-        maxOutputTokens: apiEnv.runtimeModelMaxOutputTokens,
-        reasoningEffort: apiEnv.runtimeModelReasoningEffort
-      },
-      memoryWritePolicy: policies.memoryWritePolicy,
-      digestPolicy: policies.digestPolicy,
-      digestTrigger: {
-        requestDigest: async (scopeId) => {
-          await digestQueue.add("digest_scope", { userId: req.userId, scopeId });
-        }
-      },
-      backgroundProcessor: {
-        persistTurnArtifacts: async ({ turn, writeTier, answer, assistantReplySource }) => {
-          if (writeTier === "documented") {
-            const documentKey = turn.documentKey
-              ?? (typeof turn.metadata?.documentKey === "string" ? turn.metadata.documentKey : null)
-              ?? `runtime:${createHash("sha1").update(turn.message).digest("hex").slice(0, 12)}`;
-            await this.domain.memoryService.ingestEvent({
-              userId: req.userId,
-              scopeId: input.scopeId,
-              type: "document",
-              source: turn.source ?? "api",
-              key: documentKey,
-              content: turn.message
-            });
-          } else {
-            for (const line of splitStructuredTurnLines(turn.message)) {
-              await this.domain.memoryService.ingestEvent({
-                userId: req.userId,
-                scopeId: input.scopeId,
-                type: "stream",
-                source: turn.source ?? "api",
-                content: line
-              });
-            }
-          }
+    return parseOutput(RuntimeTurnOutput, await this.executeRuntimeTurn(req.userId, input));
+  }
 
-          await this.domain.memoryService.ingestEvent({
-            userId: req.userId,
-            scopeId: input.scopeId,
-            type: "stream",
-            source: assistantReplySource,
-            content: `Assistant reply: ${answer}`
-          });
-        },
-        requestWorkingMemoryUpdate: async (scopeId) => {
-          await workingMemoryQueue.add("working_memory_update", { userId: req.userId, scopeId });
-        },
-        requestStableStateDigest: async (scopeId) => {
-          await digestQueue.add("digest_scope", { userId: req.userId, scopeId });
+  @Post("/demo/agent-scenarios/:id/run")
+  async runAgentScenario(@Req() req: RequestWithUser, @Param("id") scenarioId: string) {
+    if (!apiEnv.featureLlm || !this.runtimeLlm) {
+      throw new BadRequestException("FEATURE_LLM disabled");
+    }
+
+    const scenario = AGENT_SCENARIOS.find((item) => item.id === scenarioId);
+    if (!scenario) {
+      throw new BadRequestException(`Unknown agent scenario: ${scenarioId}`);
+    }
+
+    const scope = await this.domain.projectService.createScope(
+      req.userId,
+      `${scenario.title} run`,
+      null,
+      "build"
+    );
+
+    let previousWorkingView: SimpleWorkingView = null;
+    let previousStableView: SimpleStableView = null;
+    const steps = [];
+
+    for (const step of scenario.steps) {
+      const runtimeMessage = step.runtimeMessage ?? step.userTurn;
+      const result = await this.executeRuntimeTurn(req.userId, {
+        scopeId: scope.id,
+        message: runtimeMessage,
+        source: "api",
+        writeTier: "stable",
+        digestMode: "force",
+        metadata: {
+          demoKind: "agent_scenario",
+          agentScenarioId: scenario.id,
+          agentRole: step.activeAgent
         }
-      },
-      assistantReplySource: "api"
+      });
+
+      const settled = await this.waitForRuntimeArtifacts(scope.id, runtimeMessage, result.digestTriggered);
+      const workingView = (settled.working?.view ?? null) as SimpleWorkingView;
+      const stableView = (settled.stable?.view ?? null) as SimpleStableView;
+
+      steps.push({
+        label: step.label,
+        activeAgent: step.activeAgent,
+        userTurn: step.userTurn,
+        answer: result.answer,
+        answerMode: result.answerMode ?? null,
+        retrievalPlan: result.retrievalPlan ?? null,
+        digestTriggered: result.digestTriggered,
+        workingMemoryVersion: settled.working?.version ?? result.workingMemoryVersion ?? null,
+        stableStateVersion: settled.stable?.digestId ?? result.stableStateVersion ?? null,
+        workingMemoryView: workingView,
+        stableStateView: stableView,
+        layerAlignment: settled.layer.layerAlignment ?? result.layerAlignment ?? null,
+        warnings: Array.from(new Set([...(settled.layer.warnings || []), ...(result.warnings || [])])),
+        workingWrites: diffWorkingView(previousWorkingView, workingView),
+        stableWrites: diffStableView(previousStableView, stableView),
+        nextAgentSees: buildNextAgentSees(workingView, stableView),
+        completedAt: new Date().toISOString()
+      });
+
+      previousWorkingView = workingView;
+      previousStableView = stableView;
+    }
+
+    return parseOutput(AgentScenarioRunOutput, {
+      scenarioId: scenario.id,
+      title: scenario.title,
+      scopeId: scope.id,
+      scopeName: scope.name,
+      completedAt: new Date().toISOString(),
+      steps
     });
-
-    return parseOutput(RuntimeTurnOutput, await session.handleTurn({
-      message: input.message,
-      source: input.source ?? "api",
-      policyProfile,
-      policyOverrides: input.policyOverrides,
-      writeTier: input.writeTier,
-      documentKey: input.documentKey,
-      digestMode: input.digestMode ?? "auto",
-      metadata: input.metadata
-    }));
   }
 }

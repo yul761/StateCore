@@ -143,6 +143,35 @@ export type InspectorBundle = {
   layer: LayerStatusOutputShape | null;
 };
 
+export type AgentScenarioRunStepShape = {
+  label: string;
+  activeAgent: "researcher" | "planner" | "executor";
+  userTurn: string;
+  answer: string;
+  answerMode?: RuntimeTurnShape["answerMode"] | null;
+  retrievalPlan?: RetrievalPlanShape | null;
+  digestTriggered: boolean;
+  workingMemoryVersion?: number | null;
+  stableStateVersion?: string | null;
+  workingMemoryView?: WorkingMemoryOutputShape["view"] | null;
+  stableStateView?: StableStateOutputShape["view"] | null;
+  layerAlignment?: RuntimeTurnShape["layerAlignment"] | null;
+  warnings?: string[];
+  workingWrites: string[];
+  stableWrites: string[];
+  nextAgentSees: string[];
+  completedAt: string;
+};
+
+export type AgentScenarioRunShape = {
+  scenarioId: string;
+  title: string;
+  scopeId: string;
+  scopeName: string;
+  completedAt: string;
+  steps: AgentScenarioRunStepShape[];
+};
+
 export type ScopeSummary = {
   id: string;
   name: string;

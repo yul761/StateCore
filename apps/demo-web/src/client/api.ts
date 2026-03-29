@@ -1,5 +1,6 @@
 import type { getDemoConfig } from "./config";
 import {
+  type AgentScenarioRunShape,
   apiFetch,
   type FastLayerViewOutputShape,
   type HealthShape,
@@ -55,4 +56,9 @@ export async function sendRuntimeTurn(config: DemoConfig, userId: string, scopeI
     scopeId,
     message
   });
+}
+
+export async function runAgentScenarioRemote(config: DemoConfig, userId: string, scenarioId: string) {
+  const route = config.routes.agentScenarioRun.replace(":id", scenarioId);
+  return apiFetch<AgentScenarioRunShape>(config.apiBaseUrl, userId, route, "POST");
 }

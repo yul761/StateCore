@@ -16,6 +16,7 @@ const demoWebRoutes: DemoWebRouteMap = {
   setActiveScope: "/scopes/:id/active",
   getActiveState: "/state",
   runtimeTurn: "/memory/runtime/turn",
+  agentScenarioRun: "/demo/agent-scenarios/:id/run",
   workingState: "/memory/working-state",
   stableState: "/memory/stable-state",
   fastView: "/memory/fast-view",
@@ -60,7 +61,7 @@ async function start() {
 
   app.use(async (req, res, next) => {
     const shouldProxy =
-      req.path === "/health" || req.path === "/state" || req.path.startsWith("/scopes") || req.path.startsWith("/memory");
+      req.path === "/health" || req.path === "/state" || req.path.startsWith("/scopes") || req.path.startsWith("/memory") || req.path.startsWith("/demo");
 
     if (!shouldProxy) {
       next();
@@ -68,7 +69,10 @@ async function start() {
     }
 
     if (req.path !== "/health") {
-      const isWriteRoute = (req.method === "POST" && req.path === "/memory/runtime/turn") || (req.method === "POST" && req.path === "/scopes");
+      const isWriteRoute =
+        (req.method === "POST" && req.path === "/memory/runtime/turn")
+        || (req.method === "POST" && req.path === "/scopes")
+        || (req.method === "POST" && req.path.startsWith("/demo/agent-scenarios/"));
       const ip = req.ip || req.socket.remoteAddress || "unknown";
       const bucket = consumeRateLimit(
         `${isWriteRoute ? "write" : "read"}:${ip}`,
