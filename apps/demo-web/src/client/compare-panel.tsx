@@ -28,7 +28,7 @@ export function ComparePanel(props: {
     <section className="panel compare-panel">
       <div className="panel-header">
         <div>
-          <div className="eyebrow">Low-Drift Evidence</div>
+          <div className="eyebrow">Low-Drift Comparison</div>
           <h2>StateCore vs plain LLM</h2>
         </div>
       </div>

@@ -8,7 +8,7 @@ export function AgentDemoPanel(props: {
     <section className="panel agent-panel">
       <div className="panel-header">
         <div>
-          <div className="eyebrow">Agent Demo</div>
+          <div className="eyebrow">Agents</div>
           <h2>Scripted multi-agent handoff is the next step</h2>
         </div>
       </div>
@@ -57,10 +57,10 @@ export function AgentDemoPanel(props: {
           </p>
           <div className="overview-cta-row">
             <button type="button" onClick={onOpenChat}>
-              Open Chat Demo
+              Open Runtime
             </button>
             <button className="ghost" type="button" onClick={onOpenCompare}>
-              Open Baseline Compare
+              Open Compare
             </button>
           </div>
         </article>

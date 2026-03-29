@@ -28,13 +28,13 @@ export function OverviewPanel(props: {
           </div>
           <div className="overview-cta-row">
             <button type="button" onClick={onOpenChat}>
-              Open Chat Demo
+              Open Runtime
             </button>
             <button className="ghost" type="button" onClick={onOpenCompare}>
-              See Baseline Compare
+              See Compare
             </button>
             <button className="ghost" type="button" onClick={onOpenAgents}>
-              Agent Demo Preview
+              Agent Preview
             </button>
           </div>
         </div>
@@ -120,24 +120,24 @@ export function OverviewPanel(props: {
 
       <div className="overview-grid">
         <article className="overview-card">
-          <div className="eyebrow">Try The Chat Demo</div>
+          <div className="eyebrow">Open The Runtime</div>
           <h3>Watch the three layers react live</h3>
           <p className="muted">
             Run a guided scenario, then inspect the Fast Layer, Working Memory, State Layer, and live transcript from the same scope.
           </p>
           <button type="button" onClick={onOpenChat}>
-            Go to Chat Demo
+            Open Runtime
           </button>
         </article>
 
         <article className="overview-card">
-          <div className="eyebrow">See The Compare</div>
+          <div className="eyebrow">Open Compare</div>
           <h3>Read the same scenario side by side</h3>
           <p className="muted">
             Compare StateCore against a plain rolling-summary baseline at every checkpoint, not just at the end.
           </p>
           <button className="ghost" type="button" onClick={onOpenCompare}>
-            Open Baseline Compare
+            Open Compare
           </button>
         </article>
 
@@ -148,7 +148,7 @@ export function OverviewPanel(props: {
             The next demo page shows how different agents can read the same state, hand work off cleanly, and avoid forgetting the current mission.
           </p>
           <button className="ghost" type="button" onClick={onOpenAgents}>
-            Preview Agent Demo
+            Preview Agents
           </button>
         </article>
       </div>

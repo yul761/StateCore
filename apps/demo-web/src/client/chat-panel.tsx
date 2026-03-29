@@ -71,8 +71,8 @@ export function ChatPanel(props: {
     <section className="panel chat-panel">
       <div className="panel-header">
         <div>
-          <div className="eyebrow">Public Runtime Surface</div>
-          <h2>Guided Runtime Demo</h2>
+          <div className="eyebrow">Runtime Surface</div>
+          <h2>Guided Runtime</h2>
         </div>
       </div>
       <div className="chat-priority-grid">

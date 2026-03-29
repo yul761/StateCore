@@ -1,7 +1,7 @@
 export const DEMO_BRAND = {
   eyebrow: "StateCore",
-  title: "Demo Web",
-  subtitle: "A React demo shell that stays on the intended public runtime surface."
+  title: "StateCore",
+  subtitle: "A public window into low-drift memory for long-running LLM systems."
 };
 
 export type DemoTemplate = {

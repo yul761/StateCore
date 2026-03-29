@@ -70,44 +70,44 @@ export function Sidebar(props: {
       </div>
 
       <div className="panel">
-        <h2>{isChatPage ? "Session" : "Guest Session"}</h2>
-        <div className="guest-session-card">
-          <div className="guest-session-row">
-            <div>
-              <div className="field-label">Guest Session</div>
-              <div className="guest-session-id" title={guestUserId}>
-                {guestUserId}
-              </div>
-            </div>
-            <button className="ghost" type="button" onClick={onResetGuestSession}>
-              Reset Guest
-            </button>
-          </div>
-          <div className="guest-session-detail">This browser keeps a private anonymous guest id so scopes stay isolated from other visitors.</div>
-        </div>
         {isChatPage ? (
           <>
+            <h2>Workspace</h2>
+            <div className="guest-session-card">
+              <div className="guest-session-row">
+                <div>
+                  <div className="field-label">Visitor Session</div>
+                  <div className="guest-session-id" title={guestUserId}>
+                    {guestUserId}
+                  </div>
+                </div>
+                <button className="ghost" type="button" onClick={onResetGuestSession}>
+                  Reset
+                </button>
+              </div>
+              <div className="guest-session-detail">This browser keeps a private anonymous visitor id so scopes stay isolated from other visitors.</div>
+            </div>
             <form className="stack" onSubmit={onCreateScope}>
               <input
                 value={scopeName}
                 onChange={(event) => onScopeNameChange(event.target.value)}
                 name="scopeName"
                 type="text"
-                placeholder="New scope name"
+                placeholder="New workspace name"
                 required
               />
-              <button type="submit">Create Scope</button>
+              <button type="submit">Create Workspace</button>
             </form>
             <div className="scope-browser">
               <div className="scope-browser-header">
-                <span className="field-label">Recent Scopes</span>
+                <span className="field-label">Recent Workspaces</span>
                 <span className="scope-browser-count">
-                  {scopeCards.length} {scopeCards.length === 1 ? "scope" : "scopes"}
+                  {scopeCards.length} {scopeCards.length === 1 ? "workspace" : "workspaces"}
                 </span>
               </div>
               <div className="scope-list">
                 {!scopeCards.length ? (
-                  <div className="scope-list-empty">Create a scope to start a three-layer session.</div>
+                  <div className="scope-list-empty">Create a workspace to start a three-layer runtime session.</div>
                 ) : (
                   scopeCards.map((scope) => (
                     <button
@@ -135,7 +135,7 @@ export function Sidebar(props: {
             </div>
             <div className="stack gap-sm">
               <label className="field-label" htmlFor="scope-select">
-                Active Scope
+                Active Workspace
               </label>
               <select id="scope-select" value={activeScopeId || ""} onChange={(event) => onSelectScope(event.target.value)}>
                 {scopeCards.map((scope) => (
@@ -146,37 +146,54 @@ export function Sidebar(props: {
               </select>
             </div>
             <button className="ghost" type="button" onClick={onRefreshScopes}>
-              Refresh Scopes
+              Refresh Workspaces
             </button>
           </>
         ) : (
-          <div className="sidebar-mode-card">
-            {isOverviewPage ? (
-              <>
-                <div className="sidebar-mode-title">Overview Guide</div>
-                <div className="sidebar-mode-body">Start here if you want the product story first: why plain LLM memory drifts, why the three-layer split exists, and where to click next.</div>
-                <FactPills items={["Product overview", "Three-layer flow", "Jump to demos"]} />
-              </>
-            ) : null}
-            {isComparePage ? (
-              <>
-                <div className="sidebar-mode-title">Compare Mode</div>
-                <div className="sidebar-mode-body">
-                  {selectedTemplate
-                    ? `This page shows the same scenario run through StateCore and a plain rolling-summary baseline. Current scenario: ${selectedTemplate.title}.`
-                    : "Pick a compare scenario to see how low-drift memory differs from a plain LLM."}
+          <>
+            <h2>{isOverviewPage ? "Overview" : isComparePage ? "Compare Guide" : "Agents"}</h2>
+            <div className="guest-session-card">
+              <div className="guest-session-row">
+                <div>
+                  <div className="field-label">Visitor Session</div>
+                  <div className="guest-session-id" title={guestUserId}>
+                    {guestUserId}
+                  </div>
                 </div>
-                <FactPills items={[selectedTemplate?.title || "No scenario", compareStatus, ...(selectedTemplate?.watch || []).slice(0, 2)]} />
-              </>
-            ) : null}
-            {isAgentPage ? (
-              <>
-                <div className="sidebar-mode-title">Agent Demo Preview</div>
-                <div className="sidebar-mode-body">This page previews a scripted multi-agent handoff: researcher, planner, and executor reading the same shared memory instead of drifting apart.</div>
-                <FactPills items={["Shared state", "Agent handoff", "Next demo surface"]} />
-              </>
-            ) : null}
-          </div>
+                <button className="ghost" type="button" onClick={onResetGuestSession}>
+                  Reset
+                </button>
+              </div>
+              <div className="guest-session-detail">Anonymous sessions keep this public site lightweight while isolating saved runtime state per visitor.</div>
+            </div>
+            <div className="sidebar-mode-card">
+              {isOverviewPage ? (
+                <>
+                  <div className="sidebar-mode-title">StateCore at a glance</div>
+                  <div className="sidebar-mode-body">Start here for the product story: what drift looks like, why the three-layer split exists, and which view to open next.</div>
+                  <FactPills items={["Product overview", "Three-layer flow", "Runtime", "Compare"]} />
+                </>
+              ) : null}
+              {isComparePage ? (
+                <>
+                  <div className="sidebar-mode-title">How to read compare mode</div>
+                  <div className="sidebar-mode-body">
+                    {selectedTemplate
+                      ? `You are comparing the same scenario through StateCore and a plain rolling-summary baseline. Current scenario: ${selectedTemplate.title}.`
+                      : "Pick a scenario to see where low-drift state starts to diverge from a plain LLM."}
+                  </div>
+                  <FactPills items={[selectedTemplate?.title || "No scenario", compareStatus, "Same model", "Same sequence"]} />
+                </>
+              ) : null}
+              {isAgentPage ? (
+                <>
+                  <div className="sidebar-mode-title">What this page previews</div>
+                  <div className="sidebar-mode-body">The next product surface is a scripted multi-agent handoff where researcher, planner, and executor all read the same durable mission without drifting apart.</div>
+                  <FactPills items={["Shared state", "Handoff", "Planner", "Executor"]} />
+                </>
+              ) : null}
+            </div>
+          </>
         )}
       </div>
 

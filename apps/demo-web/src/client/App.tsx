@@ -61,19 +61,19 @@ export function App({ config }: { config: DemoConfig }) {
 
       <main className="main-stack">
         <section className="panel surface-tabs">
-          <div className="eyebrow">Demo Modes</div>
+          <div className="eyebrow">Product Views</div>
           <div className="surface-tab-row">
             <button className={`ghost surface-tab${page === "overview" ? " surface-tab-active" : ""}`} type="button" onClick={() => setPage("overview")}>
               Overview
             </button>
             <button className={`ghost surface-tab${page === "chat" ? " surface-tab-active" : ""}`} type="button" onClick={() => setPage("chat")}>
-              Chat Demo
+              Runtime
             </button>
             <button className={`ghost surface-tab${page === "compare" ? " surface-tab-active" : ""}`} type="button" onClick={() => setPage("compare")}>
-              Baseline Compare
+              Compare
             </button>
             <button className={`ghost surface-tab${page === "agents" ? " surface-tab-active" : ""}`} type="button" onClick={() => setPage("agents")}>
-              Agent Demo
+              Agents
             </button>
           </div>
         </section>
