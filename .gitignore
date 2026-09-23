@@ -17,3 +17,6 @@ runtime-benchmark.json
 runtime-drift.json
 runtime-readiness-summary.json
 runtime-readiness-summary.md
+
+# superpowers SDD scratch (ledger, briefs, review packages)
+.superpowers/
