@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +6,7 @@ import { createEmbeddedBackend } from "../src/embedded";
 import { openStore } from "../src/store";
 import { clearFacetPackCache, type DigestState } from "@statecore/core";
 import { findScopeByName, setUserFacetPack, insertDigest, insertSnapshot } from "./helpers/seed";
+import type { DigestChatModel } from "../src/digest";
 
 describe("embedded backend, keyless", () => {
   const dir = mkdtempSync(join(tmpdir(), "sc-emb-"));
@@ -150,5 +151,59 @@ describe("embedded backend, keyless", () => {
     } finally {
       await direct.close();
     }
+  });
+});
+
+/** Minimal DigestOutputSchema-valid stage-2 response, copied from
+ * tests/digest-now.test.ts's STAGE2_OUTPUT (see that file for the schema
+ * constraints that make this the smallest valid answer). */
+const STAGE2_OUTPUT = {
+  summary: "The scope digested during a backgroundDigest test.",
+  changes: ["Recorded a new stream event."],
+  nextSteps: ["Continue monitoring incoming events."],
+  profileFacts: []
+};
+
+function makeStubLlm(): DigestChatModel {
+  return { chat: vi.fn(async () => JSON.stringify(STAGE2_OUTPUT)) };
+}
+
+describe("createEmbeddedBackend({ backgroundDigest })", () => {
+  it("false: capture/consolidate-remember never trigger a digest, even past threshold, and close() does not wait on one", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sc-emb-bg-off-"));
+    const llm = makeStubLlm();
+    const env = { STATECORE_DIGEST_THRESHOLD: "1" } as unknown as NodeJS.ProcessEnv;
+
+    const be = createEmbeddedBackend({ dataDir, scopeName: "/tmp/bg-digest-off", env, digestLlm: llm, backgroundDigest: false });
+    await be.init();
+    await be.capture({ text: "first captured event", key: "k1" });
+    await be.capture({ text: "second captured event", key: "k2" });
+    await be.remember({ text: "a consolidate-mode event", consolidate: true });
+    await be.close();
+
+    expect(llm.chat).not.toHaveBeenCalled();
+
+    // A second backend on the same store, still opted out, makes the pending
+    // backlog explicit via digestNow() instead — the one distillation moment
+    // left for a backgroundDigest: false caller (cli/hook.ts's pre-compact).
+    const be2 = createEmbeddedBackend({ dataDir, scopeName: "/tmp/bg-digest-off", env, digestLlm: llm, backgroundDigest: false });
+    await be2.init();
+    const outcome = await be2.digestNow();
+    expect(outcome).toEqual({ ran: true });
+    expect(llm.chat).toHaveBeenCalled();
+    await be2.close();
+  });
+
+  it("default (omitted): a consolidate-remember crossing threshold drives the digest in the background, done by the time close() resolves", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sc-emb-bg-default-"));
+    const llm = makeStubLlm();
+    const env = { STATECORE_DIGEST_THRESHOLD: "1" } as unknown as NodeJS.ProcessEnv;
+
+    const be = createEmbeddedBackend({ dataDir, scopeName: "/tmp/bg-digest-default", env, digestLlm: llm });
+    await be.init();
+    await be.remember({ text: "a consolidate-mode event", consolidate: true });
+    await be.close();
+
+    expect(llm.chat).toHaveBeenCalled();
   });
 });

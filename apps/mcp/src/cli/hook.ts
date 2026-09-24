@@ -54,9 +54,18 @@ export function isCaptureDisabled(env: NodeJS.ProcessEnv): boolean {
 async function withBackend<T>(payload: HookPayload, deps: HookDeps, fn: (backend: MemoryBackend) => Promise<T>): Promise<T> {
   const cwd = payload.cwd?.trim();
   if (!cwd) throw new Error("payload has no cwd; cannot resolve a scope");
-  const backend = createEmbeddedBackend({ dataDir: deps.dataDir, scopeName: resolveScopeName(cwd, deps.env), env: deps.env });
-  await backend.init();
+  // backgroundDigest: false — this process exits right after fn() returns
+  // (close() runs in the finally below), so it must never block on the
+  // fire-and-forget startup-catchup/threshold digest chains a long-lived
+  // host would let run in the background. digestNow() (used by pre-compact)
+  // is unaffected and remains this short-lived caller's one distillation
+  // moment.
+  const backend = createEmbeddedBackend({ dataDir: deps.dataDir, scopeName: resolveScopeName(cwd, deps.env), env: deps.env, backgroundDigest: false });
   try {
+    // init() inside the try: a failure here (e.g. a corrupt store) must still
+    // reach close() below, since init() may have already opened the store
+    // connection that close() needs to release.
+    await backend.init();
     return await fn(backend);
   } finally {
     await backend.close();
