@@ -45,7 +45,7 @@ function monotonicClock(): () => number {
     return last;
   };
 }
-const nowMs = monotonicClock();
+export const nowMs = monotonicClock();
 
 // Mirrors apps/api/src/domain.service.ts#projectsRepo; keep in sync.
 export function makeProjectsRepo(db: LiteDb): ProjectRepo {

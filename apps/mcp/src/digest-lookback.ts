@@ -1,5 +1,7 @@
 // Copied from apps/worker/src/digest-lookback.ts; keep in sync.
 
+import type { SqlValue } from "./lite-db";
+
 /**
  * Which events a digest run considers.
  *
@@ -25,23 +27,20 @@ export interface DigestWindowInput {
   now?: Date;
 }
 
-export function selectDigestEventWindow(input: DigestWindowInput): {
-  scopeId: string;
-  suppressedAt: null;
-  OR?: Array<{ createdAt: { gte: Date } } | { ingestedAt: { gte: Date } }>;
-} {
-  const base = { scopeId: input.scopeId, suppressedAt: null as null };
+/** A SQL fragment (no leading AND) and its params selecting the events one
+ * digest run considers: this scope, unsuppressed, and recent by either clock
+ * when a positive lookback is configured. */
+export function selectDigestEventWindow(input: DigestWindowInput): { where: string; params: SqlValue[] } {
+  const base = { where: `"scopeId" = ? AND "suppressedAt" IS NULL`, params: [input.scopeId] as SqlValue[] };
 
   // A lookback of zero or less is a misconfiguration, not an instruction to
   // digest nothing. Leaving the window off is the safe reading — the event-count
   // and character budgets still bound the work.
-  if (!Number.isFinite(input.lookbackDays) || input.lookbackDays <= 0) {
-    return base;
-  }
+  if (!Number.isFinite(input.lookbackDays) || input.lookbackDays <= 0) return base;
 
-  const cutoff = new Date((input.now ?? new Date()).getTime() - input.lookbackDays * 86_400_000);
+  const cutoff = (input.now ?? new Date()).getTime() - input.lookbackDays * 86_400_000;
   return {
-    ...base,
-    OR: [{ createdAt: { gte: cutoff } }, { ingestedAt: { gte: cutoff } }],
+    where: `${base.where} AND ("createdAt" >= ? OR "ingestedAt" >= ?)`,
+    params: [...base.params, cutoff, cutoff]
   };
 }
