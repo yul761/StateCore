@@ -17,7 +17,7 @@ import {
 } from "./rows";
 
 /**
- * `Date.now()`, but never equal to (or behind) the value this same closure last
+ * `Date.now()`, but never equal to (or behind) the value this same function last
  * returned. Ids here are random UUIDs, not time-ordered, and every table below
  * is listed `ORDER BY "createdAt" DESC, "id" DESC` for pagination — two writes
  * landing in the same millisecond (routine on a fast local disk, and the norm
@@ -27,6 +27,15 @@ import {
  * (Postgres's microsecond `DATETIME` resolution made the collision rare enough
  * that it never surfaced); it is required here purely because this store's
  * `createdAt` column is integer milliseconds.
+ *
+ * Deliberately one counter shared at module scope, not one per repo instance:
+ * `apps/mcp/src/embedded.ts` constructs a fresh `makeMemoryRepo(db)` (etc.) at
+ * each call site rather than reusing one instance, so a per-instance counter
+ * would reset to 0 on every call and the same-millisecond collision it exists
+ * to prevent would reappear across independently-constructed repos. A single
+ * process-wide counter stays correct regardless of how many repo instances a
+ * caller creates, or how it groups tables — it only needs to be strictly
+ * increasing within this process, not per table.
  */
 function monotonicClock(): () => number {
   let last = 0;
@@ -36,11 +45,11 @@ function monotonicClock(): () => number {
     return last;
   };
 }
+const nowMs = monotonicClock();
 
 // Mirrors apps/api/src/domain.service.ts#projectsRepo; keep in sync.
 export function makeProjectsRepo(db: LiteDb): ProjectRepo {
   const byId = (id: string): ScopeRow => db.get<ScopeRow>(`SELECT ${SCOPE_COLUMNS} FROM "ProjectScope" WHERE "id" = ?`, id)!;
-  const nowMs = monotonicClock();
   return {
     create: async (data) => {
       const id = randomUUID();
@@ -104,7 +113,6 @@ const EVENT_ORDER = `ORDER BY "createdAt" DESC, "id" DESC`;
 // Mirrors apps/api/src/domain.service.ts#memoryRepo; keep in sync.
 export function makeMemoryRepo(db: LiteDb): MirroredMemoryRepo {
   const byId = (id: string): EventRow => db.get<EventRow>(`SELECT ${EVENT_COLUMNS} FROM "MemoryEvent" WHERE "id" = ?`, id)!;
-  const nowMs = monotonicClock();
 
   /** Prisma cursor semantics: the cursor row itself is skipped, and the page
    * continues strictly after it in (createdAt DESC, id DESC) order. */
@@ -127,7 +135,11 @@ export function makeMemoryRepo(db: LiteDb): MirroredMemoryRepo {
   return {
     create: async (data) => {
       const id = randomUUID();
-      const now = nowMs();
+      // The monotonic tick is only ever the stored value: when the caller backdates
+      // `createdAt`, that value wins outright and the tick is never requested.
+      // `ingestedAt` is a plain wall-clock stamp — it plays no part in the
+      // `ORDER BY "createdAt" ...` tie-break, so it never needs the tick either.
+      const createdAt = data.createdAt ? toMs(data.createdAt) : nowMs();
       db.run(
         `INSERT INTO "MemoryEvent" ("id", "userId", "scopeId", "type", "source", "key", "content", "contentHash", "createdAt", "ingestedAt", "pinned")
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -139,8 +151,8 @@ export function makeMemoryRepo(db: LiteDb): MirroredMemoryRepo {
         data.key ?? null,
         data.content,
         data.contentHash ?? null,
-        data.createdAt ? toMs(data.createdAt) : now,
-        now,
+        createdAt,
+        Date.now(),
         data.pinned ? 1 : 0
       );
       return eventFromRow(byId(id));
@@ -162,7 +174,7 @@ export function makeMemoryRepo(db: LiteDb): MirroredMemoryRepo {
           return eventFromRow(byId(existing.id));
         }
         const id = randomUUID();
-        const now = nowMs();
+        const createdAt = data.createdAt ? toMs(data.createdAt) : nowMs();
         db.run(
           `INSERT INTO "MemoryEvent" ("id", "userId", "scopeId", "type", "source", "key", "content", "contentHash", "createdAt", "ingestedAt", "pinned")
            VALUES (?, ?, ?, 'document', ?, ?, ?, ?, ?, ?, ?)`,
@@ -173,8 +185,8 @@ export function makeMemoryRepo(db: LiteDb): MirroredMemoryRepo {
           data.key,
           data.content,
           data.contentHash ?? null,
-          data.createdAt ? toMs(data.createdAt) : now,
-          now,
+          createdAt,
+          Date.now(),
           data.pinned ? 1 : 0
         );
         return eventFromRow(byId(id));
@@ -249,7 +261,6 @@ export function makeMemoryRepo(db: LiteDb): MirroredMemoryRepo {
 // Mirrors apps/api/src/domain.service.ts#digestRepo; keep in sync.
 export function makeDigestRepo(db: LiteDb): DigestRepo {
   const byId = (id: string): DigestRow => db.get<DigestRow>(`SELECT ${DIGEST_COLUMNS} FROM "Digest" WHERE "id" = ?`, id)!;
-  const nowMs = monotonicClock();
   return {
     create: async (data) => {
       const id = randomUUID();
