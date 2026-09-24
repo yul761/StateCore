@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEmbeddedBackend, createHttpBackend, type DigestChatModel } from "../src/lib";
 import { openStore } from "../src/store";
+import { latestDigest } from "./helpers/seed";
 
 /** Minimal DigestOutputSchema-valid stage-2 response, copied from
  * tests/lib-export.test.ts's STAGE2_OUTPUT (see that file for the schema
@@ -62,7 +63,7 @@ describe("MemoryBackend.digestNow", () => {
       expect(callCount()).toBe(1);
       const store = await openStore(dataDir);
       try {
-        const digestRow = await store.prisma.digest.findFirst({ orderBy: { createdAt: "desc" } });
+        const digestRow = latestDigest(store.db);
         expect(digestRow?.summary).toBe(STAGE2_OUTPUT.summary);
       } finally {
         await store.close();
