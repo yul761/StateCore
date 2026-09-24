@@ -2,20 +2,29 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import pkg from "../package.json";
+import { runExport } from "./cli/export";
 import { createEmbeddedBackend } from "./embedded";
 import { createHttpBackend } from "./http-backend";
 import { resolveScopeName } from "./scope";
 import { createServer } from "./server";
 import type { MemoryBackend } from "./backend";
 
-/** `--data <dir>` and `--url <base>` from `argv` (already sliced past node/script). Missing flags resolve to defaults, not this parser. */
-export function parseArgs(argv: string[]): { dataDir?: string; url?: string } {
-  const out: { dataDir?: string; url?: string } = {};
+/** `--data <dir>`, `--url <base>` and `--scope <name>` from `argv` (already sliced past node/script and, for a subcommand, past its name). Missing flags resolve to defaults, not this parser. */
+export function parseArgs(argv: string[]): { dataDir?: string; url?: string; scope?: string } {
+  const out: { dataDir?: string; url?: string; scope?: string } = {};
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--data") out.dataDir = argv[++i];
     else if (argv[i] === "--url") out.url = argv[++i];
+    else if (argv[i] === "--scope") out.scope = argv[++i];
   }
   return out;
+}
+
+const SUBCOMMANDS = ["export"] as const;
+type Subcommand = (typeof SUBCOMMANDS)[number];
+
+function isSubcommand(value: string | undefined): value is Subcommand {
+  return (SUBCOMMANDS as readonly string[]).includes(value ?? "");
 }
 
 function resolveBackend(args: { dataDir?: string; url?: string }, env: NodeJS.ProcessEnv): MemoryBackend {
@@ -34,14 +43,25 @@ function resolveBackend(args: { dataDir?: string; url?: string }, env: NodeJS.Pr
 }
 
 async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const defaultDataDir = join(homedir(), ".statecore");
+
+  if (isSubcommand(argv[0])) {
+    const args = parseArgs(argv.slice(1));
+    if (argv[0] === "export") {
+      await runExport({ dataDir: args.dataDir ?? defaultDataDir, scopeName: args.scope }, (text) => process.stdout.write(text));
+    }
+    return;
+  }
+
+  const args = parseArgs(argv);
   const backend = resolveBackend(args, process.env);
   await backend.init();
 
   const server = createServer(backend, pkg.version);
 
   await server.connect(new StdioServerTransport());
-  console.error(`[statecore-mcp] ready over stdio (${args.url ? `remote ${args.url}` : `embedded ${args.dataDir ?? join(homedir(), ".statecore")}`})`);
+  console.error(`[statecore-mcp] ready over stdio (${args.url ? `remote ${args.url}` : `embedded ${args.dataDir ?? defaultDataDir}`})`);
 }
 
 main().catch((error) => {

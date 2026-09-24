@@ -148,4 +148,14 @@ describe("built binary, keyless end-to-end over stdio", () => {
     const stillPresent = groupsAfterForget.flatMap((g) => g.items).find((f) => f.factKey === factKey);
     expect(stillPresent).toBeFalsy();
   });
+
+  it("`export` prints a schema-versioned JSON dump of the same data dir", async () => {
+    await client.callTool({ name: "remember", arguments: { text: "export probe fact" } });
+    const { execFileSync } = await import("node:child_process");
+    const out = execFileSync(distEntry, ["export", "--data", dataDir], { encoding: "utf8", env: { ...getDefaultEnvironment(), STATECORE_SCOPE: "e2e-scope" } });
+    const doc = JSON.parse(out) as { schemaVersion: number; scopes: Array<{ name: string; snapshots: Array<{ state: { factRegistry: Array<{ content: string }> } }> }> };
+    expect(doc.schemaVersion).toBeGreaterThanOrEqual(1);
+    const scope = doc.scopes.find((s) => s.name === "e2e-scope")!;
+    expect(scope.snapshots.at(-1)!.state.factRegistry.some((f) => f.content.includes("export probe fact"))).toBe(true);
+  });
 });
