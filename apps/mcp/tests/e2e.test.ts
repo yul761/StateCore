@@ -122,9 +122,11 @@ describe("built binary, keyless end-to-end over stdio", () => {
     expect(remembered).toEqual({ ok: true, mode: "note" });
 
     const factsAfterRemember = await client.callTool({ name: "facts", arguments: {} });
-    const groupsAfterRemember = JSON.parse((factsAfterRemember.content as Array<{ type: string; text: string }>)[0].text) as Array<{
-      items: Array<{ factId: string; factKey: string; text: string }>;
-    }>;
+    const groupsAfterRemember = (
+      JSON.parse((factsAfterRemember.content as Array<{ type: string; text: string }>)[0].text) as {
+        groups: Array<{ items: Array<{ factId: string; factKey: string; text: string }> }>;
+      }
+    ).groups;
     const found = groupsAfterRemember.flatMap((g) => g.items).find((f) => f.text.includes("e2e binary works"));
     expect(found).toBeTruthy();
     const { factId, factKey } = found!;
@@ -142,9 +144,11 @@ describe("built binary, keyless end-to-end over stdio", () => {
     expect(forgotten).toEqual({ ok: true });
 
     const factsAfterForget = await client.callTool({ name: "facts", arguments: {} });
-    const groupsAfterForget = JSON.parse((factsAfterForget.content as Array<{ type: string; text: string }>)[0].text) as Array<{
-      items: Array<{ factId: string; factKey: string; text: string }>;
-    }>;
+    const groupsAfterForget = (
+      JSON.parse((factsAfterForget.content as Array<{ type: string; text: string }>)[0].text) as {
+        groups: Array<{ items: Array<{ factId: string; factKey: string; text: string }> }>;
+      }
+    ).groups;
     const stillPresent = groupsAfterForget.flatMap((g) => g.items).find((f) => f.factKey === factKey);
     expect(stillPresent).toBeFalsy();
   });

@@ -113,7 +113,7 @@ describe("statecore-mcp/lib export surface", () => {
     try {
       await backend.init();
       const res = await backend.remember({ text: "some stream event", consolidate: true });
-      expect(res).toEqual({ ok: true, mode: "event" });
+      expect(res).toEqual({ ok: true, mode: "event", distillation: "deferred", reason: "no model configured" });
 
       // The FEATURE_LLM/api-key gate runs synchronously before maybeRunDigest's
       // first await, so by the time remember() (which fires it with `void`,

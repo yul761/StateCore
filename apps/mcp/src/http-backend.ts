@@ -59,7 +59,7 @@ export function createHttpBackend(opts: { baseUrl: string; userId: string; scope
     async remember({ text, consolidate }) {
       if (consolidate) {
         await call("POST", "/v1/memory/events", { scopeId, type: "stream", source: "api", content: text });
-        return { ok: true, mode: "event" };
+        return { ok: true, mode: "event", distillation: "scheduled" };
       }
       await call("POST", "/v1/memory/notes", { scopeId, text });
       return { ok: true, mode: "note" };

@@ -82,8 +82,15 @@ export function registerTools(server: McpServer, backend: MemoryBackend): void {
   );
   registrar.registerTool(
     "facts",
-    { description: "List everything currently believed about this project, grouped, with fact ids. Use to review or audit the memory." },
-    async () => json(await backend.facts())
+    {
+      description:
+        "List everything currently believed about this project, grouped, with fact ids, plus how many captured events are still waiting for distillation. Use to review or audit the memory."
+    },
+    async () => {
+      const groups = await backend.facts();
+      const pending = backend.pendingEvents ? await backend.pendingEvents() : null;
+      return json(pending ? { groups, pending } : { groups });
+    }
   );
   registrar.registerTool(
     "why",

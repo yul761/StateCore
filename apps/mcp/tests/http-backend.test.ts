@@ -105,16 +105,17 @@ describe("http backend, --url mode", () => {
     expect(notesReq?.headers["x-user-id"]).toBe("local");
   });
 
-  it("remember() with consolidate posts a stream event to /v1/memory/events", async () => {
+  it("remember() with consolidate posts a stream event to /v1/memory/events and reports distillation scheduled", async () => {
     const be = createHttpBackend({ baseUrl, userId: "local", scopeName: "my-project" });
     await be.init();
     const res = await be.remember({ text: "long conversational turn", consolidate: true });
-    expect(res).toEqual({ ok: true, mode: "event" });
+    expect(res).toEqual({ ok: true, mode: "event", distillation: "scheduled" });
     const eventsReq = requests.find((r) => r.path === "/v1/memory/events");
     expect(eventsReq).toMatchObject({
       method: "POST",
       body: { scopeId: SCOPE_ID, type: "stream", source: "api", content: "long conversational turn" }
     });
+    expect(be.pendingEvents).toBeUndefined();
   });
 
   it("recall() posts to /v1/memory/retrieve with scopeId, query, and maxChars", async () => {

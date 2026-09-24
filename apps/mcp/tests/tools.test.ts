@@ -38,10 +38,12 @@ describe("MCP tool surface, keyless via InMemoryTransport", () => {
     expect(remembered).toEqual({ ok: true, mode: "note" });
 
     const factsResult = await client.callTool({ name: "facts", arguments: {} });
-    const groups = JSON.parse((factsResult.content as Array<{ type: string; text: string }>)[0].text) as Array<{
-      items: Array<{ factId: string; text: string }>;
-    }>;
-    const match = groups.flatMap((g) => g.items).find((f) => f.text.includes("pnpm"));
+    const factsParsed = JSON.parse((factsResult.content as Array<{ type: string; text: string }>)[0].text) as {
+      groups: Array<{ items: Array<{ factId: string; text: string }> }>;
+      pending?: { events: number; oldest: string };
+    };
+    expect(factsParsed.pending).toBeUndefined();
+    const match = factsParsed.groups.flatMap((g) => g.items).find((f) => f.text.includes("pnpm"));
     expect(match).toBeTruthy();
 
     const whyResult = await client.callTool({ name: "why", arguments: { factId: match!.factId } });
@@ -94,6 +96,16 @@ describe("MCP tool surface, keyless via InMemoryTransport", () => {
     const result = await client.callTool({ name: "remember", arguments: { text: "n".repeat(600), consolidate: true } });
     expect(result.isError).toBeFalsy();
     const remembered = JSON.parse((result.content as Array<{ type: string; text: string }>)[0].text);
-    expect(remembered).toEqual({ ok: true, mode: "event" });
+    expect(remembered).toMatchObject({ ok: true, mode: "event" });
+  });
+
+  it("facts tool reports pending distillation events after a consolidate remember", async () => {
+    await client.callTool({ name: "remember", arguments: { text: "a long conversational turn for distillation", consolidate: true } });
+    const factsResult = await client.callTool({ name: "facts", arguments: {} });
+    const factsParsed = JSON.parse((factsResult.content as Array<{ type: string; text: string }>)[0].text) as {
+      groups: unknown[];
+      pending?: { events: number; oldest: string };
+    };
+    expect(factsParsed.pending?.events).toBeGreaterThanOrEqual(1);
   });
 });

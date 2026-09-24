@@ -27,7 +27,7 @@ import type { LiteDb } from "./lite-db";
 import { makeProjectsRepo, makeUserStateRepo, makeMemoryRepo, makeDigestRepo, nowMs } from "./embedded-repos";
 import { parseJson, toJson, fromMs, fromMsNullable, type SnapshotRow } from "./rows";
 import type { MemoryBackend } from "./backend";
-import { maybeRunDigest, type DigestChatModel } from "./digest";
+import { maybeRunDigest, countPendingEvents, hasUsableModel, type DigestChatModel } from "./digest";
 
 const USER = "local";
 
@@ -226,10 +226,14 @@ export function createEmbeddedBackend(opts: {
       }
 
       await new MemoryService(makeMemoryRepo(store.db)).ingestEvent({ userId: USER, scopeId, type: "stream", source: "api", content: text });
-      if (opts.backgroundDigest ?? true) {
+      const background = opts.backgroundDigest ?? true;
+      const scheduled = background && hasUsableModel(opts.env, opts.digestLlm);
+      if (background) {
         inFlight = inFlight.then(() => maybeRunDigest({ db: store.db, userId: USER, scopeId, env: opts.env, reason: "threshold", digestLlm: opts.digestLlm }));
       }
-      return { ok: true, mode: "event" };
+      return scheduled
+        ? { ok: true, mode: "event", distillation: "scheduled" }
+        : { ok: true, mode: "event", distillation: "deferred", reason: background ? "no model configured" : "background digest disabled" };
     },
 
     async capture({ text, key }) {
@@ -368,6 +372,11 @@ export function createEmbeddedBackend(opts: {
       // groupFactsForDisplay drops factRegistry ids; attachFactIds (above) joins
       // them back on so why() has an id to consume.
       return attachFactIds(groupFactsForDisplay(facts, pack), state, pack);
+    },
+
+    async pendingEvents() {
+      const p = countPendingEvents(store.db, scopeId);
+      return p.events ? { events: p.events, oldest: new Date(p.oldest!).toISOString() } : null;
     },
 
     async why({ factId }) {
