@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import pkg from "../package.json";
+import { runDigestCommand } from "./cli/digest";
 import { runExport } from "./cli/export";
 import { hookMain } from "./cli/hook";
 import { createEmbeddedBackend } from "./embedded";
@@ -21,7 +22,7 @@ export function parseArgs(argv: string[]): { dataDir?: string; url?: string; sco
   return out;
 }
 
-const SUBCOMMANDS = ["export", "hook"] as const;
+const SUBCOMMANDS = ["export", "hook", "digest"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
 function isSubcommand(value: string | undefined): value is Subcommand {
@@ -74,6 +75,14 @@ async function main(): Promise<void> {
         err: (text) => process.stderr.write(text),
         scopeName: hookArgs.scope
       });
+      return;
+    }
+    if (argv[0] === "digest") {
+      const { exitCode } = await runDigestCommand(
+        { dataDir: args.dataDir ?? defaultDataDir, scopeName: args.scope ?? resolveScopeName(process.cwd(), process.env), env: process.env },
+        (t) => process.stdout.write(t)
+      );
+      process.exitCode = exitCode;
       return;
     }
     return;

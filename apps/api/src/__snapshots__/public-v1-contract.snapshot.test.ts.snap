@@ -262,6 +262,12 @@ exports[`public /v1 contract surface (frozen) > matches the committed JSON-schem
                         "null",
                       ],
                     },
+                    "factId": {
+                      "type": [
+                        "string",
+                        "null",
+                      ],
+                    },
                     "factKey": {
                       "type": "string",
                     },

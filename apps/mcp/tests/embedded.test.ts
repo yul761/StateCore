@@ -45,6 +45,14 @@ describe("embedded backend, keyless", () => {
     expect(res.mode).toBe("event");
   });
 
+  it("remember(consolidate) reports deferred distillation keylessly, and pendingEvents counts it", async () => {
+    const res = await be.remember({ text: "a long conversational turn about lanterns", consolidate: true });
+    expect(res).toMatchObject({ ok: true, mode: "event", distillation: "deferred", reason: "no model configured" });
+    const pending = await be.pendingEvents!();
+    expect(pending!.events).toBeGreaterThanOrEqual(1);
+    expect(new Date(pending!.oldest).toISOString()).toBe(pending!.oldest);
+  });
+
   it("handoff → recall returns it; a second supersedes the first; why() walks the chain; clear retires", async () => {
     const first = await be.handoff({ summary: "stopped mid-migration", nextSteps: ["wire the controller"] });
     expect(first).toMatchObject({ ok: true, superseded: false });
@@ -216,7 +224,8 @@ describe("createEmbeddedBackend({ backgroundDigest })", () => {
     await be.init();
     await be.capture({ text: "first captured event", key: "k1" });
     await be.capture({ text: "second captured event", key: "k2" });
-    await be.remember({ text: "a consolidate-mode event", consolidate: true });
+    const rememberResult = await be.remember({ text: "a consolidate-mode event", consolidate: true });
+    expect(rememberResult).toMatchObject({ ok: true, mode: "event", distillation: "deferred", reason: "background digest disabled" });
     await be.close();
 
     expect(llm.chat).not.toHaveBeenCalled();
@@ -239,9 +248,18 @@ describe("createEmbeddedBackend({ backgroundDigest })", () => {
 
     const be = createEmbeddedBackend({ dataDir, scopeName: "/tmp/bg-digest-default", env, digestLlm: llm });
     await be.init();
-    await be.remember({ text: "a consolidate-mode event", consolidate: true });
+    const rememberResult = await be.remember({ text: "a consolidate-mode event", consolidate: true });
+    expect(rememberResult).toMatchObject({ ok: true, mode: "event", distillation: "scheduled" });
     await be.close();
 
     expect(llm.chat).toHaveBeenCalled();
+  });
+
+  it("pendingEvents() returns null on a scope with no events", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sc-emb-pending-null-"));
+    const be = createEmbeddedBackend({ dataDir, scopeName: "/tmp/bg-digest-pending-null", env: {} as any });
+    await be.init();
+    expect(await be.pendingEvents!()).toBeNull();
+    await be.close();
   });
 });

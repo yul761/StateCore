@@ -7,7 +7,29 @@
 export interface MemoryBackend {
   /** Records a fact. Without `consolidate`, upserts into the active facts snapshot; with it, appends a stream event for later digesting. */
   /** `superseded`: content of the active note this one replaced (note-revision supersession). */
-  remember(input: { text: string; consolidate?: boolean }): Promise<{ ok: true; mode: "note" | "event"; superseded?: string }>;
+  /**
+   * `distillation` (consolidate path only): `"scheduled"` when a background
+   * digest pass was queued for the new event — it still respects the
+   * pending-event threshold, so the queued pass may end up a no-op if the
+   * backlog hasn't reached it; `"deferred"` when none was queued at all, with
+   * `reason` naming why — `"no model configured"` (no usable LLM) or
+   * `"background digest disabled"` (this backend was created with
+   * `backgroundDigest: false`, e.g. by the Claude Code hooks). The remote
+   * backend reports `"scheduled"` unconditionally, an assumption about the
+   * deployment rather than an observation: the server deployment's own worker
+   * owns digesting, so it is presumed to pick the event up on its own
+   * schedule.
+   */
+  remember(input: {
+    text: string;
+    consolidate?: boolean;
+  }): Promise<{
+    ok: true;
+    mode: "note" | "event";
+    superseded?: string;
+    distillation?: "scheduled" | "deferred";
+    reason?: "no model configured" | "background digest disabled";
+  }>;
   /** The engine's retrieve result for `query`, passed through with an added `budget` reporting the requested `maxChars`. */
   recall(input: { query?: string; maxChars?: number }): Promise<unknown>;
   /** Active facts grouped for display, each item carrying `factKey` and `factId` (the latter for `why`). */
@@ -38,6 +60,13 @@ export interface MemoryBackend {
    * mode only; a backend without it (remote) leaves it undefined.
    */
   capture?(input: { text: string; key: string }): Promise<{ ok: true; stored: boolean; eventId?: string }>;
+  /**
+   * Count of stream events captured/consolidated since the last digest, plus
+   * the oldest one's timestamp (ISO string) — how much is currently waiting
+   * for distillation. `null` when nothing is pending. Embedded mode only; a
+   * backend without it (remote) leaves it undefined.
+   */
+  pendingEvents?(): Promise<{ events: number; oldest: string } | null>;
   /**
    * Demands a digest pass now, regardless of the pending-event threshold —
    * for callers at a moment when raw context is about to disappear from a

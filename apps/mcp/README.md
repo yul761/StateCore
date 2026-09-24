@@ -20,7 +20,7 @@ That starts the server over stdio with no configuration and no model key. Point 
 |---|---|
 | `remember` | Store a fact. Default path is deterministic (no LLM) and immediate; `consolidate: true` queues it as a conversational event for background distillation |
 | `recall` | Retrieve memory relevant to a query, packed into a character budget |
-| `facts` | List everything currently believed, grouped, with fact ids |
+| `facts` | List everything currently believed, grouped, with fact ids, plus how many captured events are still waiting for distillation |
 | `why` | A fact's evidence and its full version chain — the differentiator: not just what is believed, but why, and what it replaced |
 | `forget` | Retire a fact by key. The record is kept and marked retired, not deleted |
 | `handoff` | Record where this session stopped — summary, open questions, next steps. The next session (this client or any other MCP client) gets it at the top of `recall`; each handoff supersedes the previous one on an auditable chain |
@@ -54,8 +54,9 @@ reading and writing the same scope's stop-points.
 | Capability | No key | With key (`FEATURE_LLM=true` + `MODEL_API_KEY`) |
 |---|---|---|
 | `remember` (note path), `facts`, `why`, `forget` | Full — deterministic write, evidence id, audit chain | Same |
-| Conversational memory (`remember` with `consolidate: true`) | Event is stored; background distillation into stable facts never runs | Distilled into facts automatically once pending events cross a threshold (default 20), or on startup catch-up |
+| Conversational memory (`remember` with `consolidate: true`) | Event is stored and `remember` reports `distillation: "deferred"`; `facts` shows the `pending` count; run `statecore-mcp digest` after configuring a key to distil the backlog | Distilled into facts automatically once pending events cross a threshold (default 20), or on startup catch-up |
 | Retrieval quality | Keyword matching, plus CJK bigram matching for Chinese/Japanese/Korean text — no semantic search | Same in embedded/lite mode — semantic (pgvector) search is a full-stack capability, only reachable via `--url` against a keyed StateCore deployment, not by holding a key alone |
+| `statecore-mcp digest` | Reports `{ ran: false, reason: "no-llm" }` | Runs one distillation pass now |
 
 Nothing behind a key is required for the audit trail to work. A key only turns on distillation of raw conversational events into stable facts, and it does that in the background — it is never on the critical path of a tool call.
 
@@ -183,9 +184,8 @@ For embedding the engine in-process instead of talking MCP over stdio — the su
 ## Limitations
 
 - **Lite retrieval is keyword + CJK bigram, not semantic.** The embedded backend runs on SQLite and has no pgvector. `recall` still returns a budgeted digest, believed facts, and matching events, but it will not find a paraphrase with no matching tokens the way the full stack's semantic search can.
-- **Distillation needs a key.** Without one, `remember` with `consolidate: true` stores the raw event, but it is never folded into stable facts — `facts`/`why` will not see it until a key is configured and the digest runs (threshold trigger, or startup catch-up).
+- **Distillation needs a key.** Without one, `remember` with `consolidate: true` stores the raw event, but it is never folded into stable facts — `facts`/`why` will not see it until a key is configured and the digest runs (threshold trigger, or startup catch-up), or run `statecore-mcp digest` once a key is configured to distil the backlog on demand.
 - **One shared SQLite file per `--data` directory, not per project.** Multiple projects on one machine share `~/.statecore/statecore.db` by default, partitioned by scope; only concurrent writes to the *same* scope from multiple processes are guarded (WAL, a 5 s busy timeout, and an in-database digest lock for concurrent distillation).
-- **`--url` mode's `facts()` output carries no fact-registry id per item** (the frozen `/v1` `MemoryFactsOutput` contract doesn't have one) — `why()` in that mode needs a `factId` sourced from a prior `recall()`'s `factRegistry` or a previous provenance response, not invented from `facts()` alone.
 
 ## Data file compatibility
 

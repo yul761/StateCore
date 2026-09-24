@@ -402,9 +402,11 @@ input, `1.3.0` for `maxChars` and the top-level `budget` on retrieve, `1.4.0` fo
 `DELETE /v1/scopes/:id` — three endpoints already live under `/v1` and already
 depended on in production, brought under the guard. `1.5.0` brings in the three
 audit readers on the same grounds: `GET /v1/memory/facts/:factId/provenance`,
-`GET /v1/memory/digests/:digestId/selection`, and `GET /v1/facet-pack`. The
-number sat at `1.0.0` through the first three before this rule existed, which
-meant a reader could not tell a three-month-old spec from a current one.
+`GET /v1/memory/digests/:digestId/selection`, and `GET /v1/facet-pack`.
+`1.6.0` added `POST /v1/memory/handoff`, and `1.7.0` adds the optional
+`factId` on `GET /v1/memory/facts` items. The number sat at `1.0.0` through
+the first three before this rule existed, which meant a reader could not tell
+a three-month-old spec from a current one.
 
 > **Diagnostic fields are not frozen.** `POST /v1/memory/retrieve`,
 > `/v1/memory/answer`, and `/v1/memory/runtime/turn` return additional

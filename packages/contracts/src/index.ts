@@ -273,7 +273,8 @@ export const MemoryFactsOutput = z.object({
         z.object({
           factKey: z.string(),
           text: z.string(),
-          createdAt: z.string().nullable()
+          createdAt: z.string().nullable(),
+          factId: z.string().nullable().optional()
         })
       )
     })

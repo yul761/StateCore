@@ -34,6 +34,7 @@ describe("MemoryFactsService.getFacts", () => {
     // "Call the supplier" (People) was forgotten -> only Projects/"Launching Remi" remains
     expect(groups.map((g) => g.group)).toEqual(["Projects"]);
     expect(groups[0].items.map((i) => i.text)).toEqual(["Launching Remi in July"]);
+    expect(groups[0].items[0].factId).toBe("f1");
     expect(mockPrisma.forgottenFact.findMany).toHaveBeenCalledWith({ where: { scopeId: "scope-1" } });
   });
 

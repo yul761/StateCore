@@ -5,12 +5,11 @@ import {
   ProjectService,
   flattenScopeFacts,
   groupFactsForDisplay,
+  attachFactIds,
   addNoteFact,
   resolveFacetPackForScope,
   buildFactProvenance,
   getActiveFactRegistry,
-  factToGroup,
-  computeFactKey,
   activeHandoffFromRows,
   facetAuthority,
   formatHandoff,
@@ -18,52 +17,16 @@ import {
   HANDOFF_FACET,
   packWithinBudget,
   tokenizeForIndex,
-  type DigestState,
-  type FacetPack,
-  type DisplayGroup
+  type DigestState
 } from "@statecore/core";
 import { openStore, type Store } from "./store";
 import type { LiteDb } from "./lite-db";
 import { makeProjectsRepo, makeUserStateRepo, makeMemoryRepo, makeDigestRepo, nowMs } from "./embedded-repos";
 import { parseJson, toJson, fromMs, fromMsNullable, type SnapshotRow } from "./rows";
 import type { MemoryBackend } from "./backend";
-import { maybeRunDigest, type DigestChatModel } from "./digest";
+import { maybeRunDigest, countPendingEvents, hasUsableModel, type DigestChatModel } from "./digest";
 
 const USER = "local";
-
-/**
- * `DisplayFact`/`groupFactsForDisplay` (packages/core/src/memory-facts.ts) carry
- * `factKey` but no fact-registry id, so `why()` — which looks entries up by
- * `FactRegistryEntry.id` — has nothing to key on from `facts()` output alone.
- * This recomputes the same `factKey` core derives for each active profile-type
- * registry entry (display group + content, `computeFactKey`) and joins it back
- * onto the grouped display items as `factId`. Local to apps/mcp: core's
- * `memory-facts.ts` has no equivalent join to mirror, since the API's
- * `getFacts` response never needed evidence-chain ids.
- */
-function attachFactIds(
-  groups: Array<{ group: DisplayGroup; items: Array<{ factKey: string; text: string; createdAt: string | null }> }>,
-  state: DigestState,
-  pack: FacetPack
-): Array<{ group: DisplayGroup; items: Array<{ factKey: string; text: string; createdAt: string | null; factId: string | null }> }> {
-  // First-wins: mirror flattenScopeFacts' dedup order (memory-facts.ts:60-69,
-  // `if (!byKey.has(factKey))` before insert) so a factKey collision — two
-  // sibling facets sharing a displayGroup with identical normalized content —
-  // resolves to the same registry entry `facts()` actually displays. Keep in
-  // sync with that first-wins invariant.
-  const idByFactKey = new Map<string, string>();
-  for (const entry of getActiveFactRegistry(state)) {
-    if (entry.type !== "profile" || !entry.facet) continue;
-    const group = factToGroup(entry.facet, pack);
-    if (!group) continue;
-    const factKey = computeFactKey(group, entry.content);
-    if (!idByFactKey.has(factKey)) idByFactKey.set(factKey, entry.id);
-  }
-  return groups.map((g) => ({
-    group: g.group,
-    items: g.items.map((item) => ({ ...item, factId: idByFactKey.get(item.factKey) ?? null }))
-  }));
-}
 
 /**
  * Startup digest catch-up, across every scope the user has, not just the one
@@ -226,10 +189,14 @@ export function createEmbeddedBackend(opts: {
       }
 
       await new MemoryService(makeMemoryRepo(store.db)).ingestEvent({ userId: USER, scopeId, type: "stream", source: "api", content: text });
-      if (opts.backgroundDigest ?? true) {
+      const background = opts.backgroundDigest ?? true;
+      const scheduled = background && hasUsableModel(opts.env, opts.digestLlm);
+      if (background) {
         inFlight = inFlight.then(() => maybeRunDigest({ db: store.db, userId: USER, scopeId, env: opts.env, reason: "threshold", digestLlm: opts.digestLlm }));
       }
-      return { ok: true, mode: "event" };
+      return scheduled
+        ? { ok: true, mode: "event", distillation: "scheduled" }
+        : { ok: true, mode: "event", distillation: "deferred", reason: background ? "no model configured" : "background digest disabled" };
     },
 
     async capture({ text, key }) {
@@ -365,9 +332,14 @@ export function createEmbeddedBackend(opts: {
       const pack = await packFor();
       const state = parseJson<DigestState>(snapshot.state, EMPTY_STATE());
       const facts = flattenScopeFacts(state, undefined, pack).filter((f) => !forgottenKeys.has(f.factKey));
-      // groupFactsForDisplay drops factRegistry ids; attachFactIds (above) joins
-      // them back on so why() has an id to consume.
+      // groupFactsForDisplay drops factRegistry ids; attachFactIds (from
+      // @statecore/core) joins them back on so why() has an id to consume.
       return attachFactIds(groupFactsForDisplay(facts, pack), state, pack);
+    },
+
+    async pendingEvents() {
+      const p = countPendingEvents(store.db, scopeId);
+      return p.events ? { events: p.events, oldest: new Date(p.oldest!).toISOString() } : null;
     },
 
     async why({ factId }) {
