@@ -1,6 +1,6 @@
 {
   "name": "statecore-mcp",
-  "version": "0.6.0",
+  "version": "1.0.0",
   "mcpName": "io.github.yul761/statecore-mcp",
   "description": "Zero-deploy MCP memory server backed by the StateCore engine — auditable facts with evidence chains",
   "license": "MIT",
@@ -44,7 +44,11 @@
     },
     "./package.json": "./package.json"
   },
-  "files": ["dist", "README.md", "server.json"],
+  "files": [
+    "dist",
+    "README.md",
+    "server.json"
+  ],
   "scripts": {
     "dev": "tsx --tsconfig ../../tsconfig.dev.json src/main.ts",
     "build": "tsup",
@@ -53,7 +57,9 @@
     "test": "vitest run",
     "prepublishOnly": "pnpm run bundle"
   },
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "zod": "^3.24.1"

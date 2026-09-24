@@ -16,7 +16,7 @@ first hook run downloads `statecore-mcp` through `npx`; later runs use the cache
 
 Without a model key, the injected block is the handoff, your notes, and a
 replay of the most recent captured turns; distillation into facts needs
-`FEATURE_LLM=true` and a key (see `statecore-mcp digest`, coming in 1.0).
+`FEATURE_LLM=true` and a key (see `statecore-mcp digest`).
 
 | When | What happens |
 |---|---|

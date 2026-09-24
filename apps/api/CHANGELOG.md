@@ -1,5 +1,17 @@
 # @statecore/api
 
+## 1.7.0
+
+### Minor Changes
+
+- [#4](https://github.com/yul761/StateCore/pull/4) [`c885c8c`](https://github.com/yul761/StateCore/commit/c885c8caf52007e2f43bf3c63be9874297843df9) Thanks [@yul761](https://github.com/yul761)! - `GET /v1/memory/facts` items carry an additive-optional `factId` — the fact-registry evidence-chain id for that item, or `null` when unmatched (contract `1.7.0`). `attachFactIds`, previously local to `apps/mcp`, is now exported from `@statecore/core` so both the API and the embedded MCP backend join the same id from a single implementation.
+
+### Patch Changes
+
+- Updated dependencies [[`c885c8c`](https://github.com/yul761/StateCore/commit/c885c8caf52007e2f43bf3c63be9874297843df9)]:
+  - @statecore/contracts@1.5.0
+  - @statecore/core@1.5.0
+
 ## 1.6.1
 
 ### Patch Changes

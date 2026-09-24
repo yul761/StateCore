@@ -1,7 +1,7 @@
 {
   "name": "statecore",
   "owner": { "name": "yul761", "url": "https://github.com/yul761" },
-  "metadata": { "description": "StateCore plugins for Claude Code", "version": "0.6.0" },
+  "metadata": { "description": "StateCore plugins for Claude Code", "version": "1.0.0" },
   "plugins": [
     {
       "name": "statecore",

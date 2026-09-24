@@ -187,6 +187,17 @@ For embedding the engine in-process instead of talking MCP over stdio — the su
 - **Distillation needs a key.** Without one, `remember` with `consolidate: true` stores the raw event, but it is never folded into stable facts — `facts`/`why` will not see it until a key is configured and the digest runs (threshold trigger, or startup catch-up), or run `statecore-mcp digest` once a key is configured to distil the backlog on demand.
 - **One shared SQLite file per `--data` directory, not per project.** Multiple projects on one machine share `~/.statecore/statecore.db` by default, partitioned by scope; only concurrent writes to the *same* scope from multiple processes are guarded (WAL, a 5 s busy timeout, and an in-database digest lock for concurrent distillation).
 
+## Stability
+
+`statecore-mcp` 1.x makes four promises:
+
+1. **Tools.** `remember`, `recall`, `facts`, `why`, `forget` and `handoff` keep their names and input schemas. New optional inputs and new output fields may appear; nothing is renamed or removed within 1.x.
+2. **CLI.** The default command runs the MCP server over stdio; `statecore-mcp export`, `statecore-mcp hook <event>` and `statecore-mcp digest` are public subcommands with the flags documented here.
+3. **Data files.** Any 1.x release opens a database written by any earlier 1.x or 0.6.x release and upgrades it in place (see "Data file compatibility").
+4. **Install.** No install-time scripts and no native modules; Node 22.13 or newer is the only requirement.
+
+Not in 1.x, on purpose: semantic (embedding) retrieval in embedded mode, and a resident single-machine daemon. Both are tracked for a later major.
+
 ## Data file compatibility
 
 The store carries its schema version in `PRAGMA user_version`. Any 1.x release
