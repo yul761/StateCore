@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import pkg from "../package.json";
 import { runExport } from "./cli/export";
+import { hookMain } from "./cli/hook";
 import { createEmbeddedBackend } from "./embedded";
 import { createHttpBackend } from "./http-backend";
 import { resolveScopeName } from "./scope";
@@ -20,11 +21,22 @@ export function parseArgs(argv: string[]): { dataDir?: string; url?: string; sco
   return out;
 }
 
-const SUBCOMMANDS = ["export"] as const;
+const SUBCOMMANDS = ["export", "hook"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
 function isSubcommand(value: string | undefined): value is Subcommand {
   return (SUBCOMMANDS as readonly string[]).includes(value ?? "");
+}
+
+/** Reads all of stdin (Claude Code writes the hook payload then closes the pipe). An unattached stdin resolves to "". */
+function readStdin(): Promise<string> {
+  return new Promise((resolve) => {
+    if (process.stdin.isTTY) return resolve("");
+    const chunks: Buffer[] = [];
+    process.stdin.on("data", (chunk: Buffer) => chunks.push(chunk));
+    process.stdin.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    process.stdin.on("error", () => resolve(""));
+  });
 }
 
 function resolveBackend(args: { dataDir?: string; url?: string }, env: NodeJS.ProcessEnv): MemoryBackend {
@@ -51,6 +63,16 @@ async function main(): Promise<void> {
     if (argv[0] === "export") {
       const { found } = await runExport({ dataDir: args.dataDir ?? defaultDataDir, scopeName: args.scope }, (text) => process.stdout.write(text));
       if (!found) process.exitCode = 1;
+    }
+    if (argv[0] === "hook") {
+      const stdin = await readStdin();
+      await hookMain(argv[1], stdin, {
+        dataDir: parseArgs(argv.slice(2)).dataDir ?? defaultDataDir,
+        env: process.env,
+        out: (text) => process.stdout.write(text),
+        err: (text) => process.stderr.write(text)
+      });
+      return;
     }
     return;
   }
