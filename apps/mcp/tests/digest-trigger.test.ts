@@ -16,32 +16,34 @@ describe("digest trigger", () => {
     const store = await openStore(dir);
     try {
       const scopeId = "scope-under-lock";
-      expect(await acquireDigestLock(store.prisma, scopeId)).toBe(true);
-      expect(await acquireDigestLock(store.prisma, scopeId)).toBe(false);
-      await releaseDigestLock(store.prisma, scopeId);
-      expect(await acquireDigestLock(store.prisma, scopeId)).toBe(true);
+      expect(await acquireDigestLock(store.db, scopeId)).toBe(true);
+      expect(await acquireDigestLock(store.db, scopeId)).toBe(false);
+      await releaseDigestLock(store.db, scopeId);
+      expect(await acquireDigestLock(store.db, scopeId)).toBe(true);
     } finally {
       await store.close();
     }
   });
 
   // Regression for a Critical review finding: maybeRunDigest's pending-count
-  // reads (prisma.digest.findFirst, prisma.memoryEvent.count) ran before its
-  // try/catch, and both embedded.ts call sites invoke it fire-and-forget
-  // (`void maybeRunDigest(...)`) — a rejection there was an unhandled
-  // promise rejection, which crashes the process on modern Node. A stubbed
-  // prisma whose very first call (digest.findFirst) rejects reaches that
-  // pre-lock path without a real LLM call ever happening.
-  it("never rejects, even when a pre-lock prisma read fails", async () => {
+  // reads (db.get for the last digest, db.get for the pending count) ran
+  // before its try/catch, and both embedded.ts call sites invoke it
+  // fire-and-forget (`void maybeRunDigest(...)`) — a rejection there was an
+  // unhandled promise rejection, which crashes the process on modern Node. A
+  // stubbed db whose very first call (get) throws reaches that pre-lock path
+  // without a real LLM call ever happening.
+  it("never rejects, even when a pre-lock db read fails", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      const failingPrisma = {
-        digest: { findFirst: () => Promise.reject(new Error("database is locked")) }
+      const failingDb = {
+        get: () => {
+          throw new Error("database is locked");
+        }
       } as any;
 
       await expect(
         maybeRunDigest({
-          prisma: failingPrisma,
+          db: failingDb,
           userId: "local",
           scopeId: "scope-boom",
           env: { FEATURE_LLM: "true", MODEL_API_KEY: "test-key" } as any,

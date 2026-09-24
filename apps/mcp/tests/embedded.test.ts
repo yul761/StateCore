@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createEmbeddedBackend } from "../src/embedded";
 import { openStore } from "../src/store";
 import { clearFacetPackCache, type DigestState } from "@statecore/core";
+import { findScopeByName, setUserFacetPack, insertDigest, insertSnapshot } from "./helpers/seed";
 
 describe("embedded backend, keyless", () => {
   const dir = mkdtempSync(join(tmpdir(), "sc-emb-"));
@@ -89,24 +90,17 @@ describe("embedded backend, keyless", () => {
   it("facts()/why() resolve a same-displayGroup factKey collision to the first-registered entry", async () => {
     const direct = await openStore(dir);
     try {
-      const scope = await direct.prisma.projectScope.findFirstOrThrow({ where: { userId: "local", name: "/tmp/fake-project" } });
-      await direct.prisma.user.update({
-        where: { id: "local" },
-        data: {
-          facetPack: {
-            name: "collide-test",
-            facets: [
-              { name: "a", displayGroup: "Collide", cap: 8, writeProtected: false, description: "a" },
-              { name: "b", displayGroup: "Collide", cap: 8, writeProtected: false, description: "b" }
-            ]
-          }
-        }
+      const scope = findScopeByName(direct.db, "/tmp/fake-project")!;
+      setUserFacetPack(direct.db, "local", {
+        name: "collide-test",
+        facets: [
+          { name: "a", displayGroup: "Collide", cap: 8, writeProtected: false, description: "a" },
+          { name: "b", displayGroup: "Collide", cap: 8, writeProtected: false, description: "b" }
+        ]
       });
       clearFacetPackCache("local");
 
-      const digest = await direct.prisma.digest.create({
-        data: { scopeId: scope.id, summary: "collision-fixture", changes: "", nextSteps: [] }
-      });
+      const digest = insertDigest(direct.db, { scopeId: scope.id, summary: "collision-fixture" });
       const state: DigestState = {
         stableFacts: { decisions: [] },
         workingNotes: {},
@@ -117,9 +111,7 @@ describe("embedded backend, keyless", () => {
         ],
         profile: {}
       };
-      await direct.prisma.digestStateSnapshot.create({
-        data: { scopeId: scope.id, digestId: digest.id, state: state as any }
-      });
+      insertSnapshot(direct.db, { scopeId: scope.id, digestId: digest.id, state });
 
       const groups: any = await be.facts();
       const collided = groups.flatMap((g: any) => g.items).filter((f: any) => f.text.toLowerCase() === "same fact text");

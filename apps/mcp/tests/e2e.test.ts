@@ -19,22 +19,20 @@ const repoRoot = resolve(mcpRoot, "../..");
 const distEntry = join(mcpRoot, "dist", "main.js");
 
 /** Newest mtime (ms) across the TS sources this bundle is built from — this
- * package's own `src/`, plus the three workspace packages tsup inlines
- * (`@statecore/core`, `@statecore/prompts`, `@statecore/db`, via `noExternal` in
+ * package's own `src/`, plus the two workspace packages tsup inlines
+ * (`@statecore/core`, `@statecore/prompts`, via `noExternal` in
  * `tsup.config.ts`), whose *built* `dist/` output the bundle also depends on
  * (see `prebundle` in `package.json`), plus this package's own `tsup.config.ts`
  * (bundler entry/external/noExternal settings) and `package.json` (the `build`
  * script itself, and dependency/devDependency edits that change what tsup
- * inlines vs. externalizes). Walking only `.ts`/`.prisma` files under the
- * source roots keeps this cheap and avoids false staleness from each
- * package's own `dist/`. */
+ * inlines vs. externalizes). Walking only `.ts` files under the source roots
+ * keeps this cheap and avoids false staleness from each package's own
+ * `dist/`. */
 function newestSourceMtime(): number {
   const roots = [
     join(mcpRoot, "src"),
     join(repoRoot, "packages/core/src"),
-    join(repoRoot, "packages/prompts/src"),
-    join(repoRoot, "packages/db/src"),
-    join(repoRoot, "packages/db/prisma")
+    join(repoRoot, "packages/prompts/src")
   ];
   const files = [join(mcpRoot, "tsup.config.ts"), join(mcpRoot, "package.json")];
   let newest = 0;
@@ -150,4 +148,45 @@ describe("built binary, keyless end-to-end over stdio", () => {
     const stillPresent = groupsAfterForget.flatMap((g) => g.items).find((f) => f.factKey === factKey);
     expect(stillPresent).toBeFalsy();
   });
+
+  it("`export` prints a schema-versioned JSON dump of the same data dir", async () => {
+    await client.callTool({ name: "remember", arguments: { text: "export probe fact" } });
+    const { execFileSync } = await import("node:child_process");
+    const out = execFileSync(distEntry, ["export", "--data", dataDir], { encoding: "utf8", env: { ...getDefaultEnvironment(), STATECORE_SCOPE: "e2e-scope" } });
+    const doc = JSON.parse(out) as { schemaVersion: number; scopes: Array<{ name: string; factRegistry: Array<{ content: string }> }> };
+    expect(doc.schemaVersion).toBeGreaterThanOrEqual(1);
+    const scope = doc.scopes.find((s) => s.name === "e2e-scope")!;
+    expect(scope.factRegistry.some((f) => f.content.includes("export probe fact"))).toBe(true);
+  });
+
+  // Two dependencies this test relies on to keep all 20 notes it writes (plus
+  // the 2 from earlier tests in this file, ~22 total) distinct and active:
+  // the `notes` facet cap of 30 (packages/core/src/facet-registry.ts) is
+  // never reached, so nothing here gets evicted; and core's note-revision
+  // detection (isNoteRevision, packages/core/src/digest/similarity.ts) does
+  // not match e.g. "concurrent A0 distinct-token-alpha-0" against "concurrent
+  // A1 distinct-token-alpha-1" as a revision of the same note — the differing
+  // numeric/token suffix is enough to diverge them — so none of the 20 collide
+  // pairwise into supersession.
+  it("two processes writing the same scope both succeed (WAL + busy timeout)", async () => {
+    const other = new Client({ name: "e2e-second", version: "0.0.0-test" });
+    const otherTransport = new StdioClientTransport({ command: distEntry, args: ["--data", dataDir], env: { ...getDefaultEnvironment(), STATECORE_SCOPE: "e2e-scope" } });
+    await other.connect(otherTransport);
+    try {
+      await Promise.all(
+        Array.from({ length: 10 }, (_, i) => [
+          client.callTool({ name: "remember", arguments: { text: `concurrent A${i} distinct-token-alpha-${i}` } }),
+          other.callTool({ name: "remember", arguments: { text: `concurrent B${i} distinct-token-beta-${i}` } })
+        ]).flat()
+      );
+      const result = (await other.callTool({ name: "facts", arguments: {} })) as { content: Array<{ text: string }> };
+      const text = result.content.map((c) => c.text).join("\n");
+      for (let i = 0; i < 10; i++) {
+        expect(text).toContain(`distinct-token-alpha-${i}`);
+        expect(text).toContain(`distinct-token-beta-${i}`);
+      }
+    } finally {
+      await other.close();
+    }
+  }, 60_000);
 });

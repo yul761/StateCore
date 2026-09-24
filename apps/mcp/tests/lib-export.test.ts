@@ -8,12 +8,13 @@
 // createEmbeddedBackend's opts.digestLlm, and the direct runScopeDigest
 // contract; the last test confirms the pre-existing keyless/keyed env
 // behavior is unchanged when no llm is injected.
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEmbeddedBackend, runScopeDigest, type DigestChatModel } from "../src/lib";
 import { openStore } from "../src/store";
+import { seedUser, seedScope, insertEvent, latestDigest, lockRows } from "./helpers/seed";
 
 const USER = "local";
 
@@ -46,26 +47,20 @@ describe("statecore-mcp/lib export surface", () => {
     const dataDir = mkdtempSync(join(tmpdir(), "sc-mcp-lib-runscope-"));
     const store = await openStore(dataDir);
     try {
-      await store.prisma.user.upsert({ where: { identity: USER }, update: {}, create: { id: USER, identity: USER } });
-      const scope = await store.prisma.projectScope.create({ data: { userId: USER, name: "lib-runscope-test", template: "project" } });
+      seedUser(store.db, USER);
+      const scope = seedScope(store.db, { userId: USER, name: "lib-runscope-test", template: "project" });
       for (let i = 0; i < 3; i += 1) {
-        await store.prisma.memoryEvent.create({
-          data: { userId: USER, scopeId: scope.id, type: "stream", source: "api", content: `stream event ${i}` }
-        });
+        insertEvent(store.db, { scopeId: scope.id, userId: USER, content: `stream event ${i}` });
       }
 
       const { llm, callCount } = makeStubLlm();
-      await runScopeDigest({ prisma: store.prisma, userId: USER, scopeId: scope.id, llm });
+      await runScopeDigest({ db: store.db, userId: USER, scopeId: scope.id, llm });
 
       expect(callCount()).toBe(1);
-      const digestRow = await store.prisma.digest.findFirst({ where: { scopeId: scope.id } });
+      const digestRow = latestDigest(store.db, scope.id);
       expect(digestRow?.summary).toBe(STAGE2_OUTPUT.summary);
 
-      const lockRows = await store.prisma.$queryRawUnsafe<Array<{ scopeId: string }>>(
-        `SELECT "scopeId" FROM "DigestLock" WHERE "scopeId" = ?`,
-        scope.id
-      );
-      expect(lockRows).toHaveLength(0); // released, not left held
+      expect(lockRows(store.db, scope.id)).toHaveLength(0); // released, not left held
     } finally {
       await store.close();
     }
@@ -83,23 +78,27 @@ describe("statecore-mcp/lib export surface", () => {
       env: { STATECORE_DIGEST_THRESHOLD: String(threshold) } as unknown as NodeJS.ProcessEnv,
       digestLlm: llm
     });
+    await backend.init();
+    for (let i = 0; i < threshold + 1; i += 1) {
+      await backend.remember({ text: `stream event ${i}`, consolidate: true });
+    }
+
+    // close() now awaits every chained post-remember digest (and the startup
+    // catch-up) before releasing the store connection they run against, so
+    // closing the backend IS the wait: no need to poll the DigestLock table
+    // to confirm every triggered run (the threshold+1 remember() calls above
+    // each fire their own fire-and-forget maybeRunDigest, though only one
+    // wins the lock and actually runs — see digest.ts's running-flag
+    // comment) has released it first.
+    await backend.close();
+
+    expect(callCount()).toBeGreaterThan(0);
+    const store = await openStore(dataDir);
     try {
-      await backend.init();
-      for (let i = 0; i < threshold + 1; i += 1) {
-        await backend.remember({ text: `stream event ${i}`, consolidate: true });
-      }
-
-      await vi.waitFor(() => expect(callCount()).toBeGreaterThan(0), { timeout: 2000, interval: 20 });
-
-      const store = await openStore(dataDir);
-      try {
-        const digestRow = await store.prisma.digest.findFirst({ orderBy: { createdAt: "desc" } });
-        expect(digestRow?.summary).toBe(STAGE2_OUTPUT.summary);
-      } finally {
-        await store.close();
-      }
+      const digestRow = latestDigest(store.db);
+      expect(digestRow?.summary).toBe(STAGE2_OUTPUT.summary);
     } finally {
-      await backend.close();
+      await store.close();
     }
   });
 
@@ -122,8 +121,8 @@ describe("statecore-mcp/lib export surface", () => {
       // completion — no digest row exists, deterministically, with no wait.
       const store = await openStore(dataDir);
       try {
-        const digestRow = await store.prisma.digest.findFirst();
-        expect(digestRow).toBeNull();
+        const digestRow = latestDigest(store.db);
+        expect(digestRow).toBeUndefined();
       } finally {
         await store.close();
       }
@@ -143,9 +142,9 @@ describe("listScopes", () => {
 
       const store = await openStore(dataDir);
       try {
-        await store.prisma.user.upsert({ where: { identity: USER }, update: {}, create: { id: USER, identity: USER } });
-        await store.prisma.projectScope.create({ data: { userId: USER, name: "/proj/beta", template: "project" } });
-        await store.prisma.projectScope.create({ data: { userId: USER, name: "/proj/alpha", template: "project" } });
+        seedUser(store.db, USER);
+        seedScope(store.db, { userId: USER, name: "/proj/beta", template: "project" });
+        seedScope(store.db, { userId: USER, name: "/proj/alpha", template: "project" });
       } finally {
         await store.close();
       }

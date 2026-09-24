@@ -3,7 +3,6 @@ import {
   resolveFacetPackForScope,
   buildFacetPromptSection,
   runDigestControlPipeline,
-  type Digest,
   type DigestState,
   type FacetPackStore
 } from "@statecore/core";
@@ -15,7 +14,19 @@ import {
   consolidateFacetSystemPrompt,
   consolidateFacetUserPrompt
 } from "@statecore/prompts";
-import type { LitePrisma } from "./store";
+import type { LiteDb } from "./lite-db";
+import {
+  EVENT_COLUMNS,
+  SCOPE_COLUMNS,
+  eventFromRow,
+  scopeFromRow,
+  parseJson,
+  digestFromRow,
+  DIGEST_COLUMNS,
+  type EventRow,
+  type ScopeRow,
+  type DigestRow
+} from "./rows";
 import { acquireDigestLock, releaseDigestLock } from "./digest-lock";
 import { selectDigestEventWindow } from "./digest-lookback";
 import { createDigestWithSnapshot } from "./digest-write";
@@ -133,33 +144,10 @@ function readDigestEnv(env: NodeJS.ProcessEnv): DigestEnvConfig {
   };
 }
 
-function makeFacetPackStore(prisma: LitePrisma): FacetPackStore {
+function makeFacetPackStore(db: LiteDb): FacetPackStore {
   return {
-    findFacetPack: async (userId) => (await prisma.user.findUnique({ where: { id: userId }, select: { facetPack: true } }))?.facetPack ?? null
-  };
-}
-
-type DigestRow = {
-  id: string;
-  scopeId: string;
-  summary: string;
-  changes: string;
-  nextSteps: unknown;
-  createdAt: Date;
-  rebuildGroupId?: string | null;
-};
-
-// Local equivalent of apps/worker/src/main.ts#toCoreDigest; converts a raw
-// digest row into the shape runDigestControlPipeline requires.
-function toCoreDigest(row: DigestRow): Digest {
-  return {
-    id: row.id,
-    scopeId: row.scopeId,
-    summary: row.summary,
-    changes: row.changes,
-    nextSteps: Array.isArray(row.nextSteps) ? (row.nextSteps as string[]) : [],
-    createdAt: row.createdAt,
-    rebuildGroupId: row.rebuildGroupId ?? null
+    findFacetPack: async (userId) =>
+      parseJson<unknown>(db.get<{ facetPack: string | null }>(`SELECT "facetPack" FROM "User" WHERE "id" = ?`, userId)?.facetPack ?? null, null) as any
   };
 }
 
@@ -172,49 +160,46 @@ function toCoreDigest(row: DigestRow): Digest {
  * working-memory refresh, BullMQ job logging, and drift metrics — none of
  * which the embedded backend has anywhere to send.
  */
-async function runDigestPipelineCore(prisma: LitePrisma, userId: string, scopeId: string, llm: DigestChatModel): Promise<void> {
-  const scope = await prisma.projectScope.findFirst({ where: { id: scopeId, userId } });
-  if (!scope) {
+async function runDigestPipelineCore(db: LiteDb, userId: string, scopeId: string, llm: DigestChatModel): Promise<void> {
+  const scopeRow = db.get<ScopeRow>(`SELECT ${SCOPE_COLUMNS} FROM "ProjectScope" WHERE "id" = ? AND "userId" = ?`, scopeId, userId);
+  if (!scopeRow) {
     console.error(`[statecore-mcp] digest: scope ${scopeId} not found for user ${userId}; skipping`);
     return;
   }
-  const facetPack = await resolveFacetPackForScope(makeFacetPackStore(prisma), userId, scope.template);
+  const scope = scopeFromRow(scopeRow);
+  const facetPack = await resolveFacetPackForScope(makeFacetPackStore(db), userId, scope.template ?? "project");
 
-  const lastDigestRow = await prisma.digest.findFirst({
-    where: { scopeId },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }]
-  });
-  const lastStateRow = await prisma.digestStateSnapshot.findFirst({
-    where: { scopeId },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }]
-  });
+  const lastDigestRow = db.get<DigestRow>(`SELECT ${DIGEST_COLUMNS} FROM "Digest" WHERE "scopeId" = ? ORDER BY "createdAt" DESC, "id" DESC LIMIT 1`, scopeId);
+  const lastStateRow = db.get<{ state: string }>(
+    `SELECT "state" FROM "DigestStateSnapshot" WHERE "scopeId" = ? ORDER BY "createdAt" DESC, "id" DESC LIMIT 1`,
+    scopeId
+  );
 
-  const lookbackWindow = selectDigestEventWindow({ scopeId, lookbackDays: DIGEST_CONFIG.maxDaysLookback });
-  const recentStreamEvents = await prisma.memoryEvent.findMany({
-    where: { ...lookbackWindow, type: "stream" },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: lastDigestRow ? DIGEST_CONFIG.maxRecentEvents : DIGEST_CONFIG.firstRunMaxEvents
-  });
-  const recentDocumentEvents = await prisma.memoryEvent.findMany({
-    where: { ...lookbackWindow, type: "document" },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }]
-  });
+  const window = selectDigestEventWindow({ scopeId, lookbackDays: DIGEST_CONFIG.maxDaysLookback });
+  const recentStreamEvents = db
+    .all<EventRow>(
+      `SELECT ${EVENT_COLUMNS} FROM "MemoryEvent" WHERE ${window.where} AND "type" = 'stream' ORDER BY "createdAt" DESC, "id" DESC LIMIT ?`,
+      ...window.params,
+      lastDigestRow ? DIGEST_CONFIG.maxRecentEvents : DIGEST_CONFIG.firstRunMaxEvents
+    )
+    .map(eventFromRow);
+  const recentDocumentEvents = db
+    .all<EventRow>(`SELECT ${EVENT_COLUMNS} FROM "MemoryEvent" WHERE ${window.where} AND "type" = 'document' ORDER BY "createdAt" DESC, "id" DESC`, ...window.params)
+    .map(eventFromRow);
   const recentEvents = [...recentStreamEvents, ...recentDocumentEvents];
 
-  const prevDigestState = (lastStateRow?.state as unknown as DigestState) ?? null;
+  const prevDigestState = lastStateRow ? parseJson<DigestState | null>(lastStateRow.state, null) : null;
 
-  const forgottenRows = await prisma.forgottenFact.findMany({
-    where: { scopeId },
-    orderBy: { forgottenAt: "desc" },
-    take: 100,
-    select: { factKey: true, contentSnapshot: true }
-  });
+  const forgottenRows = db.all<{ factKey: string; contentSnapshot: string | null }>(
+    `SELECT "factKey", "contentSnapshot" FROM "ForgottenFact" WHERE "scopeId" = ? ORDER BY "forgottenAt" DESC LIMIT 100`,
+    scopeId
+  );
   const forgottenFactKeys = new Set(forgottenRows.map((f) => f.factKey));
   const forgottenFactContents = forgottenRows.map((f) => (f.contentSnapshot ?? "").trim()).filter(Boolean);
 
   const result = await runDigestControlPipeline({
     scope,
-    lastDigest: lastDigestRow ? toCoreDigest(lastDigestRow) : null,
+    lastDigest: lastDigestRow ? digestFromRow(lastDigestRow) : null,
     prevState: prevDigestState,
     recentEvents,
     llm,
@@ -241,7 +226,7 @@ async function runDigestPipelineCore(prisma: LitePrisma, userId: string, scopeId
     forgottenFactContents
   });
 
-  await createDigestWithSnapshot(prisma, {
+  await createDigestWithSnapshot(db, {
     scopeId,
     summary: result.digest.summary,
     changes: result.digest.changes.map((c) => `- ${c}`).join("\n"),
@@ -257,7 +242,7 @@ async function runDigestPipelineCore(prisma: LitePrisma, userId: string, scopeId
  * fields and delegates to {@link runDigestPipelineCore}. Used by
  * `maybeRunDigest`'s default (non-injected) path.
  */
-async function runDigestPipeline(prisma: LitePrisma, userId: string, scopeId: string, digestEnv: DigestEnvConfig): Promise<void> {
+async function runDigestPipeline(db: LiteDb, userId: string, scopeId: string, digestEnv: DigestEnvConfig): Promise<void> {
   const provider = createModelProvider({
     provider: digestEnv.provider,
     apiKey: digestEnv.apiKey,
@@ -285,7 +270,7 @@ async function runDigestPipeline(prisma: LitePrisma, userId: string, scopeId: st
         ...(digestEnv.structuredOutputReasoningEffort ? { reasoningEffort: digestEnv.structuredOutputReasoningEffort } : {})
       })
   };
-  await runDigestPipelineCore(prisma, userId, scopeId, llm);
+  await runDigestPipelineCore(db, userId, scopeId, llm);
 }
 
 /**
@@ -302,9 +287,7 @@ async function runDigestPipeline(prisma: LitePrisma, userId: string, scopeId: st
  * promise. A fire-and-forget caller must wrap this call itself; use
  * `maybeRunDigest` where a never-rejecting call is required.
  *
- * @param opts.prisma - Lite client for the scope's SQLite file, typed
- *   `unknown` at this public surface (the concrete generated-client type is
- *   internal to this package) and cast back before use.
+ * @param opts.db - Lite client for the scope's SQLite file.
  * @param opts.userId - Owning user id.
  * @param opts.scopeId - Scope to digest.
  * @param opts.llm - Chat model the pipeline calls for stage 1/2 + consolidation.
@@ -315,19 +298,19 @@ async function runDigestPipeline(prisma: LitePrisma, userId: string, scopeId: st
  *   invalid model response) — propagated uncaught.
  */
 export async function runScopeDigest(opts: {
-  prisma: unknown;
+  db: LiteDb;
   userId: string;
   scopeId: string;
   llm: DigestChatModel;
   env?: NodeJS.ProcessEnv;
 }): Promise<void> {
-  const prisma = opts.prisma as LitePrisma;
-  const locked = await acquireDigestLock(prisma, opts.scopeId);
+  const { db } = opts;
+  const locked = await acquireDigestLock(db, opts.scopeId);
   if (!locked) return;
   try {
-    await runDigestPipelineCore(prisma, opts.userId, opts.scopeId, opts.llm);
+    await runDigestPipelineCore(db, opts.userId, opts.scopeId, opts.llm);
   } finally {
-    await releaseDigestLock(prisma, opts.scopeId);
+    await releaseDigestLock(db, opts.scopeId);
   }
 }
 
@@ -358,7 +341,7 @@ export type DigestRunOutcome =
  * configured, so keyless embedded callers never pay for a lock or a query
  * they can't use the result of.
  *
- * @param opts.prisma - Lite client for the scope's SQLite file.
+ * @param opts.db - Lite client for the scope's SQLite file.
  * @param opts.userId - Owning user id.
  * @param opts.scopeId - Scope to consider for a digest run.
  * @param opts.env - Process env carrying `FEATURE_LLM`/`MODEL_*`/`STATECORE_DIGEST_THRESHOLD`.
@@ -372,14 +355,14 @@ export type DigestRunOutcome =
  * @returns how the invocation ended; never rejects.
  */
 export async function maybeRunDigest(opts: {
-  prisma: LitePrisma;
+  db: LiteDb;
   userId: string;
   scopeId: string;
   env: NodeJS.ProcessEnv;
   reason: "startup" | "threshold" | "explicit";
   digestLlm?: DigestChatModel;
 }): Promise<DigestRunOutcome> {
-  const { prisma, userId, scopeId, env, reason, digestLlm } = opts;
+  const { db, userId, scopeId, env, reason, digestLlm } = opts;
   try {
     const digestEnv = readDigestEnv(env);
     if (!digestLlm) {
@@ -387,46 +370,40 @@ export async function maybeRunDigest(opts: {
       if (!digestEnv.featureLlm || !effectiveApiKey) return "skipped-no-llm";
     }
 
-    const lastDigest = await prisma.digest.findFirst({
-      where: { scopeId },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      select: { createdAt: true }
-    });
+    const lastDigest = db.get<{ createdAt: number }>(`SELECT "createdAt" FROM "Digest" WHERE "scopeId" = ? ORDER BY "createdAt" DESC, "id" DESC LIMIT 1`, scopeId);
     // Same either-clock condition as the lookback window this trigger feeds
     // (selectDigestEventWindow, digest-lookback.ts): an event is "pending"
     // if it is new by either createdAt (occurredAt-overridden "when it
     // happened") or ingestedAt (never overwritten "when we learned it"), so
     // an event that would be selected into the run also counts toward
     // triggering it.
-    const sinceLastDigest = lastDigest?.createdAt ?? new Date(0);
-    const pendingCount = await prisma.memoryEvent.count({
-      where: {
-        scopeId,
-        type: "stream",
-        suppressedAt: null,
-        OR: [{ createdAt: { gt: sinceLastDigest } }, { ingestedAt: { gt: sinceLastDigest } }]
-      }
-    });
+    const sinceLastDigest = lastDigest?.createdAt ?? 0;
+    const pendingCount = db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM "MemoryEvent" WHERE "scopeId" = ? AND "type" = 'stream' AND "suppressedAt" IS NULL AND ("createdAt" > ? OR "ingestedAt" > ?)`,
+      scopeId,
+      sinceLastDigest,
+      sinceLastDigest
+    )!.n;
     const threshold = reason === "threshold" ? digestEnv.threshold : 1;
     if (!shouldDigest(pendingCount, threshold)) return "skipped-below-threshold";
 
     if (running) return "skipped-locked";
-    const locked = await acquireDigestLock(prisma, scopeId);
+    const locked = await acquireDigestLock(db, scopeId);
     if (!locked) return "skipped-locked"; // another process is already catching this scope up; skipping is harmless
 
     running = true;
     try {
       if (digestLlm) {
-        await runDigestPipelineCore(prisma, userId, scopeId, digestLlm);
+        await runDigestPipelineCore(db, userId, scopeId, digestLlm);
       } else {
-        await runDigestPipeline(prisma, userId, scopeId, digestEnv);
+        await runDigestPipeline(db, userId, scopeId, digestEnv);
       }
     } finally {
       // Always runs once the lock is held, whether the pipeline resolved or
       // threw — release on failure too, so a crashed run doesn't strand the
       // scope for the full 30-minute stale-lock reap.
       running = false;
-      await releaseDigestLock(prisma, scopeId);
+      await releaseDigestLock(db, scopeId);
     }
     return "ran";
   } catch (err) {

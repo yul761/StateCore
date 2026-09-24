@@ -37,3 +37,10 @@ improvements to the core algorithm that remain non-breaking to `/v1`.
 Semantic versioning. Additive features → minor; bug/security/algorithm-quality
 fixes → patch; an incompatible `/v1` change would require a major + a new API
 version namespace.
+
+## statecore-mcp data files
+
+`statecore-mcp`'s embedded SQLite store is versioned with `PRAGMA user_version`
+and migrated forward on open. Every 1.x release opens files written by any
+earlier 1.x or 0.6.x release. Downgrades are unsupported. `statecore-mcp export`
+produces a schema-versioned JSON dump.

@@ -19,180 +19,17 @@ import {
   packWithinBudget,
   tokenizeForIndex,
   type DigestState,
-  type ProjectRepo,
-  type UserStateRepo,
-  type MemoryRepo,
-  type DigestRepo,
-  type MemoryEvent,
-  type Digest,
   type FacetPack,
   type DisplayGroup
 } from "@statecore/core";
-import { openStore, Prisma, type Store, type LitePrisma } from "./store";
+import { openStore, type Store } from "./store";
+import type { LiteDb } from "./lite-db";
+import { makeProjectsRepo, makeUserStateRepo, makeMemoryRepo, makeDigestRepo, nowMs } from "./embedded-repos";
+import { parseJson, toJson, fromMs, fromMsNullable, type SnapshotRow } from "./rows";
 import type { MemoryBackend } from "./backend";
 import { maybeRunDigest, type DigestChatModel } from "./digest";
 
 const USER = "local";
-
-// Mirrors apps/api/src/domain.service.ts#projectsRepo; keep in sync.
-function makeProjectsRepo(prisma: LitePrisma): ProjectRepo {
-  return {
-    create: (data) => prisma.projectScope.create({ data }),
-    listByUser: (userId) => prisma.projectScope.findMany({ where: { userId }, orderBy: { createdAt: "desc" } }),
-    findById: (scopeId, userId) => prisma.projectScope.findFirst({ where: { id: scopeId, userId } })
-  };
-}
-
-// Mirrors apps/api/src/domain.service.ts#userStateRepo; keep in sync.
-function makeUserStateRepo(prisma: LitePrisma): UserStateRepo {
-  return {
-    getByUserId: (userId) => prisma.userState.findUnique({ where: { userId } }),
-    upsertActiveProject: (userId, scopeId) =>
-      prisma.userState.upsert({
-        where: { userId },
-        update: { activeProjectId: scopeId },
-        create: { userId, activeProjectId: scopeId }
-      })
-  };
-}
-
-/**
- * `listRecentTurns` is not part of `MemoryRepo` — the working-memory feature
- * that consumes it is out of scope for the embedded backend — but the field
- * ships anyway to keep this closure a verbatim mirror of its source.
- */
-type MirroredMemoryRepo = MemoryRepo & {
-  listRecentTurns: (scopeId: string, limit: number) => Promise<MemoryEvent[]>;
-};
-
-// Mirrors apps/api/src/domain.service.ts#memoryRepo; keep in sync.
-function makeMemoryRepo(prisma: LitePrisma): MirroredMemoryRepo {
-  return {
-    create: (data) => prisma.memoryEvent.create({ data }),
-    upsertDocument: (data) =>
-      prisma.memoryEvent.upsert({
-        where: { scopeId_key: { scopeId: data.scopeId, key: data.key } },
-        // `pinned` must be in the update branch too: re-uploading a document is
-        // the normal way to change its pin state, and leaving it out would make
-        // the flag settable only on first ingest.
-        update: {
-          content: data.content,
-          contentHash: data.contentHash,
-          updatedAt: new Date(),
-          ...(data.pinned !== undefined ? { pinned: data.pinned } : {})
-        },
-        create: { ...data, type: "document" }
-      }),
-    listRecent: async (scopeId, limit, cursor) => {
-      const items = await prisma.memoryEvent.findMany({
-        where: { scopeId, suppressedAt: null },
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        take: limit + 1,
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {})
-      });
-      const next = items.length > limit ? items.pop() : null;
-      return { items, nextCursor: next ? next.id : null };
-    },
-    findByIds: (ids) =>
-      ids.length
-        ? prisma.memoryEvent.findMany({
-            where: { id: { in: ids }, suppressedAt: null },
-            orderBy: [{ createdAt: "desc" }, { id: "desc" }]
-          })
-        : Promise.resolve([]),
-    replaceTokens: async (eventId, scopeId, tokens) => {
-      await prisma.$transaction([
-        prisma.memoryEventToken.deleteMany({ where: { eventId } }),
-        ...(tokens.length
-          ? [prisma.memoryEventToken.createMany({ data: tokens.map((token) => ({ eventId, scopeId, token })) })]
-          : [])
-      ]);
-    },
-    searchByTokens: async (scopeId, tokens, limit) => {
-      if (!tokens.length) return [];
-      const groups = await prisma.memoryEventToken.groupBy({
-        by: ["eventId"],
-        where: { scopeId, token: { in: tokens } },
-        _count: { token: true },
-        orderBy: { _count: { token: "desc" } },
-        take: limit
-      });
-      return groups.map((group) => group.eventId);
-    },
-    tokenStats: async (scopeId, tokens) => {
-      if (!tokens.length) return { totalEvents: 0, df: {} };
-      const [totalEvents, groups] = await Promise.all([
-        prisma.memoryEvent.count({ where: { scopeId, suppressedAt: null } }),
-        prisma.memoryEventToken.groupBy({
-          by: ["token"],
-          where: { scopeId, token: { in: tokens } },
-          _count: { token: true }
-        })
-      ]);
-      return { totalEvents, df: Object.fromEntries(groups.map((group) => [group.token, group._count.token])) };
-    },
-    listByLookback: (scopeId, since, limit) =>
-      prisma.memoryEvent.findMany({
-        where: { scopeId, createdAt: { gte: since }, suppressedAt: null },
-        orderBy: { createdAt: "desc" },
-        take: limit
-      }),
-    listRecentTurns: (scopeId, limit) =>
-      prisma.memoryEvent.findMany({
-        where: { scopeId, type: "stream" },
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        take: limit
-      })
-  };
-}
-
-type DigestRow = {
-  id: string;
-  scopeId: string;
-  summary: string;
-  changes: string;
-  nextSteps: unknown;
-  createdAt: Date;
-  rebuildGroupId?: string | null;
-};
-
-function toDigest(row: DigestRow): Digest {
-  return {
-    id: row.id,
-    scopeId: row.scopeId,
-    summary: row.summary,
-    changes: row.changes,
-    nextSteps: Array.isArray(row.nextSteps) ? (row.nextSteps as string[]) : [],
-    createdAt: row.createdAt,
-    rebuildGroupId: row.rebuildGroupId ?? null
-  };
-}
-
-// Mirrors apps/api/src/domain.service.ts#digestRepo; keep in sync.
-function makeDigestRepo(prisma: LitePrisma): DigestRepo {
-  return {
-    create: async (data) => {
-      const created = await prisma.digest.create({
-        data: { ...data, nextSteps: data.nextSteps, ...(data.rebuildGroupId ? { rebuildGroupId: data.rebuildGroupId } : {}) }
-      });
-      return toDigest(created as unknown as DigestRow);
-    },
-    listRecent: async (scopeId, limit, cursor) => {
-      const items = await prisma.digest.findMany({
-        where: { scopeId },
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        take: limit + 1,
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {})
-      });
-      const next = items.length > limit ? items.pop() : null;
-      return { items: items.map((item) => toDigest(item as unknown as DigestRow)), nextCursor: next ? next.id : null };
-    },
-    findLatest: async (scopeId) => {
-      const found = await prisma.digest.findFirst({ where: { scopeId }, orderBy: { createdAt: "desc" } });
-      return found ? toDigest(found as unknown as DigestRow) : null;
-    }
-  };
-}
 
 /**
  * `DisplayFact`/`groupFactsForDisplay` (packages/core/src/memory-facts.ts) carry
@@ -242,12 +79,30 @@ function attachFactIds(
  * `maybeRunDigest` never rejects (it catches internally), so no scope's
  * failure can stop the ones after it.
  */
-async function runStartupDigestCatchUp(prisma: LitePrisma, env: NodeJS.ProcessEnv, digestLlm: DigestChatModel | undefined): Promise<void> {
-  const scopes = await prisma.projectScope.findMany({ where: { userId: USER }, select: { id: true } });
+async function runStartupDigestCatchUp(db: LiteDb, env: NodeJS.ProcessEnv, digestLlm: DigestChatModel | undefined): Promise<void> {
+  const scopes = db.all<{ id: string }>(`SELECT "id" FROM "ProjectScope" WHERE "userId" = ?`, USER);
   for (const scope of scopes) {
-    await maybeRunDigest({ prisma, userId: USER, scopeId: scope.id, env, reason: "startup", digestLlm });
+    await maybeRunDigest({ db, userId: USER, scopeId: scope.id, env, reason: "startup", digestLlm });
   }
 }
+
+const HANDOFF_COLUMNS = '"id", "content", "createdAt", "supersededBy", "retiredAt", "retiredReason"';
+interface HandoffDbRow {
+  id: string;
+  content: string;
+  createdAt: number;
+  supersededBy: string | null;
+  retiredAt: number | null;
+  retiredReason: string | null;
+}
+const handoffRows = (db: LiteDb, scopeId: string) =>
+  db.all<HandoffDbRow>(`SELECT ${HANDOFF_COLUMNS} FROM "SessionHandoff" WHERE "scopeId" = ?`, scopeId).map((r) => ({
+    ...r,
+    createdAt: fromMs(r.createdAt),
+    retiredAt: fromMsNullable(r.retiredAt)
+  }));
+
+const EMPTY_STATE = (): DigestState => ({ stableFacts: { decisions: [] }, workingNotes: {}, todos: [], factRegistry: [], profile: {} });
 
 /**
  * The keyless, in-process `MemoryBackend`: five memory operations over an
@@ -273,10 +128,17 @@ export function createEmbeddedBackend(opts: {
   // with its threshold-1 runs on the shared in-process digest lock and
   // reporting a spurious "locked" for what is really "already being handled".
   let startupCatchUp: Promise<void> = Promise.resolve();
+  // Chains every fire-and-forget post-remember digest so close() can drain
+  // them before the store connection underneath them goes away.
+  // maybeRunDigest never rejects, so this chain can never break.
+  let inFlight: Promise<unknown> = Promise.resolve();
+
+  const latestSnapshotRow = (): SnapshotRow | undefined =>
+    store.db.get<SnapshotRow>(`SELECT "id", "state", "createdAt" FROM "DigestStateSnapshot" WHERE "scopeId" = ? ORDER BY "createdAt" DESC, "id" DESC LIMIT 1`, scopeId);
 
   async function latestState(): Promise<{ id: string; state: DigestState } | null> {
-    const snap = await store.prisma.digestStateSnapshot.findFirst({ where: { scopeId }, orderBy: { createdAt: "desc" } });
-    return snap ? { id: snap.id, state: snap.state as unknown as DigestState } : null;
+    const snap = latestSnapshotRow();
+    return snap ? { id: snap.id, state: parseJson<DigestState>(snap.state, EMPTY_STATE()) } : null;
   }
 
   // The scope this backend serves always has template "project" (init() is the
@@ -285,7 +147,10 @@ export function createEmbeddedBackend(opts: {
   // which serves arbitrary scopes and reads `template` off each one.
   const packFor = () =>
     resolveFacetPackForScope(
-      { findFacetPack: async (id) => (await store.prisma.user.findUnique({ where: { id }, select: { facetPack: true } }))?.facetPack ?? null },
+      {
+        findFacetPack: async (id) =>
+          parseJson<unknown>(store.db.get<{ facetPack: string | null }>(`SELECT "facetPack" FROM "User" WHERE "id" = ?`, id)?.facetPack ?? null, null) as any
+      },
       USER,
       "project"
     );
@@ -293,67 +158,61 @@ export function createEmbeddedBackend(opts: {
   return {
     async init() {
       store = await openStore(opts.dataDir);
-      await store.prisma.user.upsert({ where: { identity: USER }, update: {}, create: { id: USER, identity: USER } });
-      const existing = await store.prisma.projectScope.findFirst({ where: { userId: USER, name: opts.scopeName } });
+      // id and identity are both "local" — the single embedded user — so
+      // INSERT OR IGNORE alone (on the PRIMARY KEY) is enough; no ON CONFLICT
+      // clause targeting the separate "identity" unique index is needed.
+      store.db.run(`INSERT OR IGNORE INTO "User" ("id", "identity", "createdAt") VALUES (?, ?, ?)`, USER, USER, Date.now());
+      const existing = store.db.get<{ id: string }>(`SELECT "id" FROM "ProjectScope" WHERE "userId" = ? AND "name" = ? LIMIT 1`, USER, opts.scopeName);
       scopeId =
         existing?.id ??
-        (await new ProjectService(makeProjectsRepo(store.prisma), makeUserStateRepo(store.prisma)).createScope(
-          USER,
-          opts.scopeName,
-          null,
-          undefined,
-          "project"
-        )).id;
-      startupCatchUp = runStartupDigestCatchUp(store.prisma, opts.env, opts.digestLlm);
+        (await new ProjectService(makeProjectsRepo(store.db), makeUserStateRepo(store.db)).createScope(USER, opts.scopeName, null, undefined, "project")).id;
+      startupCatchUp = runStartupDigestCatchUp(store.db, opts.env, opts.digestLlm);
       // Backfill the lexical index for events ingested before it existed.
       // Embedded stores are per-project and small, so doing it inline at open
       // is cheap; the server deployment has scripts/backfill-tokens.ts instead.
-      const repo = makeMemoryRepo(store.prisma);
-      const unindexed = await store.prisma.memoryEvent.findMany({
-        where: { scopeId, suppressedAt: null, tokens: { none: {} } },
-        select: { id: true, content: true }
-      });
-      for (const event of unindexed) {
-        await repo.replaceTokens?.(event.id, scopeId, tokenizeForIndex(event.content));
-      }
+      const repo = makeMemoryRepo(store.db);
+      const unindexed = store.db.all<{ id: string; content: string }>(
+        `SELECT e."id", e."content" FROM "MemoryEvent" e WHERE e."scopeId" = ? AND e."suppressedAt" IS NULL
+         AND NOT EXISTS (SELECT 1 FROM "MemoryEventToken" t WHERE t."eventId" = e."id")`,
+        scopeId
+      );
+      for (const event of unindexed) await repo.replaceTokens?.(event.id, scopeId, tokenizeForIndex(event.content));
     },
 
     async remember({ text, consolidate }) {
       if (!consolidate) {
         // Mirrors apps/api/src/memory-facts.service.ts#addNote; keep in sync.
-        const snap = await latestState();
+        // The read (latest snapshot), the in-memory addNoteFact mutation, and the
+        // write (UPDATE/INSERT) all run inside one store.db.transaction so
+        // BEGIN IMMEDIATE holds the write lock across the whole read-modify-write:
+        // two MCP processes editing the same scope's snapshot concurrently would
+        // otherwise both read the same row, mutate their own in-memory copy, and
+        // have the second UPDATE silently drop the first process's note.
         const pack = await packFor();
-        let superseded: string | undefined;
-        if (snap) {
-          const result = addNoteFact(snap.state, text, () => randomUUID(), () => new Date().toISOString(), pack);
-          superseded = result.superseded;
-          if (result.changed) {
-            await store.prisma.digestStateSnapshot.update({
-              where: { id: snap.id },
-              data: { state: snap.state as any }
-            });
+        const superseded: string | undefined = store.db.transaction(() => {
+          const snap = latestSnapshotRow();
+          if (snap) {
+            const state = parseJson<DigestState>(snap.state, EMPTY_STATE());
+            const result = addNoteFact(state, text, () => randomUUID(), () => new Date().toISOString(), pack);
+            if (result.changed) store.db.run(`UPDATE "DigestStateSnapshot" SET "state" = ? WHERE "id" = ?`, toJson(state), snap.id);
+            return result.superseded;
           }
-        } else {
-          const state: DigestState = { stableFacts: { decisions: [] }, workingNotes: {}, todos: [], factRegistry: [], profile: {} };
+          const state = EMPTY_STATE();
           addNoteFact(state, text, () => randomUUID(), () => new Date().toISOString(), pack);
-          await store.prisma.$transaction(async (tx) => {
-            const digest = await tx.digest.create({ data: { scopeId, summary: "Notes", changes: "", nextSteps: [] } });
-            await tx.digestStateSnapshot.create({
-              data: { scopeId, digestId: digest.id, state: state as any, consistency: Prisma.JsonNull }
-            });
-          });
-        }
+          const digestId = randomUUID();
+          const now = nowMs();
+          store.db.run(`INSERT INTO "Digest" ("id", "scopeId", "summary", "changes", "nextSteps", "createdAt") VALUES (?, ?, 'Notes', '', '[]', ?)`, digestId, scopeId, now);
+          store.db.run(
+            `INSERT INTO "DigestStateSnapshot" ("id", "scopeId", "digestId", "state", "consistency", "createdAt") VALUES (?, ?, ?, ?, 'null', ?)`,
+            randomUUID(), scopeId, digestId, toJson(state), now
+          );
+          return undefined;
+        });
         return superseded !== undefined ? { ok: true, mode: "note", superseded } : { ok: true, mode: "note" };
       }
 
-      await new MemoryService(makeMemoryRepo(store.prisma)).ingestEvent({
-        userId: USER,
-        scopeId,
-        type: "stream",
-        source: "api",
-        content: text
-      });
-      void maybeRunDigest({ prisma: store.prisma, userId: USER, scopeId, env: opts.env, reason: "threshold", digestLlm: opts.digestLlm });
+      await new MemoryService(makeMemoryRepo(store.db)).ingestEvent({ userId: USER, scopeId, type: "stream", source: "api", content: text });
+      inFlight = inFlight.then(() => maybeRunDigest({ db: store.db, userId: USER, scopeId, env: opts.env, reason: "threshold", digestLlm: opts.digestLlm }));
       return { ok: true, mode: "event" };
     },
 
@@ -361,27 +220,28 @@ export function createEmbeddedBackend(opts: {
       // Mirrors apps/api/src/memory-facts.service.ts#setHandoff; keep in sync.
       // Handoffs live in their own table — see packages/core/src/handoff.ts.
       if (input.clear) {
-        const retired = await store.prisma.sessionHandoff.updateMany({
-          where: { scopeId, supersededBy: null, retiredAt: null },
-          data: { retiredAt: new Date(), retiredReason: "user_cleared" }
-        });
-        return { ok: true, superseded: false, cleared: retired.count > 0 };
+        const retired = store.db.run(
+          `UPDATE "SessionHandoff" SET "retiredAt" = ?, "retiredReason" = 'user_cleared' WHERE "scopeId" = ? AND "supersededBy" IS NULL AND "retiredAt" IS NULL`,
+          Date.now(), scopeId
+        );
+        return { ok: true, superseded: false, cleared: retired.changes > 0 };
       }
       const summary = input.summary?.trim();
       if (!summary) throw new Error("handoff not stored: empty summary");
       const content = formatHandoff({ summary, openQuestions: input.openQuestions, nextSteps: input.nextSteps });
-      return store.prisma.$transaction(async (tx) => {
-        const created = await tx.sessionHandoff.create({ data: { scopeId, content } });
-        const superseded = await tx.sessionHandoff.updateMany({
-          where: { scopeId, supersededBy: null, retiredAt: null, NOT: { id: created.id } },
-          data: { supersededBy: created.id }
-        });
-        return { ok: true as const, handoffId: created.id, superseded: superseded.count > 0 };
+      return store.db.transaction(() => {
+        const id = randomUUID();
+        store.db.run(`INSERT INTO "SessionHandoff" ("id", "scopeId", "content", "createdAt") VALUES (?, ?, ?, ?)`, id, scopeId, content, nowMs());
+        const superseded = store.db.run(
+          `UPDATE "SessionHandoff" SET "supersededBy" = ? WHERE "scopeId" = ? AND "supersededBy" IS NULL AND "retiredAt" IS NULL AND "id" != ?`,
+          id, scopeId, id
+        );
+        return { ok: true as const, handoffId: id, superseded: superseded.changes > 0 };
       });
     },
 
     async recall({ query, maxChars }) {
-      const retrieve = new RetrieveService(makeDigestRepo(store.prisma), makeMemoryRepo(store.prisma), {});
+      const retrieve = new RetrieveService(makeDigestRepo(store.db), makeMemoryRepo(store.db), {});
       const result = await retrieve.retrieve(scopeId, 20, query);
       const digest = result.digest ? result.digest.summary : null;
       const events = result.events.map((event) => ({ id: event.id, content: event.content, createdAt: event.createdAt.toISOString() }));
@@ -398,7 +258,7 @@ export function createEmbeddedBackend(opts: {
       // The active session handoff rides on every recall, budget or not: it is
       // the "continue from here" briefing, so it must never lose a budget
       // competition to ordinary events.
-      const handoff = activeHandoffFromRows(await store.prisma.sessionHandoff.findMany({ where: { scopeId } }));
+      const handoff = activeHandoffFromRows(handoffRows(store.db, scopeId));
 
       if (maxChars === undefined) {
         return { handoff, digest, events, factRegistry: activeFactRegistry, retrieval: (result as { retrieval?: unknown }).retrieval ?? null };
@@ -442,19 +302,15 @@ export function createEmbeddedBackend(opts: {
 
     async facts() {
       // Mirrors apps/api/src/memory-facts.service.ts#getFacts; keep in sync.
-      const [snapshot, forgotten] = await Promise.all([
-        store.prisma.digestStateSnapshot.findFirst({ where: { scopeId }, orderBy: { createdAt: "desc" } }),
-        store.prisma.forgottenFact.findMany({ where: { scopeId } })
-      ]);
+      const snapshot = latestSnapshotRow();
       if (!snapshot) return [];
-      const forgottenKeys = new Set(forgotten.map((f) => f.factKey));
+      const forgottenKeys = new Set(store.db.all<{ factKey: string }>(`SELECT "factKey" FROM "ForgottenFact" WHERE "scopeId" = ?`, scopeId).map((f) => f.factKey));
       const pack = await packFor();
-      const state = snapshot.state as unknown as DigestState;
+      const state = parseJson<DigestState>(snapshot.state, EMPTY_STATE());
       const facts = flattenScopeFacts(state, undefined, pack).filter((f) => !forgottenKeys.has(f.factKey));
-      const groups = groupFactsForDisplay(facts, pack);
       // groupFactsForDisplay drops factRegistry ids; attachFactIds (above) joins
       // them back on so why() has an id to consume.
-      return attachFactIds(groups, state, pack);
+      return attachFactIds(groupFactsForDisplay(facts, pack), state, pack);
     },
 
     async why({ factId }) {
@@ -463,12 +319,9 @@ export function createEmbeddedBackend(opts: {
       if (fromRegistry) return fromRegistry;
       // Handoffs live in their own table; their chain is walkable through the
       // same tool by mapping rows into entry shape.
-      const rows = await store.prisma.sessionHandoff.findMany({ where: { scopeId } });
+      const rows = handoffRows(store.db, scopeId);
       if (!rows.some((r) => r.id === factId)) return null;
-      return buildFactProvenance(
-        { stableFacts: { decisions: [] }, workingNotes: {}, todos: [], profile: {}, factRegistry: handoffRowsToRegistry(rows) },
-        factId
-      );
+      return buildFactProvenance({ ...EMPTY_STATE(), factRegistry: handoffRowsToRegistry(rows) }, factId);
     },
 
     async digestNow() {
@@ -477,7 +330,7 @@ export function createEmbeddedBackend(opts: {
       // runStartupDigestCatchUp never rejects, so this await cannot throw.
       await startupCatchUp;
       const outcome = await maybeRunDigest({
-        prisma: store.prisma,
+        db: store.db,
         userId: USER,
         scopeId,
         env: opts.env,
@@ -500,30 +353,34 @@ export function createEmbeddedBackend(opts: {
 
     async forget({ factKey }) {
       // Mirrors apps/api/src/memory-facts.service.ts#forgetFact; keep in sync.
-      const snapshot = await store.prisma.digestStateSnapshot.findFirst({ where: { scopeId }, orderBy: { createdAt: "desc" } });
+      const snapshot = latestSnapshotRow();
       const pack = await packFor();
-      const facts = snapshot ? flattenScopeFacts(snapshot.state as unknown as DigestState, undefined, pack) : [];
+      const facts = snapshot ? flattenScopeFacts(parseJson<DigestState>(snapshot.state, EMPTY_STATE()), undefined, pack) : [];
       const match = facts.find((f) => f.factKey === factKey);
-      const contentSnapshot = match?.text ?? "";
-
-      await store.prisma.forgottenFact.upsert({
-        where: { scopeId_factKey: { scopeId, factKey } },
-        create: { userId: USER, scopeId, factKey, contentSnapshot },
-        update: {}
-      });
-
+      store.db.run(
+        `INSERT INTO "ForgottenFact" ("id", "userId", "scopeId", "factKey", "contentSnapshot", "forgottenAt") VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT("scopeId", "factKey") DO NOTHING`,
+        randomUUID(), USER, scopeId, factKey, match?.text ?? "", Date.now()
+      );
       if (match?.evidenceId) {
-        await store.prisma.memoryEvent.updateMany({
-          where: { id: match.evidenceId },
-          data: { suppressedAt: new Date() }
-        });
+        store.db.run(`UPDATE "MemoryEvent" SET "suppressedAt" = ? WHERE "id" = ?`, Date.now(), match.evidenceId);
         // A suppressed event must also leave the lexical index, or it keeps
         // occupying candidate slots that findByIds then filters out.
-        await store.prisma.memoryEventToken.deleteMany({ where: { eventId: match.evidenceId } });
+        store.db.run(`DELETE FROM "MemoryEventToken" WHERE "eventId" = ?`, match.evidenceId);
       }
       return { ok: true };
     },
 
-    close: () => store.close()
+    async close() {
+      // Drain both the startup catch-up pass and every chained post-remember
+      // digest before releasing the store connection they run against —
+      // otherwise a straggler run's own release can land on a closed db and
+      // log a spurious "digest run failed" to stderr. Neither promise can
+      // reject (runStartupDigestCatchUp only awaits maybeRunDigest, which
+      // never rejects; inFlight is chained from the same never-rejecting call).
+      await startupCatchUp;
+      await inFlight;
+      await store.close();
+    }
   };
 }

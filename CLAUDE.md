@@ -6,7 +6,7 @@ StateCore is an AI memory management system. It stores memory events, runs diges
 It is the **Layer 1 engine** of the `StateCore-App` stack (see `../CLAUDE.md`): open-source
 (MIT), self-hostable, and fronted by `../statecore-cloud` (managed gateway) which
 `../assistant-backend` uses as its memory store. Tech: **pnpm + Turbo monorepo**
-(`apps/*`, `packages/*`), TypeScript, Node ≥20, NestJS, Prisma/Postgres+pgvector,
+(`apps/*`, `packages/*`), TypeScript, Node ≥20 (apps/mcp: ≥22.13, it uses node:sqlite), NestJS, Prisma/Postgres+pgvector,
 BullMQ/Redis, Zod, Vitest, Changesets.
 
 ## Commands

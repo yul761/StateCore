@@ -1,56 +1,19 @@
 import { defineConfig } from "tsup";
 
-// The generated lite Prisma client (packages/db/generated/client-lite) ships a
-// native query-engine binary (libquery_engine-<platform>.dylib.node) that its
-// runtime locates via a path list built partly from `__dirname` and partly from
-// an absolute path baked in at `prisma generate` time. Inlining that client's JS
-// collapses `__dirname` to this package's own `dist/`, where no engine binary
-// exists; the generate-time absolute path then becomes the only path that still
-// resolves, and only because it happens to match this workspace checkout's
-// location on this machine — an npm-installed copy on another machine would
-// resolve neither and fail to load the engine. Excluding this one subpath from
-// `noExternal` keeps its `require(...)` unresolved at bundle time, so at runtime
-// Node's normal module resolution (relative to the loading `dist/*.js`, walking
-// up `node_modules`) finds it instead — correct in this workspace (where
-// `node_modules/@statecore/db` symlinks to `packages/db`) and, for the npm
-// package, the reason `apps/mcp`'s published form generates this client into
-// its own tree at install time (package.json `postinstall`, gated by
-// scripts/postinstall.mjs's presence check on `schema.lite.prisma`) and
-// `store.ts`'s runtime loader looks for it there first. `src/lib.ts` reaches
-// the same `store.ts` loader through `embedded.ts`, so it needs the identical
-// treatment, not just `src/main.ts`.
-//
-// Named explicitly rather than a single `/^@statecore\//` prefix regex: a
-// negative-lookahead regex meant to except only the `.../generated/client-lite`
-// subpath from `noExternal` (leaving it to `external` below) was verified by
-// build to still inline the engine loader — esbuild/tsup's resolver ends up
-// treating a workspace symlink's deep import differently than a plain
-// string/regex match against the written specifier can select for. Listing
-// the two packages that are safe to inline by exact name, and handling
-// `@statecore/db` only through `external` below, reliably keeps the loader
-// out (verified: bundle size drops from ~720KB to ~415KB, `dist/main.js`
-// keeps a real `require("@statecore/db/generated/client-lite")` instead of
-// inlined source, and the built binary still opens a real database from a
-// cwd with no relation to this workspace).
+// `@statecore/core` and `@statecore/prompts` are inlined so the published
+// bundle has no workspace dependency. The two runtime dependencies stay
+// external and are declared in package.json. The store is `node:sqlite`, a
+// Node builtin — nothing native to locate at runtime, nothing to generate at
+// install time.
 const noExternal = ["@statecore/core", "@statecore/prompts"];
-const external = [
-  "@prisma/client",
-  "@modelcontextprotocol/sdk",
-  "zod",
-  // Never called from this package (dead re-export from
-  // packages/core/src/relationship-context.ts, unreachable via the embedded
-  // backend); listed for completeness alongside the subpath below rather
-  // than left to fall through to esbuild's inlining default.
-  "@statecore/db",
-  "@statecore/db/generated/client-lite"
-];
+const external = ["@modelcontextprotocol/sdk", "zod"];
 
 export default [
   defineConfig({
     entry: ["src/main.ts"],
     format: ["cjs"],
     platform: "node",
-    target: "node20",
+    target: "node22",
     // dist/main.js is the package's `bin`. npm's .bin shim execs the file
     // directly, so without a shebang the shell interprets JavaScript as shell
     // ("use strict: command not found") — shipped broken in 0.1.0, where every
@@ -61,16 +24,23 @@ export default [
     banner: { js: "#!/usr/bin/env node" },
     noExternal,
     external,
+    // tsup's default node-protocol plugin strips the `node:` prefix from
+    // every `node:*` import so it can mark it external under its bare name —
+    // fine for `fs`/`path`, which resolve either way, but `node:sqlite` (like
+    // `node:test`) is prefix-only and has no unprefixed alias, so the
+    // stripped `require("sqlite")` throws MODULE_NOT_FOUND at runtime.
+    removeNodeProtocol: false,
     clean: true
   }),
   defineConfig({
     entry: ["src/lib.ts"],
     format: ["cjs", "esm"],
     platform: "node",
-    target: "node20",
+    target: "node22",
     dts: true,
     noExternal,
     external,
+    removeNodeProtocol: false,
     // Bundled dependencies (pino, transitively via @statecore/core's
     // noExternal inlining above) call Node builtins through plain
     // `require(...)`. esbuild wraps every such call in a `__require` helper

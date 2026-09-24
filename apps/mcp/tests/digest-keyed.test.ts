@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { maybeRunDigest } from "../src/digest";
 import { openStore, type Store } from "../src/store";
+import { seedUser, seedScope, insertEvent, latestDigest, latestSnapshot, lockRows } from "./helpers/seed";
 
 const USER = "local";
 const THRESHOLD = 5;
@@ -81,22 +82,18 @@ describe("keyed digest pipeline, driven end to end against a stub model endpoint
   });
 
   it("runs a real keyed digest, persists the digest + snapshot + selection log, and releases the lock", async () => {
-    await store.prisma.user.upsert({ where: { identity: USER }, update: {}, create: { id: USER, identity: USER } });
-    const scope = await store.prisma.projectScope.create({
-      data: { userId: USER, name: "digest-keyed-test", template: "project" }
-    });
+    seedUser(store.db, USER);
+    const scope = seedScope(store.db, { userId: USER, name: "digest-keyed-test", template: "project" });
     const scopeId = scope.id;
 
     // Seed more stream events than the threshold so maybeRunDigest's
     // reason:"threshold" path fires.
     for (let i = 0; i < THRESHOLD + 1; i += 1) {
-      await store.prisma.memoryEvent.create({
-        data: { userId: USER, scopeId, type: "stream", source: "api", content: `stream event ${i}` }
-      });
+      insertEvent(store.db, { scopeId, content: `stream event ${i}` });
     }
 
     await maybeRunDigest({
-      prisma: store.prisma,
+      db: store.db,
       userId: USER,
       scopeId,
       env: {
@@ -116,19 +113,16 @@ describe("keyed digest pipeline, driven end to end against a stub model endpoint
 
     expect(getRequestCount()).toBe(1);
 
-    const digestRow = await store.prisma.digest.findFirst({ where: { scopeId } });
+    const digestRow = latestDigest(store.db, scopeId);
     expect(digestRow).toBeTruthy();
     expect(digestRow!.summary).toBe(STAGE2_OUTPUT.summary);
     expect(digestRow!.selectionLog).not.toBeNull();
 
-    const snapshot = await store.prisma.digestStateSnapshot.findFirst({ where: { scopeId } });
+    const snapshot = latestSnapshot(store.db, scopeId);
     expect(snapshot).toBeTruthy();
-    expect(snapshot!.digestId).toBe(digestRow!.id);
+    const snapshotDigestId = store.db.get<{ digestId: string }>(`SELECT "digestId" FROM "DigestStateSnapshot" WHERE "id" = ?`, snapshot!.id)!.digestId;
+    expect(snapshotDigestId).toBe(digestRow!.id);
 
-    const lockRows = await store.prisma.$queryRawUnsafe<Array<{ scopeId: string }>>(
-      `SELECT "scopeId" FROM "DigestLock" WHERE "scopeId" = ?`,
-      scopeId
-    );
-    expect(lockRows).toHaveLength(0);
+    expect(lockRows(store.db, scopeId)).toHaveLength(0);
   });
 });

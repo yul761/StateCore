@@ -1,3 +1,19 @@
+/**
+ * Ordered schema migrations for the embedded SQLite store. `PRAGMA user_version`
+ * records the highest applied version. Every statement in migration 1 is
+ * `IF NOT EXISTS`, so a 0.6.0 database (created before versioning existed,
+ * user_version 0, tables already present) upgrades by re-running it harmlessly.
+ *
+ * Rules for adding a migration: append a new object with version = previous + 1,
+ * never edit an earlier one, and keep column storage formats Prisma-compatible
+ * (DATETIME = integer unix ms, JSONB = JSON text, BOOLEAN = 0/1).
+ */
+export interface Migration {
+  version: number;
+  sql: string;
+}
+
+const MIGRATION_1_BOOTSTRAP = `
 -- Generated from schema.lite.prisma via prisma migrate diff; regenerate when the lite schema changes.
 
 -- CreateTable
@@ -117,8 +133,8 @@ CREATE TABLE IF NOT EXISTS "ForgottenFact" (
 -- CreateTable
 -- MCP-private: serializes digest runs across processes sharing one SQLite
 -- file. Not part of the engine data model, so it carries no schema.lite.prisma
--- model — apps/mcp/src/digest-lock.ts reads and writes it with
--- $executeRawUnsafe/$queryRawUnsafe.
+-- model — apps/mcp/src/digest-lock.ts reads and writes it with plain SQL
+-- through lite-db.ts.
 CREATE TABLE IF NOT EXISTS "DigestLock" (
     "scopeId" TEXT NOT NULL PRIMARY KEY,
     "acquiredAt" DATETIME NOT NULL
@@ -199,3 +215,8 @@ CREATE TABLE IF NOT EXISTS "SessionHandoff" (
 
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "SessionHandoff_scopeId_createdAt_idx" ON "SessionHandoff"("scopeId", "createdAt");
+`;
+
+export const MIGRATIONS: Migration[] = [{ version: 1, sql: MIGRATION_1_BOOTSTRAP }];
+
+export const CURRENT_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
