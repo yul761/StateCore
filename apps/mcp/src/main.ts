@@ -66,11 +66,13 @@ async function main(): Promise<void> {
     }
     if (argv[0] === "hook") {
       const stdin = await readStdin();
+      const hookArgs = parseArgs(argv.slice(2));
       await hookMain(argv[1], stdin, {
-        dataDir: parseArgs(argv.slice(2)).dataDir ?? defaultDataDir,
+        dataDir: hookArgs.dataDir ?? defaultDataDir,
         env: process.env,
         out: (text) => process.stdout.write(text),
-        err: (text) => process.stderr.write(text)
+        err: (text) => process.stderr.write(text),
+        scopeName: hookArgs.scope
       });
       return;
     }

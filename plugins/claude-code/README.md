@@ -14,9 +14,13 @@ first hook run downloads `statecore-mcp` through `npx`; later runs use the cache
 
 ## What it does
 
+Without a model key, the injected block is the handoff, your notes, and a
+replay of the most recent captured turns; distillation into facts needs
+`FEATURE_LLM=true` and a key (see `statecore-mcp digest`, coming in 1.0).
+
 | When | What happens |
 |---|---|
-| Session start, resume, `/clear`, after compaction | The project's memory (handoff, digest, facts, recent events) is injected as context, capped at 4000 characters. After a compaction the memory is re-injected so `/compact` never forgets. |
+| Session start, resume, `/clear`, after compaction | The project's memory (handoff, digest, facts, recent events) is injected as context, about 4000 characters of recalled memory, plus the active handoff. After a compaction the memory is re-injected so `/compact` never forgets. |
 | Every prompt you send | Stored as a memory event (slash commands are skipped). |
 | Every reply Claude finishes | Stored as a memory event (long replies keep their first 6000 and last 2000 characters). |
 | Before compaction | If a model is configured (`FEATURE_LLM=true` + `MODEL_API_KEY`), pending events are distilled into facts first. |

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createEmbeddedBackend } from "../src/embedded";
 import { openStore } from "../src/store";
 import { clearFacetPackCache, type DigestState } from "@statecore/core";
-import { findScopeByName, setUserFacetPack, insertDigest, insertSnapshot } from "./helpers/seed";
+import { findScopeByName, setUserFacetPack, insertDigest, insertSnapshot, insertEvent } from "./helpers/seed";
 import type { DigestChatModel } from "../src/digest";
 
 describe("embedded backend, keyless", () => {
@@ -92,10 +92,48 @@ describe("embedded backend, keyless", () => {
         first.eventId!
       );
       expect(row).toEqual({ type: "stream", source: "cli", key: "cc:sess-1:p-1:user", content: "user said: switch the build to turbo" });
-      const count = direct.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM "MemoryEvent" WHERE "key" = ?`, "cc:sess-1:p-1:user")!.n;
+      const scope = findScopeByName(direct.db, "/tmp/fake-project")!;
+      const count = direct.db.get<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM "MemoryEvent" WHERE "key" = ? AND "scopeId" = ?`,
+        "cc:sess-1:p-1:user",
+        scope.id
+      )!.n;
       expect(count).toBe(1);
     } finally {
       await direct.close();
+    }
+  });
+
+  // capture()'s up-front SELECT and its INSERT are not atomic against
+  // MemoryEvent_scopeId_key_key: a second connection can insert the same
+  // (scopeId, key) row between the two. The deterministic, non-flaky way to
+  // exercise the "row already exists" half of that race without an actual
+  // 5s-busy_timeout SQLITE_BUSY collision (which the suite must not pay for)
+  // is to pre-insert the keyed row through a second store connection before
+  // calling capture(): capture()'s lookup then finds it and returns
+  // `stored: false` with the pre-inserted row's id, exactly as it would for
+  // the winning side of a real race. The retry-after-a-thrown-error branch in
+  // embedded.ts (SQLITE_BUSY / "database is locked" / UNIQUE constraint
+  // regexp) is covered by that code's own reasoning rather than a forced
+  // race here — see the comment on `capture` in src/embedded.ts.
+  it("capture returns stored: false when another connection already inserted the keyed row (the race's lookup half)", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sc-emb-race-"));
+    const be = createEmbeddedBackend({ dataDir, scopeName: "/tmp/fake-race-project", env: {} as any });
+    await be.init();
+    try {
+      const direct = await openStore(dataDir);
+      let racedInId: string;
+      try {
+        const scope = findScopeByName(direct.db, "/tmp/fake-race-project")!;
+        racedInId = insertEvent(direct.db, { scopeId: scope.id, content: "raced in by another connection", key: "cc:race:1:user" }).id;
+      } finally {
+        await direct.close();
+      }
+
+      const result = await be.capture!({ text: "raced in by another connection", key: "cc:race:1:user" });
+      expect(result).toEqual({ ok: true, stored: false, eventId: racedInId });
+    } finally {
+      await be.close();
     }
   });
 

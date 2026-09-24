@@ -1,3 +1,4 @@
+// tests are not type-checked by pnpm lint (tsconfig include: ["src"])
 import { describe, it, expect } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,6 +8,7 @@ import { runHook, hookMain, captureKey, truncateForCapture, isCaptureDisabled } 
 import { MEMORY_BLOCK_HEADER } from "../src/cli/hook-format";
 import { createEmbeddedBackend } from "../src/embedded";
 import { openStore } from "../src/store";
+import { findScopeByName } from "./helpers/seed";
 
 function fresh() {
   const dataDir = mkdtempSync(join(tmpdir(), "sc-hook-"));
@@ -27,10 +29,12 @@ async function eventsIn(dataDir: string): Promise<Array<{ key: string | null; so
 }
 
 describe("captureKey / truncateForCapture / isCaptureDisabled", () => {
-  it("uses prompt_id when present, else a content hash", () => {
+  it("uses prompt_id when present, else a content hash; assistant keys also carry an 8-hex content hash so two different replies to one prompt_id don't collide", () => {
     expect(captureKey({ session_id: "s1", prompt_id: "p7" }, "user", "hi")).toBe("cc:s1:p7:user");
-    const digest = createHash("sha256").update("hi").digest("hex").slice(0, 16);
-    expect(captureKey({ session_id: "s1" }, "assistant", "hi")).toBe(`cc:s1:${digest}:assistant`);
+    const digest16 = createHash("sha256").update("hi").digest("hex").slice(0, 16);
+    const digest8 = createHash("sha256").update("hi").digest("hex").slice(0, 8);
+    expect(captureKey({ session_id: "s1" }, "assistant", "hi")).toBe(`cc:s1:${digest16}:assistant:${digest8}`);
+    expect(captureKey({ session_id: "s1", prompt_id: "p7" }, "assistant", "hi")).toBe(`cc:s1:p7:assistant:${digest8}`);
     expect(captureKey({}, "user", "x")).toMatch(/^cc:unknown:[0-9a-f]{16}:user$/);
   });
 
@@ -76,7 +80,8 @@ describe("runHook", () => {
     const long = "a".repeat(6000) + "b".repeat(5000) + "c".repeat(2000);
     await runHook("stop", { session_id: "s1", prompt_id: "p1", cwd: f.cwd, last_assistant_message: long }, f.deps);
     const [row] = await eventsIn(f.dataDir);
-    expect(row.key).toBe("cc:s1:p1:assistant");
+    const digest8 = createHash("sha256").update(long).digest("hex").slice(0, 8);
+    expect(row.key).toBe(`cc:s1:p1:assistant:${digest8}`);
     expect(row.content.length).toBeLessThan(8100);
     expect(row.content).toContain("…[truncated]…");
     expect(f.out).toEqual([]);
@@ -123,6 +128,38 @@ describe("runHook", () => {
     await runHook("pre-compact", { session_id: "s1", cwd: f.cwd, trigger: "auto" }, f.deps);
     expect(f.out).toEqual([]);
     expect(f.err.join("")).toContain("no-llm");
+  });
+
+  it("a user-prompt captured earlier is recallable in session-start's injected block", async () => {
+    const f = fresh();
+    await runHook(
+      "user-prompt",
+      { session_id: "s1", prompt_id: "p1", cwd: f.cwd, prompt: "we decided to ship the zephyr build on friday" },
+      f.deps
+    );
+
+    await runHook("session-start", { session_id: "s2", cwd: f.cwd, hook_event_name: "SessionStart" }, f.deps);
+    expect(f.out).toHaveLength(1);
+    const doc = JSON.parse(f.out[0]);
+    const block: string = doc.hookSpecificOutput.additionalContext;
+    expect(block).toContain("### Recent events");
+    expect(block).toContain("zephyr build on friday");
+  });
+
+  it("deps.scopeName (--scope) overrides scope resolution; a payload with no cwd still lands in that scope", async () => {
+    const f = fresh();
+    const scopedDeps = { ...f.deps, scopeName: "/tmp/statecore-explicit-scope" };
+    await runHook("user-prompt", { session_id: "s1", prompt_id: "p1", prompt: "scoped via --scope, no cwd in the payload" }, scopedDeps);
+
+    const store = await openStore(f.dataDir);
+    try {
+      const scope = findScopeByName(store.db, "/tmp/statecore-explicit-scope");
+      expect(scope).toBeTruthy();
+      const rows = store.db.all<{ scopeId: string; content: string }>(`SELECT "scopeId", "content" FROM "MemoryEvent"`);
+      expect(rows).toEqual([{ scopeId: scope!.id, content: "scoped via --scope, no cwd in the payload" }]);
+    } finally {
+      await store.close();
+    }
   });
 });
 

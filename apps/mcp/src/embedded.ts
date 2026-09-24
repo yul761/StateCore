@@ -233,16 +233,40 @@ export function createEmbeddedBackend(opts: {
     },
 
     async capture({ text, key }) {
-      const existing = store.db.get<{ id: string }>(`SELECT "id" FROM "MemoryEvent" WHERE "scopeId" = ? AND "key" = ?`, scopeId, key);
+      const lookup = () => store.db.get<{ id: string }>(`SELECT "id" FROM "MemoryEvent" WHERE "scopeId" = ? AND "key" = ?`, scopeId, key);
+      const ingest = () =>
+        new MemoryService(makeMemoryRepo(store.db)).ingestEvent({
+          userId: USER,
+          scopeId,
+          type: "stream",
+          source: "cli",
+          key,
+          content: text
+        });
+
+      const existing = lookup();
       if (existing) return { ok: true, stored: false, eventId: existing.id };
-      const event = await new MemoryService(makeMemoryRepo(store.db)).ingestEvent({
-        userId: USER,
-        scopeId,
-        type: "stream",
-        source: "cli",
-        key,
-        content: text
-      });
+      let event;
+      try {
+        event = await ingest();
+      } catch (error) {
+        // The SELECT above and the INSERT inside ingestEvent are not atomic
+        // against MemoryEvent_scopeId_key_key (the (scopeId, key) unique
+        // index): two processes (or two capture() calls racing the same key)
+        // can both pass the existence check and then both attempt the
+        // insert. Only one insert can win; the loser sees SQLITE_BUSY (lock
+        // contention) or a UNIQUE constraint violation, not a value it can
+        // use. Re-running the lookup closes that window cheaply: if the
+        // winner's row is now visible, report it (this call stored nothing,
+        // same as the up-front idempotency check); otherwise the failure
+        // wasn't actually a same-key race (e.g. a transient lock on an
+        // unrelated write), so retry the insert exactly once and let a
+        // second failure propagate rather than looping forever.
+        if (!/SQLITE_BUSY|database is locked|UNIQUE constraint failed/i.test((error as Error).message)) throw error;
+        const raced = lookup();
+        if (raced) return { ok: true, stored: false, eventId: raced.id };
+        event = await ingest();
+      }
       if (opts.backgroundDigest ?? true) {
         inFlight = inFlight.then(() => maybeRunDigest({ db: store.db, userId: USER, scopeId, env: opts.env, reason: "threshold", digestLlm: opts.digestLlm }));
       }
