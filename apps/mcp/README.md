@@ -63,6 +63,8 @@ Nothing behind a key is required for the audit trail to work. A key only turns o
 
 **Embedded (default).** One SQLite file, one process, all five tools run in-process against `@statecore/core`. No infrastructure. Data lives at `~/.statecore/statecore.db`, or wherever `--data <dir>` points.
 
+Requires Node 22.13 or newer: the embedded store is Node's built-in `node:sqlite`, so installing pulls no native module and runs no install script. The file is `~/.statecore/statecore.db` (or `--data <dir>/statecore.db`).
+
 **Remote (`--url <base>`).** Talks to a running StateCore deployment's frozen `/v1` HTTP surface instead of an embedded database — see the [API reference](../../docs/api.md). Use this when several agents or machines need to share one memory store, or you already run the full stack (Postgres + pgvector + Redis) and want its retrieval quality. `STATECORE_USER_ID` sets the `x-user-id` sent on every request (default `local`).
 
 Both modes resolve **scope** — the memory partition a project's facts live in — the same way: `git rev-parse --show-toplevel` if the working directory is a git repo, else the working directory itself; `STATECORE_SCOPE` overrides either.
@@ -173,8 +175,23 @@ For embedding the engine in-process instead of talking MCP over stdio — the su
 
 - **Lite retrieval is keyword + CJK bigram, not semantic.** The embedded backend runs on SQLite and has no pgvector. `recall` still returns a budgeted digest, believed facts, and matching events, but it will not find a paraphrase with no matching tokens the way the full stack's semantic search can.
 - **Distillation needs a key.** Without one, `remember` with `consolidate: true` stores the raw event, but it is never folded into stable facts — `facts`/`why` will not see it until a key is configured and the digest runs (threshold trigger, or startup catch-up).
-- **One shared SQLite file per `--data` directory, not per project.** Multiple projects on one machine share `~/.statecore/statecore.db` by default, partitioned by scope; only concurrent writes to the *same* scope from multiple processes are guarded (WAL + a busy timeout + an in-database digest lock for concurrent distillation).
+- **One shared SQLite file per `--data` directory, not per project.** Multiple projects on one machine share `~/.statecore/statecore.db` by default, partitioned by scope; only concurrent writes to the *same* scope from multiple processes are guarded (WAL, a 5 s busy timeout, and an in-database digest lock for concurrent distillation).
 - **`--url` mode's `facts()` output carries no fact-registry id per item** (the frozen `/v1` `MemoryFactsOutput` contract doesn't have one) — `why()` in that mode needs a `factId` sourced from a prior `recall()`'s `factRegistry` or a previous provenance response, not invented from `facts()` alone.
+
+## Data file compatibility
+
+The store carries its schema version in `PRAGMA user_version`. Any 1.x release
+of `statecore-mcp` opens a database created by any earlier 1.x or 0.6.x release
+and upgrades it in place on open; downgrading to an older release is not
+supported. To take your data elsewhere:
+
+```bash
+statecore-mcp export --data ~/.statecore > statecore-export.json   # all scopes
+statecore-mcp export --scope /path/to/project                       # one scope
+```
+
+The document is pretty-printed JSON with ISO-8601 dates, parsed JSON columns,
+and a top-level `schemaVersion`.
 
 ## More
 
