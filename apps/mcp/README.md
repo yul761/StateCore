@@ -54,8 +54,9 @@ reading and writing the same scope's stop-points.
 | Capability | No key | With key (`FEATURE_LLM=true` + `MODEL_API_KEY`) |
 |---|---|---|
 | `remember` (note path), `facts`, `why`, `forget` | Full — deterministic write, evidence id, audit chain | Same |
-| Conversational memory (`remember` with `consolidate: true`) | Event is stored; background distillation into stable facts never runs | Distilled into facts automatically once pending events cross a threshold (default 20), or on startup catch-up |
+| Conversational memory (`remember` with `consolidate: true`) | Event is stored and `remember` reports `distillation: "deferred"`; `facts` shows the `pending` count; run `statecore-mcp digest` after configuring a key to distil the backlog | Distilled into facts automatically once pending events cross a threshold (default 20), or on startup catch-up |
 | Retrieval quality | Keyword matching, plus CJK bigram matching for Chinese/Japanese/Korean text — no semantic search | Same in embedded/lite mode — semantic (pgvector) search is a full-stack capability, only reachable via `--url` against a keyed StateCore deployment, not by holding a key alone |
+| `statecore-mcp digest` | Reports `{ ran: false, reason: "no-llm" }` | Runs one distillation pass now |
 
 Nothing behind a key is required for the audit trail to work. A key only turns on distillation of raw conversational events into stable facts, and it does that in the background — it is never on the critical path of a tool call.
 
