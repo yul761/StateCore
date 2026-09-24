@@ -158,4 +158,26 @@ describe("built binary, keyless end-to-end over stdio", () => {
     const scope = doc.scopes.find((s) => s.name === "e2e-scope")!;
     expect(scope.snapshots.at(-1)!.state.factRegistry.some((f) => f.content.includes("export probe fact"))).toBe(true);
   });
+
+  it("two processes writing the same scope both succeed (WAL + busy timeout)", async () => {
+    const other = new Client({ name: "e2e-second", version: "0.0.0-test" });
+    const otherTransport = new StdioClientTransport({ command: distEntry, args: ["--data", dataDir], env: { ...getDefaultEnvironment(), STATECORE_SCOPE: "e2e-scope" } });
+    await other.connect(otherTransport);
+    try {
+      await Promise.all(
+        Array.from({ length: 10 }, (_, i) => [
+          client.callTool({ name: "remember", arguments: { text: `concurrent A${i} distinct-token-alpha-${i}` } }),
+          other.callTool({ name: "remember", arguments: { text: `concurrent B${i} distinct-token-beta-${i}` } })
+        ]).flat()
+      );
+      const result = (await other.callTool({ name: "facts", arguments: {} })) as { content: Array<{ text: string }> };
+      const text = result.content.map((c) => c.text).join("\n");
+      for (let i = 0; i < 10; i++) {
+        expect(text).toContain(`distinct-token-alpha-${i}`);
+        expect(text).toContain(`distinct-token-beta-${i}`);
+      }
+    } finally {
+      await other.close();
+    }
+  }, 60_000);
 });

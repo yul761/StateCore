@@ -175,26 +175,32 @@ export function createEmbeddedBackend(opts: {
     async remember({ text, consolidate }) {
       if (!consolidate) {
         // Mirrors apps/api/src/memory-facts.service.ts#addNote; keep in sync.
-        const snap = await latestState();
+        // The read (latest snapshot), the in-memory addNoteFact mutation, and the
+        // write (UPDATE/INSERT) all run inside one store.db.transaction so
+        // BEGIN IMMEDIATE holds the write lock across the whole read-modify-write:
+        // two MCP processes editing the same scope's snapshot concurrently would
+        // otherwise both read the same row, mutate their own in-memory copy, and
+        // have the second UPDATE silently drop the first process's note.
         const pack = await packFor();
-        let superseded: string | undefined;
-        if (snap) {
-          const result = addNoteFact(snap.state, text, () => randomUUID(), () => new Date().toISOString(), pack);
-          superseded = result.superseded;
-          if (result.changed) store.db.run(`UPDATE "DigestStateSnapshot" SET "state" = ? WHERE "id" = ?`, toJson(snap.state), snap.id);
-        } else {
+        const superseded: string | undefined = store.db.transaction(() => {
+          const snap = latestSnapshotRow();
+          if (snap) {
+            const state = parseJson<DigestState>(snap.state, EMPTY_STATE());
+            const result = addNoteFact(state, text, () => randomUUID(), () => new Date().toISOString(), pack);
+            if (result.changed) store.db.run(`UPDATE "DigestStateSnapshot" SET "state" = ? WHERE "id" = ?`, toJson(state), snap.id);
+            return result.superseded;
+          }
           const state = EMPTY_STATE();
           addNoteFact(state, text, () => randomUUID(), () => new Date().toISOString(), pack);
-          store.db.transaction(() => {
-            const digestId = randomUUID();
-            const now = nowMs();
-            store.db.run(`INSERT INTO "Digest" ("id", "scopeId", "summary", "changes", "nextSteps", "createdAt") VALUES (?, ?, 'Notes', '', '[]', ?)`, digestId, scopeId, now);
-            store.db.run(
-              `INSERT INTO "DigestStateSnapshot" ("id", "scopeId", "digestId", "state", "consistency", "createdAt") VALUES (?, ?, ?, ?, 'null', ?)`,
-              randomUUID(), scopeId, digestId, toJson(state), now
-            );
-          });
-        }
+          const digestId = randomUUID();
+          const now = nowMs();
+          store.db.run(`INSERT INTO "Digest" ("id", "scopeId", "summary", "changes", "nextSteps", "createdAt") VALUES (?, ?, 'Notes', '', '[]', ?)`, digestId, scopeId, now);
+          store.db.run(
+            `INSERT INTO "DigestStateSnapshot" ("id", "scopeId", "digestId", "state", "consistency", "createdAt") VALUES (?, ?, ?, ?, 'null', ?)`,
+            randomUUID(), scopeId, digestId, toJson(state), now
+          );
+          return undefined;
+        });
         return superseded !== undefined ? { ok: true, mode: "note", superseded } : { ok: true, mode: "note" };
       }
 
