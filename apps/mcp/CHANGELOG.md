@@ -1,5 +1,29 @@
 # statecore-mcp
 
+## 1.0.0
+
+### Major Changes
+
+- statecore-mcp 1.0.0.
+
+  The tool surface (`remember`, `recall`, `facts`, `why`, `forget`, `handoff`) and the CLI (`export`, `hook`, `digest`) are now stable and additive-only; data files are versioned and upgrade in place; installation runs no scripts and needs only Node ≥ 22.13. See the README's "Stability" section for the exact promises and the two things deliberately left out of 1.x (embedded semantic retrieval, a resident daemon).
+
+  Breaking against 0.6.x, all documented in the earlier 1.0 pre-release changesets: Node floor 22.13; `runScopeDigest({ prisma })` → `runScopeDigest({ db })`; the `facts` MCP tool returns `{ groups, pending? }` instead of a bare array; `remember` returns two new fields (`distillation`, `reason`) — strict-equality assertions on its return shape need updating.
+
+### Minor Changes
+
+- [#3](https://github.com/yul761/StateCore/pull/3) [`1bb47f6`](https://github.com/yul761/StateCore/commit/1bb47f63ffcb8c0e116ccbf6dd7560a5377103bb) Thanks [@yul761](https://github.com/yul761)! - `statecore-mcp hook <session-start|user-prompt|stop|pre-compact>` reads a Claude Code hook payload from stdin and captures the conversation into project memory (keyed, idempotent stream events) or injects the project's memory as `hookSpecificOutput.additionalContext`. A Claude Code plugin (`plugins/claude-code`, marketplace `yul761/StateCore`) wires the four events and the MCP server. `STATECORE_CAPTURE=off` disables capture. The embedded backend gains an optional `capture({ text, key })` method.
+
+- [#4](https://github.com/yul761/StateCore/pull/4) [`c885c8c`](https://github.com/yul761/StateCore/commit/c885c8caf52007e2f43bf3c63be9874297843df9) Thanks [@yul761](https://github.com/yul761)! - Keyless usage is now visible instead of silent. `remember` reports its distillation state (`scheduled` or `deferred`, with a reason when deferred); `facts` includes a top-level `pending` count of events not yet folded into stable facts. A new `statecore-mcp digest` subcommand runs one explicit distillation pass now — `{ ran: true }`, or `{ ran: false, reason }` (`no-llm`, `below-threshold`, `locked`, `failed`) when it does not. The embedded backend gains `pendingEvents()` to back the `facts` count. `--url` mode's `facts()` output now carries `factId` per item when the server is on contract 1.7.0 or later (a pass-through; an older server simply omits the field).
+
+- [#2](https://github.com/yul761/StateCore/pull/2) [`21867bc`](https://github.com/yul761/StateCore/commit/21867bc092bdf91670cdf50eb17ebd2aabfd6e76) Thanks [@yul761](https://github.com/yul761)! - The embedded store now runs on Node's built-in `node:sqlite` instead of Prisma.
+
+  - No `postinstall`, no native module, no engine download: `npm install --ignore-scripts` and pnpm 10's default script blocking both work.
+  - Requires Node 22.13 or newer.
+  - The database file is schema-versioned (`PRAGMA user_version`) and migrated in place on open; 0.6.x files open unchanged.
+  - New `statecore-mcp export [--data <dir>] [--scope <name>]` prints a JSON dump.
+  - `runScopeDigest`'s first option is now `db` (was `prisma`). `createEmbeddedBackend`, `createHttpBackend`, `listScopes`, `resolveScopeName` are unchanged.
+
 ## 0.6.0
 
 ### Minor Changes

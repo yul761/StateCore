@@ -1,5 +1,12 @@
 # @statecore/worker
 
+## 1.4.3
+
+### Patch Changes
+
+- Updated dependencies [[`c885c8c`](https://github.com/yul761/StateCore/commit/c885c8caf52007e2f43bf3c63be9874297843df9)]:
+  - @statecore/core@1.5.0
+
 ## 1.4.2
 
 ### Patch Changes

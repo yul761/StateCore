@@ -18,16 +18,31 @@ surface. `docs/api.md` owns the rule.
 
 ## [Unreleased]
 
+## v1.7.0 — statecore-mcp 1.0.0
+
 ### Added
-- `statecore-mcp@0.6.0` — IDF-weighted relevance scoring from the token
-  index: per-query document frequencies weight both the event heuristic and
-  the fact ranking inside the `maxChars` budget, so a rare entity token
-  outvotes template words (measured on MemoryAgentBench FactConsolidation:
-  39.0 → 49.0, past the BM25 baseline). Plus two defaults corrected the same
-  benchmark exposed: the digest path's LLM timeout is now 120s (20s aborted
-  every large-backlog distillation chunk on a reasoning model, silently), and
-  the fallback digest model is gpt-5-mini, matching the README. Details:
+- `/v1` contract `info.version` 1.7.0 — `GET /v1/memory/facts` items carry an
+  additive-optional `factId`, the fact-registry evidence-chain id for that
+  item (`null` when unmatched). `attachFactIds` moved from `apps/mcp` into
+  `@statecore/core` so the API and the embedded MCP backend join the same id
+  from one implementation. Details: `docs/api.md`, `apps/api/CHANGELOG.md`.
+- `statecore-mcp@1.0.0` — the tool surface (`remember`, `recall`, `facts`,
+  `why`, `forget`, `handoff`) and CLI (`export`, `hook`, `digest`) are now
+  stable and additive-only for 1.x; see `apps/mcp/README.md`'s "Stability"
+  section for the exact promises. Three features land in this release: the
+  embedded store now runs on Node's built-in `node:sqlite` with a
+  schema-versioned, in-place-migrating data file and a new `export`
+  subcommand (no install scripts, no native modules, Node ≥ 22.13 only);
+  `statecore-mcp hook <event>` captures Claude Code conversations into
+  project memory and re-injects them, wired up by a Claude Code plugin
+  (`plugins/claude-code`); and keyless usage is now visible instead of
+  silent — `remember`'s distillation state, `facts`' `pending` count, and a
+  `statecore-mcp digest` subcommand for an explicit distillation pass.
+  Also includes the IDF-weighted relevance scoring and digest-timeout/model
+  fixes previously logged here as the unreleased `0.6.0` entry. Details:
   `apps/mcp/CHANGELOG.md`.
+
+### Previously unreleased (folded into this release)
 - `statecore-mcp@0.5.0` — four changes in one minor. `handoff`, the sixth
   tool: cross-client session handoff in a dedicated supersession-tracked
   table (race-free against digests, `why` walks the stop-point chain by id,
