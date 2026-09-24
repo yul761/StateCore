@@ -100,6 +100,38 @@ export function groupFactsForDisplay(
   })).filter((g) => g.items.length > 0);
 }
 
+/**
+ * `DisplayFact`/`groupFactsForDisplay` carry `factKey` but no fact-registry
+ * id, so a caller that needs an evidence-chain id (e.g. `why()`) has nothing
+ * to key on from the grouped display items alone. This recomputes the same
+ * `factKey` this module derives for each active profile-type registry entry
+ * (display group + content, `computeFactKey`) and joins it back onto the
+ * grouped display items as `factId`.
+ */
+export function attachFactIds(
+  groups: Array<{ group: DisplayGroup; items: Array<{ factKey: string; text: string; createdAt: string | null }> }>,
+  state: DigestState,
+  pack: FacetPack
+): Array<{ group: DisplayGroup; items: Array<{ factKey: string; text: string; createdAt: string | null; factId: string | null }> }> {
+  // First-wins: mirror flattenScopeFacts' dedup order (above,
+  // `if (!byKey.has(factKey))` before insert) so a factKey collision — two
+  // sibling facets sharing a displayGroup with identical normalized content —
+  // resolves to the same registry entry `facts()` actually displays. Keep in
+  // sync with that first-wins invariant.
+  const idByFactKey = new Map<string, string>();
+  for (const entry of getActiveFactRegistry(state)) {
+    if (entry.type !== "profile" || !entry.facet) continue;
+    const group = factToGroup(entry.facet, pack);
+    if (!group) continue;
+    const factKey = computeFactKey(group, entry.content);
+    if (!idByFactKey.has(factKey)) idByFactKey.set(factKey, entry.id);
+  }
+  return groups.map((g) => ({
+    group: g.group,
+    items: g.items.map((item) => ({ ...item, factId: idByFactKey.get(item.factKey) ?? null }))
+  }));
+}
+
 export function pruneForgottenFacts(
   state: DigestState,
   forgottenFactKeys: ReadonlySet<string>,

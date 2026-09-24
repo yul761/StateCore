@@ -160,7 +160,7 @@ checkable rather than merely stored; `docs/api.md` lists the full frozen surface
 > **API stability:** the `/v1` contract is frozen and additive-only — see
 > [STABILITY.md](STABILITY.md). It currently covers **22 operations across 20
 > paths**. The contract carries its own version in the generated OpenAPI document
-> (`info.version`, currently `1.6.0`), which is what tells you how current a spec
+> (`info.version`, currently `1.7.0`), which is what tells you how current a spec
 > you are holding; it is not the release tag and not any package version.
 
 ¹ Internal read-model endpoints — registered only at `/memory/...`, not under `/v1`, and not part of the frozen `/v1` contract.

@@ -405,6 +405,8 @@ audit readers on the same grounds: `GET /v1/memory/facts/:factId/provenance`,
 `GET /v1/memory/digests/:digestId/selection`, and `GET /v1/facet-pack`. The
 number sat at `1.0.0` through the first three before this rule existed, which
 meant a reader could not tell a three-month-old spec from a current one.
+`1.6.0` added `POST /v1/memory/handoff`, and `1.7.0` adds the optional
+`factId` on `GET /v1/memory/facts` items.
 
 > **Diagnostic fields are not frozen.** `POST /v1/memory/retrieve`,
 > `/v1/memory/answer`, and `/v1/memory/runtime/turn` return additional

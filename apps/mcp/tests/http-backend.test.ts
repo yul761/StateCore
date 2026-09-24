@@ -136,6 +136,22 @@ describe("http backend, --url mode", () => {
     expect(groups).toEqual([{ group: "Decisions", items: [{ factKey: "k1", text: "we use pnpm", createdAt: null }] }]);
   });
 
+  it("facts() passes factId through unchanged when the server includes it (contract 1.7.0)", async () => {
+    await restub({
+      "GET /v1/scopes": { status: 200, body: { items: [{ id: SCOPE_ID, name: "my-project", goal: null, stage: "build", createdAt: "2026-08-14T00:00:00.000Z" }] } },
+      "GET /v1/memory/facts": {
+        status: 200,
+        body: { groups: [{ group: "Projects", items: [{ factKey: "k1", text: "Launching Remi in July", createdAt: null, factId: "f1" }, { factKey: "k2", text: "unmatched", createdAt: null, factId: null }] }] }
+      }
+    });
+    const be = createHttpBackend({ baseUrl, userId: "local", scopeName: "my-project" });
+    await be.init();
+    const groups = await be.facts();
+    expect(groups).toEqual([
+      { group: "Projects", items: [{ factKey: "k1", text: "Launching Remi in July", createdAt: null, factId: "f1" }, { factKey: "k2", text: "unmatched", createdAt: null, factId: null }] }
+    ]);
+  });
+
   it("why() gets /v1/memory/facts/:id/provenance?scopeId=", async () => {
     const be = createHttpBackend({ baseUrl, userId: "local", scopeName: "my-project" });
     await be.init();

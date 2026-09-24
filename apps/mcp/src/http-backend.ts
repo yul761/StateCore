@@ -75,10 +75,12 @@ export function createHttpBackend(opts: { baseUrl: string; userId: string; scope
 
     async facts() {
       // GET /v1/memory/facts returns { groups }; groups is what
-      // embedded.ts#facts() returns too (MemoryFactsOutput's shape). Remote
-      // group items carry no fact-registry id — why() in this mode takes its
-      // factId from recall()'s factRegistry or a prior provenance response,
-      // never invented here.
+      // embedded.ts#facts() returns too (MemoryFactsOutput's shape). Since
+      // contract 1.7.0, group items carry an optional factId (null when
+      // unmatched); an older server predating 1.7.0 simply omits the field.
+      // Either way this is a pass-through — why() in this mode takes its
+      // factId from recall()'s factRegistry, a prior provenance response, or
+      // now this field, never invented here.
       const result = await call<{ groups: unknown }>("GET", `/v1/memory/facts?${scopedQuery()}`);
       return result.groups;
     },

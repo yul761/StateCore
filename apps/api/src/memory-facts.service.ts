@@ -1,5 +1,5 @@
 import { Injectable, Optional } from "@nestjs/common";
-import { flattenScopeFacts, groupFactsForDisplay, addNoteFact, resolveFacetPackForScope, formatHandoff, type DisplayFact } from "@statecore/core";
+import { flattenScopeFacts, groupFactsForDisplay, attachFactIds, addNoteFact, resolveFacetPackForScope, formatHandoff, type DisplayFact } from "@statecore/core";
 import type { DigestState } from "@statecore/core";
 import { prisma as defaultPrisma } from "@statecore/db";
 import { randomUUID } from "node:crypto";
@@ -132,9 +132,10 @@ export class MemoryFactsService {
     if (!snapshot) return [];
     const forgottenKeys = new Set(forgotten.map((f) => f.factKey));
     const pack = await this.packFor(userId, scopeId);
-    const facts: DisplayFact[] = flattenScopeFacts(snapshot.state as unknown as DigestState, undefined, pack).filter(
+    const state = snapshot.state as unknown as DigestState;
+    const facts: DisplayFact[] = flattenScopeFacts(state, undefined, pack).filter(
       (f) => !forgottenKeys.has(f.factKey)
     );
-    return groupFactsForDisplay(facts, pack);
+    return attachFactIds(groupFactsForDisplay(facts, pack), state, pack);
   }
 }

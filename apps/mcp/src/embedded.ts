@@ -5,12 +5,11 @@ import {
   ProjectService,
   flattenScopeFacts,
   groupFactsForDisplay,
+  attachFactIds,
   addNoteFact,
   resolveFacetPackForScope,
   buildFactProvenance,
   getActiveFactRegistry,
-  factToGroup,
-  computeFactKey,
   activeHandoffFromRows,
   facetAuthority,
   formatHandoff,
@@ -18,9 +17,7 @@ import {
   HANDOFF_FACET,
   packWithinBudget,
   tokenizeForIndex,
-  type DigestState,
-  type FacetPack,
-  type DisplayGroup
+  type DigestState
 } from "@statecore/core";
 import { openStore, type Store } from "./store";
 import type { LiteDb } from "./lite-db";
@@ -30,40 +27,6 @@ import type { MemoryBackend } from "./backend";
 import { maybeRunDigest, countPendingEvents, hasUsableModel, type DigestChatModel } from "./digest";
 
 const USER = "local";
-
-/**
- * `DisplayFact`/`groupFactsForDisplay` (packages/core/src/memory-facts.ts) carry
- * `factKey` but no fact-registry id, so `why()` — which looks entries up by
- * `FactRegistryEntry.id` — has nothing to key on from `facts()` output alone.
- * This recomputes the same `factKey` core derives for each active profile-type
- * registry entry (display group + content, `computeFactKey`) and joins it back
- * onto the grouped display items as `factId`. Local to apps/mcp: core's
- * `memory-facts.ts` has no equivalent join to mirror, since the API's
- * `getFacts` response never needed evidence-chain ids.
- */
-function attachFactIds(
-  groups: Array<{ group: DisplayGroup; items: Array<{ factKey: string; text: string; createdAt: string | null }> }>,
-  state: DigestState,
-  pack: FacetPack
-): Array<{ group: DisplayGroup; items: Array<{ factKey: string; text: string; createdAt: string | null; factId: string | null }> }> {
-  // First-wins: mirror flattenScopeFacts' dedup order (memory-facts.ts:60-69,
-  // `if (!byKey.has(factKey))` before insert) so a factKey collision — two
-  // sibling facets sharing a displayGroup with identical normalized content —
-  // resolves to the same registry entry `facts()` actually displays. Keep in
-  // sync with that first-wins invariant.
-  const idByFactKey = new Map<string, string>();
-  for (const entry of getActiveFactRegistry(state)) {
-    if (entry.type !== "profile" || !entry.facet) continue;
-    const group = factToGroup(entry.facet, pack);
-    if (!group) continue;
-    const factKey = computeFactKey(group, entry.content);
-    if (!idByFactKey.has(factKey)) idByFactKey.set(factKey, entry.id);
-  }
-  return groups.map((g) => ({
-    group: g.group,
-    items: g.items.map((item) => ({ ...item, factId: idByFactKey.get(item.factKey) ?? null }))
-  }));
-}
 
 /**
  * Startup digest catch-up, across every scope the user has, not just the one

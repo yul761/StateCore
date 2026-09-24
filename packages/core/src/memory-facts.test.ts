@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  attachFactIds,
   computeFactKey,
   factToGroup,
   flattenScopeFacts,
@@ -137,6 +138,44 @@ describe("groupFactsForDisplay", () => {
     const groups = groupFactsForDisplay(facts);
     expect(groups.map((g) => g.group)).toEqual(["People", "Style"]);
     expect(groups[0].items[0]).toEqual({ factKey: "b", text: "Call the supplier", createdAt: null });
+  });
+});
+
+describe("attachFactIds", () => {
+  it("resolves a same-displayGroup factKey collision to the first-registered entry, and factId: null when unmatched", () => {
+    const state: DigestState = {
+      stableFacts: { decisions: [] },
+      workingNotes: {},
+      todos: [],
+      factRegistry: [
+        { id: "f1", content: "Launching Remi in July", type: "profile", confidence: 0.85, addedAt: "2026-06-20T00:00:00.000Z", evidenceId: "ev1", evidenceType: "event", facet: "goals" },
+        // Same display group (Projects, via "ongoing") and identical normalized
+        // content as f1 -> same factKey. First-wins must resolve to f1's id.
+        { id: "f2", content: "  launching   remi in july ", type: "profile", confidence: 0.6, addedAt: "2026-06-21T00:00:00.000Z", evidenceId: "ev2", evidenceType: "event", facet: "ongoing" }
+      ],
+      profile: {}
+    };
+    const facts = flattenScopeFacts(state);
+    const groups = groupFactsForDisplay(facts);
+    const withIds = attachFactIds(groups, state, undefined as any);
+    const projectsGroup = withIds.find((g) => g.group === "Projects")!;
+    expect(projectsGroup.items).toHaveLength(1);
+    expect(projectsGroup.items[0].factId).toBe("f1");
+  });
+
+  it("gives factId: null to a display item with no matching registry entry", () => {
+    const state: DigestState = {
+      stableFacts: { decisions: [] },
+      workingNotes: {},
+      todos: [],
+      factRegistry: [],
+      profile: { relationships: ["Call the supplier about Q3"] }
+    };
+    const facts = flattenScopeFacts(state);
+    const groups = groupFactsForDisplay(facts);
+    const withIds = attachFactIds(groups, state, undefined as any);
+    const peopleGroup = withIds.find((g) => g.group === "People")!;
+    expect(peopleGroup.items[0].factId).toBeNull();
   });
 });
 

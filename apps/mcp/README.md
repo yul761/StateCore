@@ -185,7 +185,6 @@ For embedding the engine in-process instead of talking MCP over stdio — the su
 - **Lite retrieval is keyword + CJK bigram, not semantic.** The embedded backend runs on SQLite and has no pgvector. `recall` still returns a budgeted digest, believed facts, and matching events, but it will not find a paraphrase with no matching tokens the way the full stack's semantic search can.
 - **Distillation needs a key.** Without one, `remember` with `consolidate: true` stores the raw event, but it is never folded into stable facts — `facts`/`why` will not see it until a key is configured and the digest runs (threshold trigger, or startup catch-up).
 - **One shared SQLite file per `--data` directory, not per project.** Multiple projects on one machine share `~/.statecore/statecore.db` by default, partitioned by scope; only concurrent writes to the *same* scope from multiple processes are guarded (WAL, a 5 s busy timeout, and an in-database digest lock for concurrent distillation).
-- **`--url` mode's `facts()` output carries no fact-registry id per item** (the frozen `/v1` `MemoryFactsOutput` contract doesn't have one) — `why()` in that mode needs a `factId` sourced from a prior `recall()`'s `factRegistry` or a previous provenance response, not invented from `facts()` alone.
 
 ## Data file compatibility
 
