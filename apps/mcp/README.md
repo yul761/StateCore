@@ -191,7 +191,10 @@ statecore-mcp export --scope /path/to/project                       # one scope
 ```
 
 The document is pretty-printed JSON with ISO-8601 dates, parsed JSON columns,
-and a top-level `schemaVersion`.
+and a top-level `schemaVersion`. Each scope also carries its active
+`factRegistry` — the facts currently live in that scope's latest digest
+snapshot, with superseded and retired entries filtered out — alongside its
+raw events, digests, snapshots, handoffs and forgotten facts.
 
 ## More
 

@@ -49,7 +49,8 @@ async function main(): Promise<void> {
   if (isSubcommand(argv[0])) {
     const args = parseArgs(argv.slice(1));
     if (argv[0] === "export") {
-      await runExport({ dataDir: args.dataDir ?? defaultDataDir, scopeName: args.scope }, (text) => process.stdout.write(text));
+      const { found } = await runExport({ dataDir: args.dataDir ?? defaultDataDir, scopeName: args.scope }, (text) => process.stdout.write(text));
+      if (!found) process.exitCode = 1;
     }
     return;
   }

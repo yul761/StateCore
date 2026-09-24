@@ -128,6 +128,10 @@ export function createEmbeddedBackend(opts: {
   // with its threshold-1 runs on the shared in-process digest lock and
   // reporting a spurious "locked" for what is really "already being handled".
   let startupCatchUp: Promise<void> = Promise.resolve();
+  // Chains every fire-and-forget post-remember digest so close() can drain
+  // them before the store connection underneath them goes away.
+  // maybeRunDigest never rejects, so this chain can never break.
+  let inFlight: Promise<unknown> = Promise.resolve();
 
   const latestSnapshotRow = (): SnapshotRow | undefined =>
     store.db.get<SnapshotRow>(`SELECT "id", "state", "createdAt" FROM "DigestStateSnapshot" WHERE "scopeId" = ? ORDER BY "createdAt" DESC, "id" DESC LIMIT 1`, scopeId);
@@ -154,7 +158,10 @@ export function createEmbeddedBackend(opts: {
   return {
     async init() {
       store = await openStore(opts.dataDir);
-      store.db.run(`INSERT INTO "User" ("id", "identity", "createdAt") VALUES (?, ?, ?) ON CONFLICT("identity") DO NOTHING`, USER, USER, Date.now());
+      // id and identity are both "local" — the single embedded user — so
+      // INSERT OR IGNORE alone (on the PRIMARY KEY) is enough; no ON CONFLICT
+      // clause targeting the separate "identity" unique index is needed.
+      store.db.run(`INSERT OR IGNORE INTO "User" ("id", "identity", "createdAt") VALUES (?, ?, ?)`, USER, USER, Date.now());
       const existing = store.db.get<{ id: string }>(`SELECT "id" FROM "ProjectScope" WHERE "userId" = ? AND "name" = ? LIMIT 1`, USER, opts.scopeName);
       scopeId =
         existing?.id ??
@@ -205,7 +212,7 @@ export function createEmbeddedBackend(opts: {
       }
 
       await new MemoryService(makeMemoryRepo(store.db)).ingestEvent({ userId: USER, scopeId, type: "stream", source: "api", content: text });
-      void maybeRunDigest({ db: store.db, userId: USER, scopeId, env: opts.env, reason: "threshold", digestLlm: opts.digestLlm });
+      inFlight = inFlight.then(() => maybeRunDigest({ db: store.db, userId: USER, scopeId, env: opts.env, reason: "threshold", digestLlm: opts.digestLlm }));
       return { ok: true, mode: "event" };
     },
 
@@ -364,6 +371,16 @@ export function createEmbeddedBackend(opts: {
       return { ok: true };
     },
 
-    close: () => store.close()
+    async close() {
+      // Drain both the startup catch-up pass and every chained post-remember
+      // digest before releasing the store connection they run against —
+      // otherwise a straggler run's own release can land on a closed db and
+      // log a spurious "digest run failed" to stderr. Neither promise can
+      // reject (runStartupDigestCatchUp only awaits maybeRunDigest, which
+      // never rejects; inFlight is chained from the same never-rejecting call).
+      await startupCatchUp;
+      await inFlight;
+      await store.close();
+    }
   };
 }

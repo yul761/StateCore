@@ -153,12 +153,21 @@ describe("built binary, keyless end-to-end over stdio", () => {
     await client.callTool({ name: "remember", arguments: { text: "export probe fact" } });
     const { execFileSync } = await import("node:child_process");
     const out = execFileSync(distEntry, ["export", "--data", dataDir], { encoding: "utf8", env: { ...getDefaultEnvironment(), STATECORE_SCOPE: "e2e-scope" } });
-    const doc = JSON.parse(out) as { schemaVersion: number; scopes: Array<{ name: string; snapshots: Array<{ state: { factRegistry: Array<{ content: string }> } }> }> };
+    const doc = JSON.parse(out) as { schemaVersion: number; scopes: Array<{ name: string; factRegistry: Array<{ content: string }> }> };
     expect(doc.schemaVersion).toBeGreaterThanOrEqual(1);
     const scope = doc.scopes.find((s) => s.name === "e2e-scope")!;
-    expect(scope.snapshots.at(-1)!.state.factRegistry.some((f) => f.content.includes("export probe fact"))).toBe(true);
+    expect(scope.factRegistry.some((f) => f.content.includes("export probe fact"))).toBe(true);
   });
 
+  // Two dependencies this test relies on to keep all 20 notes it writes (plus
+  // the 2 from earlier tests in this file, ~22 total) distinct and active:
+  // the `notes` facet cap of 30 (packages/core/src/facet-registry.ts) is
+  // never reached, so nothing here gets evicted; and core's note-revision
+  // detection (isNoteRevision, packages/core/src/digest/similarity.ts) does
+  // not match e.g. "concurrent A0 distinct-token-alpha-0" against "concurrent
+  // A1 distinct-token-alpha-1" as a revision of the same note — the differing
+  // numeric/token suffix is enough to diverge them — so none of the 20 collide
+  // pairwise into supersession.
   it("two processes writing the same scope both succeed (WAL + busy timeout)", async () => {
     const other = new Client({ name: "e2e-second", version: "0.0.0-test" });
     const otherTransport = new StdioClientTransport({ command: distEntry, args: ["--data", dataDir], env: { ...getDefaultEnvironment(), STATECORE_SCOPE: "e2e-scope" } });

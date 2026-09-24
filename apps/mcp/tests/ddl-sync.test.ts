@@ -5,7 +5,9 @@
 // drift between them means a client writing a column migration 1 never created,
 // on a user's first run. This regenerates the DDL prisma itself would produce
 // from the current schema and compares it, statement by statement, against the
-// committed migration.
+// committed migration. This suite shells out to packages/db's prisma CLI even
+// though apps/mcp itself is Prisma-free, so CI's "Generate Prisma client" step
+// and packages/db's prisma devDependency must both stay in place for it to run.
 import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";

@@ -8,13 +8,13 @@
 // createEmbeddedBackend's opts.digestLlm, and the direct runScopeDigest
 // contract; the last test confirms the pre-existing keyless/keyed env
 // behavior is unchanged when no llm is injected.
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEmbeddedBackend, runScopeDigest, type DigestChatModel } from "../src/lib";
 import { openStore } from "../src/store";
-import { seedUser, seedScope, insertEvent, latestDigest, lockRows, findScopeByName } from "./helpers/seed";
+import { seedUser, seedScope, insertEvent, latestDigest, lockRows } from "./helpers/seed";
 
 const USER = "local";
 
@@ -78,36 +78,27 @@ describe("statecore-mcp/lib export surface", () => {
       env: { STATECORE_DIGEST_THRESHOLD: String(threshold) } as unknown as NodeJS.ProcessEnv,
       digestLlm: llm
     });
+    await backend.init();
+    for (let i = 0; i < threshold + 1; i += 1) {
+      await backend.remember({ text: `stream event ${i}`, consolidate: true });
+    }
+
+    // close() now awaits every chained post-remember digest (and the startup
+    // catch-up) before releasing the store connection they run against, so
+    // closing the backend IS the wait: no need to poll the DigestLock table
+    // to confirm every triggered run (the threshold+1 remember() calls above
+    // each fire their own fire-and-forget maybeRunDigest, though only one
+    // wins the lock and actually runs — see digest.ts's running-flag
+    // comment) has released it first.
+    await backend.close();
+
+    expect(callCount()).toBeGreaterThan(0);
+    const store = await openStore(dataDir);
     try {
-      await backend.init();
-      for (let i = 0; i < threshold + 1; i += 1) {
-        await backend.remember({ text: `stream event ${i}`, consolidate: true });
-      }
-
-      await vi.waitFor(() => expect(callCount()).toBeGreaterThan(0), { timeout: 2000, interval: 20 });
-
-      const store = await openStore(dataDir);
-      try {
-        const digestRow = latestDigest(store.db);
-        expect(digestRow?.summary).toBe(STAGE2_OUTPUT.summary);
-
-        // The threshold+1 remember() calls above each fire their own
-        // fire-and-forget maybeRunDigest; more than one can pass the
-        // in-process "running" check before the first acquires the DB lock
-        // (only one wins the lock and actually runs — see digest.ts's
-        // running-flag comment), so a straggler run's own lock-release can
-        // still be in flight after the first llm call is observed above.
-        // Waiting for the lock table to drain confirms every triggered run
-        // has finished before backend.close() tears down the connection
-        // they release it through — otherwise that release can land on a
-        // closed db and log a spurious "digest run failed" to stderr.
-        const scope = findScopeByName(store.db, "/tmp/lib-export-llm-project")!;
-        await vi.waitFor(() => expect(lockRows(store.db, scope.id)).toHaveLength(0), { timeout: 2000, interval: 20 });
-      } finally {
-        await store.close();
-      }
+      const digestRow = latestDigest(store.db);
+      expect(digestRow?.summary).toBe(STAGE2_OUTPUT.summary);
     } finally {
-      await backend.close();
+      await store.close();
     }
   });
 

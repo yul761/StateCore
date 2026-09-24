@@ -287,9 +287,7 @@ async function runDigestPipeline(db: LiteDb, userId: string, scopeId: string, di
  * promise. A fire-and-forget caller must wrap this call itself; use
  * `maybeRunDigest` where a never-rejecting call is required.
  *
- * @param opts.db - Lite client for the scope's SQLite file, typed
- *   `unknown` at this public surface (the concrete generated-client type is
- *   internal to this package) and cast back before use.
+ * @param opts.db - Lite client for the scope's SQLite file.
  * @param opts.userId - Owning user id.
  * @param opts.scopeId - Scope to digest.
  * @param opts.llm - Chat model the pipeline calls for stage 1/2 + consolidation.
@@ -300,13 +298,13 @@ async function runDigestPipeline(db: LiteDb, userId: string, scopeId: string, di
  *   invalid model response) — propagated uncaught.
  */
 export async function runScopeDigest(opts: {
-  db: unknown;
+  db: LiteDb;
   userId: string;
   scopeId: string;
   llm: DigestChatModel;
   env?: NodeJS.ProcessEnv;
 }): Promise<void> {
-  const db = opts.db as LiteDb;
+  const { db } = opts;
   const locked = await acquireDigestLock(db, opts.scopeId);
   if (!locked) return;
   try {

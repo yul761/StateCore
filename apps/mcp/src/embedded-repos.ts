@@ -36,6 +36,15 @@ import {
  * process-wide counter stays correct regardless of how many repo instances a
  * caller creates, or how it groups tables — it only needs to be strictly
  * increasing within this process, not per table.
+ *
+ * Caveats: the counter is per-process, so two separate `statecore-mcp`
+ * processes writing the same scope in the same millisecond can still tie on
+ * `createdAt` — harmless here, since the only consequence is over-counting
+ * how many events look "pending" for the digest threshold, never a
+ * correctness issue. Separately, `ingestedAt` (the other timestamp column on
+ * `MemoryEvent`) is stamped with plain wall-clock `Date.now()`, not this
+ * clock, so on a caller that supplies its own drifted `createdAt`, that value
+ * can end up a few ms ahead of `ingestedAt`.
  */
 function monotonicClock(): () => number {
   let last = 0;
@@ -164,7 +173,7 @@ export function makeMemoryRepo(db: LiteDb): MirroredMemoryRepo {
           // `pinned` must be updatable too: re-uploading a document is the
           // normal way to change its pin state.
           db.run(
-            `UPDATE "MemoryEvent" SET "content" = ?, "contentHash" = ?, "updatedAt" = ?, "pinned" = COALESCE(?, "pinned") WHERE "id" = ?`,
+            `UPDATE "MemoryEvent" SET "content" = ?, "contentHash" = COALESCE(?, "contentHash"), "updatedAt" = ?, "pinned" = COALESCE(?, "pinned") WHERE "id" = ?`,
             data.content,
             data.contentHash ?? null,
             Date.now(),
@@ -245,7 +254,7 @@ export function makeMemoryRepo(db: LiteDb): MirroredMemoryRepo {
     listByLookback: async (scopeId, since, limit) =>
       db
         .all<EventRow>(
-          `SELECT ${EVENT_COLUMNS} FROM "MemoryEvent" WHERE "scopeId" = ? AND "createdAt" >= ? AND "suppressedAt" IS NULL ORDER BY "createdAt" DESC LIMIT ?`,
+          `SELECT ${EVENT_COLUMNS} FROM "MemoryEvent" WHERE "scopeId" = ? AND "createdAt" >= ? AND "suppressedAt" IS NULL ORDER BY "createdAt" DESC, "id" DESC LIMIT ?`,
           scopeId,
           toMs(since),
           limit

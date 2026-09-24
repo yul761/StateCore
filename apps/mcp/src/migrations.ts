@@ -133,8 +133,8 @@ CREATE TABLE IF NOT EXISTS "ForgottenFact" (
 -- CreateTable
 -- MCP-private: serializes digest runs across processes sharing one SQLite
 -- file. Not part of the engine data model, so it carries no schema.lite.prisma
--- model — apps/mcp/src/digest-lock.ts reads and writes it with
--- $executeRawUnsafe/$queryRawUnsafe.
+-- model — apps/mcp/src/digest-lock.ts reads and writes it with plain SQL
+-- through lite-db.ts.
 CREATE TABLE IF NOT EXISTS "DigestLock" (
     "scopeId" TEXT NOT NULL PRIMARY KEY,
     "acquiredAt" DATETIME NOT NULL

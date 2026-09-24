@@ -101,11 +101,15 @@ export function applyMigrations(db: LiteDb, migrations: Migration[]): void {
  * PRAGMAs every embedded process relies on, and brings the schema up to date.
  * WAL + busy_timeout are what let several processes (one per MCP host) share
  * one file; foreign keys are on by default in node:sqlite and left on.
+ * busy_timeout is set before the journal_mode switch: converting to WAL
+ * itself takes a lock, and a concurrent writer already holding it should be
+ * waited out under the same timeout rather than failing the conversion
+ * immediately.
  */
 export function openLiteDb(path: string, migrations: Migration[] = MIGRATIONS): LiteDb {
   const db = new NodeSqliteDb(new DatabaseSync(path));
-  db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 5000");
+  db.exec("PRAGMA journal_mode = WAL");
   applyMigrations(db, migrations);
   return db;
 }

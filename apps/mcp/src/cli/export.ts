@@ -1,6 +1,9 @@
+import { getActiveFactRegistry, type DigestState, type FactRegistryEntry } from "@statecore/core";
 import { openStore } from "../store";
 import type { LiteDb } from "../lite-db";
 import { fromMs, fromMsNullable, parseJson, toBool } from "../rows";
+
+const EMPTY_STATE = (): DigestState => ({ stableFacts: { decisions: [] }, workingNotes: {}, todos: [], factRegistry: [], profile: {} });
 
 export interface ExportDocument {
   schemaVersion: number;
@@ -13,6 +16,7 @@ export interface ExportDocument {
     events: Array<{ id: string; type: string; source: string; key: string | null; content: string; createdAt: string; ingestedAt: string; suppressedAt: string | null; pinned: boolean }>;
     digests: Array<{ id: string; summary: string; changes: string; nextSteps: unknown; selectionLog: unknown; rebuildGroupId: string | null; createdAt: string }>;
     snapshots: Array<{ id: string; digestId: string; state: unknown; consistency: unknown; createdAt: string }>;
+    factRegistry: FactRegistryEntry[];
     handoffs: Array<{ id: string; content: string; createdAt: string; supersededBy: string | null; retiredAt: string | null; retiredReason: string | null }>;
     forgotten: Array<{ factKey: string; contentSnapshot: string; forgottenAt: string }>;
   }>;
@@ -57,6 +61,13 @@ export function buildExport(db: LiteDb, scopeName?: string): ExportDocument {
           scope.id
         )
         .map((s) => ({ ...s, state: parseJson<unknown>(s.state, null), consistency: parseJson<unknown>(s.consistency, null), createdAt: fromMs(s.createdAt).toISOString() })),
+      factRegistry: (() => {
+        const latest = db.get<{ state: string }>(
+          `SELECT "state" FROM "DigestStateSnapshot" WHERE "scopeId" = ? ORDER BY "createdAt" DESC, "id" DESC LIMIT 1`,
+          scope.id
+        );
+        return latest ? getActiveFactRegistry(parseJson<DigestState>(latest.state, EMPTY_STATE())) : [];
+      })(),
       handoffs: db
         .all<{ id: string; content: string; createdAt: number; supersededBy: string | null; retiredAt: number | null; retiredReason: string | null }>(
           `SELECT "id", "content", "createdAt", "supersededBy", "retiredAt", "retiredReason" FROM "SessionHandoff" WHERE "scopeId" = ? ORDER BY "createdAt", "id"`,
@@ -73,11 +84,26 @@ export function buildExport(db: LiteDb, scopeName?: string): ExportDocument {
   };
 }
 
-/** `statecore-mcp export [--data <dir>] [--scope <name>]`: writes the document as pretty JSON to `out`. */
-export async function runExport(args: { dataDir: string; scopeName?: string }, out: (text: string) => void): Promise<void> {
+/**
+ * `statecore-mcp export [--data <dir>] [--scope <name>]`: writes the document
+ * as pretty JSON to `out`. When `scopeName` is given but matches no scope in
+ * the store, the (empty-`scopes`) document is still written to `out` — `err`
+ * additionally gets a one-line note so the mistake isn't silent — and the
+ * returned `found` is `false`, which `main.ts` turns into a non-zero exit
+ * code.
+ */
+export async function runExport(
+  args: { dataDir: string; scopeName?: string },
+  out: (text: string) => void,
+  err: (text: string) => void = (text) => process.stderr.write(text)
+): Promise<{ found: boolean }> {
   const store = await openStore(args.dataDir);
   try {
-    out(JSON.stringify(buildExport(store.db, args.scopeName), null, 2) + "\n");
+    const doc = buildExport(store.db, args.scopeName);
+    out(JSON.stringify(doc, null, 2) + "\n");
+    const found = args.scopeName === undefined || doc.scopes.length > 0;
+    if (!found) err(`statecore-mcp export: no scope named "${args.scopeName}"\n`);
+    return { found };
   } finally {
     await store.close();
   }

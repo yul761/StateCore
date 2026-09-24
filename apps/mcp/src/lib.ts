@@ -12,3 +12,4 @@ export type { MemoryBackend, DigestNowResult } from "./backend";
 export { resolveScopeName } from "./scope";
 export { runScopeDigest, type DigestChatModel, type DigestRunOutcome } from "./digest";
 export { listScopes } from "./store";
+export type { LiteDb } from "./lite-db";
