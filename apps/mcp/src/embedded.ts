@@ -115,12 +115,26 @@ const EMPTY_STATE = (): DigestState => ({ stableFacts: { decisions: [] }, workin
  * (startup catch-up and the post-`remember` threshold check) — the seam a
  * caller supplying its own LLM client (e.g. the dsh-statecore plugin) uses
  * instead of `FEATURE_LLM`/`MODEL_*` env vars.
+ *
+ * `opts.backgroundDigest` (default `true`) gates the two fire-and-forget
+ * digest triggers — `init()`'s startup catch-up and the post-`remember`/
+ * `capture` threshold check — both of which `close()` awaits before
+ * releasing the store. A long-lived process (the MCP server, dsh-statecore)
+ * wants that: catch-up on open, threshold digests running in the background
+ * while the process stays up. A short-lived process spawned per event (the
+ * Claude Code hooks in `cli/hook.ts`) does not — `close()` runs at the end of
+ * every single event, so with a model configured and any backlog, awaiting a
+ * chain of sequential LLM digest calls there would block the host on every
+ * hook invocation. Passing `false` skips both triggers; `digestNow()` is
+ * unaffected, so `pre-compact`'s explicit demand remains those callers' one
+ * distillation moment.
  */
 export function createEmbeddedBackend(opts: {
   dataDir: string;
   scopeName: string;
   env: NodeJS.ProcessEnv;
   digestLlm?: DigestChatModel;
+  backgroundDigest?: boolean;
 }): MemoryBackend {
   let store: Store;
   let scopeId: string;
@@ -166,7 +180,7 @@ export function createEmbeddedBackend(opts: {
       scopeId =
         existing?.id ??
         (await new ProjectService(makeProjectsRepo(store.db), makeUserStateRepo(store.db)).createScope(USER, opts.scopeName, null, undefined, "project")).id;
-      startupCatchUp = runStartupDigestCatchUp(store.db, opts.env, opts.digestLlm);
+      if (opts.backgroundDigest ?? true) startupCatchUp = runStartupDigestCatchUp(store.db, opts.env, opts.digestLlm);
       // Backfill the lexical index for events ingested before it existed.
       // Embedded stores are per-project and small, so doing it inline at open
       // is cheap; the server deployment has scripts/backfill-tokens.ts instead.
@@ -212,8 +226,51 @@ export function createEmbeddedBackend(opts: {
       }
 
       await new MemoryService(makeMemoryRepo(store.db)).ingestEvent({ userId: USER, scopeId, type: "stream", source: "api", content: text });
-      inFlight = inFlight.then(() => maybeRunDigest({ db: store.db, userId: USER, scopeId, env: opts.env, reason: "threshold", digestLlm: opts.digestLlm }));
+      if (opts.backgroundDigest ?? true) {
+        inFlight = inFlight.then(() => maybeRunDigest({ db: store.db, userId: USER, scopeId, env: opts.env, reason: "threshold", digestLlm: opts.digestLlm }));
+      }
       return { ok: true, mode: "event" };
+    },
+
+    async capture({ text, key }) {
+      const lookup = () => store.db.get<{ id: string }>(`SELECT "id" FROM "MemoryEvent" WHERE "scopeId" = ? AND "key" = ?`, scopeId, key);
+      const ingest = () =>
+        new MemoryService(makeMemoryRepo(store.db)).ingestEvent({
+          userId: USER,
+          scopeId,
+          type: "stream",
+          source: "cli",
+          key,
+          content: text
+        });
+
+      const existing = lookup();
+      if (existing) return { ok: true, stored: false, eventId: existing.id };
+      let event;
+      try {
+        event = await ingest();
+      } catch (error) {
+        // The SELECT above and the INSERT inside ingestEvent are not atomic
+        // against MemoryEvent_scopeId_key_key (the (scopeId, key) unique
+        // index): two processes (or two capture() calls racing the same key)
+        // can both pass the existence check and then both attempt the
+        // insert. Only one insert can win; the loser sees SQLITE_BUSY (lock
+        // contention) or a UNIQUE constraint violation, not a value it can
+        // use. Re-running the lookup closes that window cheaply: if the
+        // winner's row is now visible, report it (this call stored nothing,
+        // same as the up-front idempotency check); otherwise the failure
+        // wasn't actually a same-key race (e.g. a transient lock on an
+        // unrelated write), so retry the insert exactly once and let a
+        // second failure propagate rather than looping forever.
+        if (!/SQLITE_BUSY|database is locked|UNIQUE constraint failed/i.test((error as Error).message)) throw error;
+        const raced = lookup();
+        if (raced) return { ok: true, stored: false, eventId: raced.id };
+        event = await ingest();
+      }
+      if (opts.backgroundDigest ?? true) {
+        inFlight = inFlight.then(() => maybeRunDigest({ db: store.db, userId: USER, scopeId, env: opts.env, reason: "threshold", digestLlm: opts.digestLlm }));
+      }
+      return { ok: true, stored: true, eventId: event.id };
     },
 
     async handoff(input) {
@@ -378,9 +435,14 @@ export function createEmbeddedBackend(opts: {
       // log a spurious "digest run failed" to stderr. Neither promise can
       // reject (runStartupDigestCatchUp only awaits maybeRunDigest, which
       // never rejects; inFlight is chained from the same never-rejecting call).
+      // `store` itself may still be unset — a caller that awaits `init()`
+      // inside a try/finally and calls `close()` on failure (cli/hook.ts does
+      // this) can reach here before `store = await openStore(...)` completed;
+      // both promises above are safe to await regardless (they start out
+      // resolved), so only the store release needs the guard.
       await startupCatchUp;
       await inFlight;
-      await store.close();
+      if (store) await store.close();
     }
   };
 }

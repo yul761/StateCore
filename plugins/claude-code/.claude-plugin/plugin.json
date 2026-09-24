@@ -1,0 +1,10 @@
+{
+  "name": "statecore",
+  "version": "0.6.0",
+  "description": "Auditable project memory for Claude Code: captures every prompt and reply into StateCore, re-injects the project's memory at session start and after compaction, and exposes the remember/recall/facts/why/forget/handoff tools.",
+  "author": { "name": "yul761", "url": "https://github.com/yul761/StateCore" },
+  "homepage": "https://github.com/yul761/StateCore/tree/main/plugins/claude-code",
+  "repository": "https://github.com/yul761/StateCore",
+  "license": "MIT",
+  "keywords": ["memory", "statecore", "mcp", "hooks"]
+}

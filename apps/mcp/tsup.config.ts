@@ -6,7 +6,12 @@ import { defineConfig } from "tsup";
 // Node builtin — nothing native to locate at runtime, nothing to generate at
 // install time.
 const noExternal = ["@statecore/core", "@statecore/prompts"];
-const external = ["@modelcontextprotocol/sdk", "zod"];
+// `@statecore/db` stays external even though this package no longer depends
+// on it: `@statecore/core` (inlined) still carries a lazy `import("@statecore/db")`
+// in relationship-context.ts, a path the embedded backend never executes.
+// Left unresolved it is a harmless dead `require` in the bundle; resolved, it
+// would need the package installed at bundle time (it is not, since sub-project 1).
+const external = ["@modelcontextprotocol/sdk", "zod", "@statecore/db"];
 
 export default [
   defineConfig({

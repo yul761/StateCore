@@ -159,6 +159,26 @@ describe("built binary, keyless end-to-end over stdio", () => {
     expect(scope.factRegistry.some((f) => f.content.includes("export probe fact"))).toBe(true);
   });
 
+  it("`hook session-start` on the built binary injects the remembered memory as hookSpecificOutput", async () => {
+    await client.callTool({ name: "remember", arguments: { text: "hook probe fact about lanterns" } });
+    const { spawnSync } = await import("node:child_process");
+    const payload = JSON.stringify({ session_id: "e2e", cwd: process.cwd(), hook_event_name: "SessionStart", source: "startup" });
+    const run = spawnSync(distEntry, ["hook", "session-start", "--data", dataDir], {
+      input: payload,
+      encoding: "utf8",
+      env: { ...getDefaultEnvironment(), STATECORE_SCOPE: "e2e-scope" }
+    });
+    expect(run.status).toBe(0);
+    const doc = JSON.parse(run.stdout);
+    expect(doc.hookSpecificOutput.hookEventName).toBe("SessionStart");
+    expect(doc.hookSpecificOutput.additionalContext).toContain("hook probe fact about lanterns");
+
+    const bad = spawnSync(distEntry, ["hook", "user-prompt", "--data", dataDir], { input: "{not json", encoding: "utf8", env: getDefaultEnvironment() });
+    expect(bad.status).toBe(0);
+    expect(bad.stdout).toBe("");
+    expect(bad.stderr).toContain("hook user-prompt failed");
+  });
+
   // Two dependencies this test relies on to keep all 20 notes it writes (plus
   // the 2 from earlier tests in this file, ~22 total) distinct and active:
   // the `notes` facet cap of 30 (packages/core/src/facet-registry.ts) is

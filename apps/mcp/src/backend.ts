@@ -31,6 +31,14 @@ export interface MemoryBackend {
     clear?: boolean;
   }): Promise<{ ok: true; handoffId?: string; superseded: boolean; cleared?: boolean }>;
   /**
+   * Stores a message captured outside the model's control (a host hook
+   * relaying a user prompt or an assistant reply) as a keyed stream event.
+   * `key` makes the call idempotent: a second capture with the same key in
+   * the same scope stores nothing and reports the existing event. Embedded
+   * mode only; a backend without it (remote) leaves it undefined.
+   */
+  capture?(input: { text: string; key: string }): Promise<{ ok: true; stored: boolean; eventId?: string }>;
+  /**
    * Demands a digest pass now, regardless of the pending-event threshold —
    * for callers at a moment when raw context is about to disappear from a
    * model's view (e.g. a host compacting its conversation). Never rejects.

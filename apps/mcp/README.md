@@ -111,6 +111,15 @@ Omitting `MODEL_API_KEY` (running dsh with it unset in its own environment) sile
 
 ### Claude Code
 
+**Plugin (recommended):** installs the MCP server *and* hooks that capture every prompt and reply and re-inject memory at session start and after compaction — no tool call needed for memory to work.
+
+```
+/plugin marketplace add yul761/StateCore
+/plugin install statecore@statecore
+```
+
+See [`plugins/claude-code/README.md`](https://github.com/yul761/StateCore/tree/main/plugins/claude-code) for what is captured and how to turn capture off (`STATECORE_CAPTURE=off`). The hooks call `statecore-mcp hook <event>`; that subcommand is part of the public CLI.
+
 ```bash
 claude mcp add statecore -- npx -y statecore-mcp
 ```

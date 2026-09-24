@@ -1,11 +1,12 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEmbeddedBackend } from "../src/embedded";
 import { openStore } from "../src/store";
 import { clearFacetPackCache, type DigestState } from "@statecore/core";
-import { findScopeByName, setUserFacetPack, insertDigest, insertSnapshot } from "./helpers/seed";
+import { findScopeByName, setUserFacetPack, insertDigest, insertSnapshot, insertEvent } from "./helpers/seed";
+import type { DigestChatModel } from "../src/digest";
 
 describe("embedded backend, keyless", () => {
   const dir = mkdtempSync(join(tmpdir(), "sc-emb-"));
@@ -77,6 +78,71 @@ describe("embedded backend, keyless", () => {
     expect(provAfterClear.fact.retiredReason).toBe("user_cleared");
   });
 
+  it("capture stores an externally captured message as a keyed stream event, once", async () => {
+    const first = await be.capture!({ text: "user said: switch the build to turbo", key: "cc:sess-1:p-1:user" });
+    expect(first).toMatchObject({ ok: true, stored: true });
+    expect(first.eventId).toBeTruthy();
+    const again = await be.capture!({ text: "user said: switch the build to turbo", key: "cc:sess-1:p-1:user" });
+    expect(again).toEqual({ ok: true, stored: false, eventId: first.eventId });
+
+    const direct = await openStore(dir);
+    try {
+      const row = direct.db.get<{ type: string; source: string; key: string; content: string }>(
+        `SELECT "type", "source", "key", "content" FROM "MemoryEvent" WHERE "id" = ?`,
+        first.eventId!
+      );
+      expect(row).toEqual({ type: "stream", source: "cli", key: "cc:sess-1:p-1:user", content: "user said: switch the build to turbo" });
+      const scope = findScopeByName(direct.db, "/tmp/fake-project")!;
+      const count = direct.db.get<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM "MemoryEvent" WHERE "key" = ? AND "scopeId" = ?`,
+        "cc:sess-1:p-1:user",
+        scope.id
+      )!.n;
+      expect(count).toBe(1);
+    } finally {
+      await direct.close();
+    }
+  });
+
+  // capture()'s up-front SELECT and its INSERT are not atomic against
+  // MemoryEvent_scopeId_key_key: a second connection can insert the same
+  // (scopeId, key) row between the two. The deterministic, non-flaky way to
+  // exercise the "row already exists" half of that race without an actual
+  // 5s-busy_timeout SQLITE_BUSY collision (which the suite must not pay for)
+  // is to pre-insert the keyed row through a second store connection before
+  // calling capture(): capture()'s lookup then finds it and returns
+  // `stored: false` with the pre-inserted row's id, exactly as it would for
+  // the winning side of a real race. The retry-after-a-thrown-error branch in
+  // embedded.ts (SQLITE_BUSY / "database is locked" / UNIQUE constraint
+  // regexp) is covered by that code's own reasoning rather than a forced
+  // race here — see the comment on `capture` in src/embedded.ts.
+  it("capture returns stored: false when another connection already inserted the keyed row (the race's lookup half)", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sc-emb-race-"));
+    const be = createEmbeddedBackend({ dataDir, scopeName: "/tmp/fake-race-project", env: {} as any });
+    await be.init();
+    try {
+      const direct = await openStore(dataDir);
+      let racedInId: string;
+      try {
+        const scope = findScopeByName(direct.db, "/tmp/fake-race-project")!;
+        racedInId = insertEvent(direct.db, { scopeId: scope.id, content: "raced in by another connection", key: "cc:race:1:user" }).id;
+      } finally {
+        await direct.close();
+      }
+
+      const result = await be.capture!({ text: "raced in by another connection", key: "cc:race:1:user" });
+      expect(result).toEqual({ ok: true, stored: false, eventId: racedInId });
+    } finally {
+      await be.close();
+    }
+  });
+
+  it("captured events are recallable through the token index", async () => {
+    await be.capture!({ text: "assistant said: the zephyr-widget module owns retries", key: "cc:sess-1:p-2:assistant" });
+    const out: any = await be.recall({ query: "zephyr-widget" });
+    expect(out.events.some((e: any) => e.content.includes("zephyr-widget"))).toBe(true);
+  });
+
   // Regression for a first-wins vs. last-wins factId join bug: two registry
   // entries in different facets that share a displayGroup and normalize to the
   // same content collide on the same factKey (computeFactKey hashes
@@ -123,5 +189,59 @@ describe("embedded backend, keyless", () => {
     } finally {
       await direct.close();
     }
+  });
+});
+
+/** Minimal DigestOutputSchema-valid stage-2 response, copied from
+ * tests/digest-now.test.ts's STAGE2_OUTPUT (see that file for the schema
+ * constraints that make this the smallest valid answer). */
+const STAGE2_OUTPUT = {
+  summary: "The scope digested during a backgroundDigest test.",
+  changes: ["Recorded a new stream event."],
+  nextSteps: ["Continue monitoring incoming events."],
+  profileFacts: []
+};
+
+function makeStubLlm(): DigestChatModel {
+  return { chat: vi.fn(async () => JSON.stringify(STAGE2_OUTPUT)) };
+}
+
+describe("createEmbeddedBackend({ backgroundDigest })", () => {
+  it("false: capture/consolidate-remember never trigger a digest, even past threshold, and close() does not wait on one", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sc-emb-bg-off-"));
+    const llm = makeStubLlm();
+    const env = { STATECORE_DIGEST_THRESHOLD: "1" } as unknown as NodeJS.ProcessEnv;
+
+    const be = createEmbeddedBackend({ dataDir, scopeName: "/tmp/bg-digest-off", env, digestLlm: llm, backgroundDigest: false });
+    await be.init();
+    await be.capture({ text: "first captured event", key: "k1" });
+    await be.capture({ text: "second captured event", key: "k2" });
+    await be.remember({ text: "a consolidate-mode event", consolidate: true });
+    await be.close();
+
+    expect(llm.chat).not.toHaveBeenCalled();
+
+    // A second backend on the same store, still opted out, makes the pending
+    // backlog explicit via digestNow() instead — the one distillation moment
+    // left for a backgroundDigest: false caller (cli/hook.ts's pre-compact).
+    const be2 = createEmbeddedBackend({ dataDir, scopeName: "/tmp/bg-digest-off", env, digestLlm: llm, backgroundDigest: false });
+    await be2.init();
+    const outcome = await be2.digestNow();
+    expect(outcome).toEqual({ ran: true });
+    expect(llm.chat).toHaveBeenCalled();
+    await be2.close();
+  });
+
+  it("default (omitted): a consolidate-remember crossing threshold drives the digest in the background, done by the time close() resolves", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sc-emb-bg-default-"));
+    const llm = makeStubLlm();
+    const env = { STATECORE_DIGEST_THRESHOLD: "1" } as unknown as NodeJS.ProcessEnv;
+
+    const be = createEmbeddedBackend({ dataDir, scopeName: "/tmp/bg-digest-default", env, digestLlm: llm });
+    await be.init();
+    await be.remember({ text: "a consolidate-mode event", consolidate: true });
+    await be.close();
+
+    expect(llm.chat).toHaveBeenCalled();
   });
 });

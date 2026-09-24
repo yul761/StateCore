@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "matcher": "startup|resume|clear|compact|fork", "hooks": [{ "type": "command", "command": "npx -y statecore-mcp@0.6.0 hook session-start" }] }
+    ],
+    "UserPromptSubmit": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "npx -y statecore-mcp@0.6.0 hook user-prompt", "async": true }] }
+    ],
+    "Stop": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "npx -y statecore-mcp@0.6.0 hook stop", "async": true }] }
+    ],
+    "PreCompact": [
+      { "matcher": "auto|manual", "hooks": [{ "type": "command", "command": "npx -y statecore-mcp@0.6.0 hook pre-compact" }] }
+    ]
+  }
+}
