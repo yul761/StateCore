@@ -1,0 +1,3 @@
+{
+  "statecore": { "command": "npx", "args": ["-y", "statecore-mcp"] }
+}

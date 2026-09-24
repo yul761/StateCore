@@ -1,0 +1,14 @@
+{
+  "name": "statecore",
+  "owner": { "name": "yul761", "url": "https://github.com/yul761" },
+  "metadata": { "description": "StateCore plugins for Claude Code", "version": "1.0.0" },
+  "plugins": [
+    {
+      "name": "statecore",
+      "description": "Auditable project memory: hooks capture the conversation and re-inject memory; MCP tools for remember/recall/facts/why/forget/handoff.",
+      "source": { "source": "git-subdir", "url": "https://github.com/yul761/StateCore.git", "path": "plugins/claude-code" },
+      "category": "productivity",
+      "keywords": ["memory", "statecore"]
+    }
+  ]
+}
