@@ -77,6 +77,33 @@ describe("embedded backend, keyless", () => {
     expect(provAfterClear.fact.retiredReason).toBe("user_cleared");
   });
 
+  it("capture stores an externally captured message as a keyed stream event, once", async () => {
+    const first = await be.capture!({ text: "user said: switch the build to turbo", key: "cc:sess-1:p-1:user" });
+    expect(first).toMatchObject({ ok: true, stored: true });
+    expect(first.eventId).toBeTruthy();
+    const again = await be.capture!({ text: "user said: switch the build to turbo", key: "cc:sess-1:p-1:user" });
+    expect(again).toEqual({ ok: true, stored: false, eventId: first.eventId });
+
+    const direct = await openStore(dir);
+    try {
+      const row = direct.db.get<{ type: string; source: string; key: string; content: string }>(
+        `SELECT "type", "source", "key", "content" FROM "MemoryEvent" WHERE "id" = ?`,
+        first.eventId!
+      );
+      expect(row).toEqual({ type: "stream", source: "cli", key: "cc:sess-1:p-1:user", content: "user said: switch the build to turbo" });
+      const count = direct.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM "MemoryEvent" WHERE "key" = ?`, "cc:sess-1:p-1:user")!.n;
+      expect(count).toBe(1);
+    } finally {
+      await direct.close();
+    }
+  });
+
+  it("captured events are recallable through the token index", async () => {
+    await be.capture!({ text: "assistant said: the zephyr-widget module owns retries", key: "cc:sess-1:p-2:assistant" });
+    const out: any = await be.recall({ query: "zephyr-widget" });
+    expect(out.events.some((e: any) => e.content.includes("zephyr-widget"))).toBe(true);
+  });
+
   // Regression for a first-wins vs. last-wins factId join bug: two registry
   // entries in different facets that share a displayGroup and normalize to the
   // same content collide on the same factKey (computeFactKey hashes

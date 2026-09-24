@@ -216,6 +216,21 @@ export function createEmbeddedBackend(opts: {
       return { ok: true, mode: "event" };
     },
 
+    async capture({ text, key }) {
+      const existing = store.db.get<{ id: string }>(`SELECT "id" FROM "MemoryEvent" WHERE "scopeId" = ? AND "key" = ?`, scopeId, key);
+      if (existing) return { ok: true, stored: false, eventId: existing.id };
+      const event = await new MemoryService(makeMemoryRepo(store.db)).ingestEvent({
+        userId: USER,
+        scopeId,
+        type: "stream",
+        source: "cli",
+        key,
+        content: text
+      });
+      inFlight = inFlight.then(() => maybeRunDigest({ db: store.db, userId: USER, scopeId, env: opts.env, reason: "threshold", digestLlm: opts.digestLlm }));
+      return { ok: true, stored: true, eventId: event.id };
+    },
+
     async handoff(input) {
       // Mirrors apps/api/src/memory-facts.service.ts#setHandoff; keep in sync.
       // Handoffs live in their own table — see packages/core/src/handoff.ts.
