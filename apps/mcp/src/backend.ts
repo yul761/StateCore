@@ -9,10 +9,16 @@ export interface MemoryBackend {
   /** `superseded`: content of the active note this one replaced (note-revision supersession). */
   /**
    * `distillation` (consolidate path only): `"scheduled"` when a background
-   * digest was queued for the new event; `"deferred"` when none was, with
+   * digest pass was queued for the new event — it still respects the
+   * pending-event threshold, so the queued pass may end up a no-op if the
+   * backlog hasn't reached it; `"deferred"` when none was queued at all, with
    * `reason` naming why — `"no model configured"` (no usable LLM) or
    * `"background digest disabled"` (this backend was created with
-   * `backgroundDigest: false`, e.g. by the Claude Code hooks).
+   * `backgroundDigest: false`, e.g. by the Claude Code hooks). The remote
+   * backend reports `"scheduled"` unconditionally, an assumption about the
+   * deployment rather than an observation: the server deployment's own worker
+   * owns digesting, so it is presumed to pick the event up on its own
+   * schedule.
    */
   remember(input: {
     text: string;

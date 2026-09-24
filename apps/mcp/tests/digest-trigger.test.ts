@@ -74,6 +74,8 @@ describe("countPendingEvents", () => {
     const pending = countPendingEvents(store.db, scope.id);
     expect(pending.events).toBe(2);
     expect(typeof pending.oldest).toBe("number");
+    expect(pending.oldest).toBeGreaterThan(0);
+    expect(pending.oldest).toBeLessThanOrEqual(Date.now());
     void digest;
     await store.close();
   });

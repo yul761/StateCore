@@ -71,12 +71,12 @@ export function shouldDigest(pendingCount: number, threshold: number): boolean {
   return pendingCount >= threshold;
 }
 
-/** Stream events not yet folded into a digest: newer than the latest digest by either clock (see selectDigestEventWindow for why both), unsuppressed. `oldest` is the earliest pending createdAt in ms, or null. */
+/** Stream events not yet folded into a digest: newer than the latest digest by either clock (see selectDigestEventWindow for why both), unsuppressed. `oldest` answers "how long has this been waiting" — the earliest pending event's `ingestedAt` (when we learned it, never overwritten) in ms, or null. */
 export function countPendingEvents(db: LiteDb, scopeId: string): { events: number; oldest: number | null } {
   const lastDigest = db.get<{ createdAt: number }>(`SELECT "createdAt" FROM "Digest" WHERE "scopeId" = ? ORDER BY "createdAt" DESC, "id" DESC LIMIT 1`, scopeId);
   const since = lastDigest?.createdAt ?? 0;
   const row = db.get<{ n: number; oldest: number | null }>(
-    `SELECT COUNT(*) AS n, MIN("createdAt") AS oldest FROM "MemoryEvent" WHERE "scopeId" = ? AND "type" = 'stream' AND "suppressedAt" IS NULL AND ("createdAt" > ? OR "ingestedAt" > ?)`,
+    `SELECT COUNT(*) AS n, MIN("ingestedAt") AS oldest FROM "MemoryEvent" WHERE "scopeId" = ? AND "type" = 'stream' AND "suppressedAt" IS NULL AND ("createdAt" > ? OR "ingestedAt" > ?)`,
     scopeId, since, since
   )!;
   return { events: Number(row.n), oldest: row.n ? row.oldest : null };
@@ -383,7 +383,7 @@ export async function maybeRunDigest(opts: {
   const { db, userId, scopeId, env, reason, digestLlm } = opts;
   try {
     const digestEnv = readDigestEnv(env);
-    if (!digestLlm && !hasUsableModel(env)) return "skipped-no-llm";
+    if (!hasUsableModel(env, digestLlm)) return "skipped-no-llm";
 
     // Same either-clock condition as the lookback window this trigger feeds
     // (selectDigestEventWindow, digest-lookback.ts): an event is "pending"

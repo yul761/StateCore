@@ -7,8 +7,8 @@ export async function runDigestCommand(
   out: (text: string) => void
 ): Promise<{ exitCode: 0 | 1 }> {
   const backend = createEmbeddedBackend({ dataDir: args.dataDir, scopeName: args.scopeName, env: args.env, digestLlm: args.digestLlm, backgroundDigest: false });
-  await backend.init();
   try {
+    await backend.init();
     const result = await backend.digestNow();
     out(`${JSON.stringify(result)}\n`);
     return { exitCode: !result.ran && result.reason === "failed" ? 1 : 0 };

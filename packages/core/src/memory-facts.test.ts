@@ -157,7 +157,7 @@ describe("attachFactIds", () => {
     };
     const facts = flattenScopeFacts(state);
     const groups = groupFactsForDisplay(facts);
-    const withIds = attachFactIds(groups, state, undefined as any);
+    const withIds = attachFactIds(groups, state);
     const projectsGroup = withIds.find((g) => g.group === "Projects")!;
     expect(projectsGroup.items).toHaveLength(1);
     expect(projectsGroup.items[0].factId).toBe("f1");
@@ -173,7 +173,7 @@ describe("attachFactIds", () => {
     };
     const facts = flattenScopeFacts(state);
     const groups = groupFactsForDisplay(facts);
-    const withIds = attachFactIds(groups, state, undefined as any);
+    const withIds = attachFactIds(groups, state);
     const peopleGroup = withIds.find((g) => g.group === "People")!;
     expect(peopleGroup.items[0].factId).toBeNull();
   });

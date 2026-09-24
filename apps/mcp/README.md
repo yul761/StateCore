@@ -20,7 +20,7 @@ That starts the server over stdio with no configuration and no model key. Point 
 |---|---|
 | `remember` | Store a fact. Default path is deterministic (no LLM) and immediate; `consolidate: true` queues it as a conversational event for background distillation |
 | `recall` | Retrieve memory relevant to a query, packed into a character budget |
-| `facts` | List everything currently believed, grouped, with fact ids |
+| `facts` | List everything currently believed, grouped, with fact ids, plus how many captured events are still waiting for distillation |
 | `why` | A fact's evidence and its full version chain — the differentiator: not just what is believed, but why, and what it replaced |
 | `forget` | Retire a fact by key. The record is kept and marked retired, not deleted |
 | `handoff` | Record where this session stopped — summary, open questions, next steps. The next session (this client or any other MCP client) gets it at the top of `recall`; each handoff supersedes the previous one on an auditable chain |
@@ -184,7 +184,7 @@ For embedding the engine in-process instead of talking MCP over stdio — the su
 ## Limitations
 
 - **Lite retrieval is keyword + CJK bigram, not semantic.** The embedded backend runs on SQLite and has no pgvector. `recall` still returns a budgeted digest, believed facts, and matching events, but it will not find a paraphrase with no matching tokens the way the full stack's semantic search can.
-- **Distillation needs a key.** Without one, `remember` with `consolidate: true` stores the raw event, but it is never folded into stable facts — `facts`/`why` will not see it until a key is configured and the digest runs (threshold trigger, or startup catch-up).
+- **Distillation needs a key.** Without one, `remember` with `consolidate: true` stores the raw event, but it is never folded into stable facts — `facts`/`why` will not see it until a key is configured and the digest runs (threshold trigger, or startup catch-up), or run `statecore-mcp digest` once a key is configured to distil the backlog on demand.
 - **One shared SQLite file per `--data` directory, not per project.** Multiple projects on one machine share `~/.statecore/statecore.db` by default, partitioned by scope; only concurrent writes to the *same* scope from multiple processes are guarded (WAL, a 5 s busy timeout, and an in-database digest lock for concurrent distillation).
 
 ## Data file compatibility

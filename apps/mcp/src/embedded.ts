@@ -332,8 +332,8 @@ export function createEmbeddedBackend(opts: {
       const pack = await packFor();
       const state = parseJson<DigestState>(snapshot.state, EMPTY_STATE());
       const facts = flattenScopeFacts(state, undefined, pack).filter((f) => !forgottenKeys.has(f.factKey));
-      // groupFactsForDisplay drops factRegistry ids; attachFactIds (above) joins
-      // them back on so why() has an id to consume.
+      // groupFactsForDisplay drops factRegistry ids; attachFactIds (from
+      // @statecore/core) joins them back on so why() has an id to consume.
       return attachFactIds(groupFactsForDisplay(facts, pack), state, pack);
     },
 

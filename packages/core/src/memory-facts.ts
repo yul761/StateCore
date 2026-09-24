@@ -111,7 +111,7 @@ export function groupFactsForDisplay(
 export function attachFactIds(
   groups: Array<{ group: DisplayGroup; items: Array<{ factKey: string; text: string; createdAt: string | null }> }>,
   state: DigestState,
-  pack: FacetPack
+  pack: FacetPack = getDefaultFacetPack()
 ): Array<{ group: DisplayGroup; items: Array<{ factKey: string; text: string; createdAt: string | null; factId: string | null }> }> {
   // First-wins: mirror flattenScopeFacts' dedup order (above,
   // `if (!byKey.has(factKey))` before insert) so a factKey collision — two

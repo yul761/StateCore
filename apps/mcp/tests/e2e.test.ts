@@ -163,6 +163,18 @@ describe("built binary, keyless end-to-end over stdio", () => {
     expect(scope.factRegistry.some((f) => f.content.includes("export probe fact"))).toBe(true);
   });
 
+  it("`digest` on the built binary reports no-llm keylessly", async () => {
+    const { spawnSync } = await import("node:child_process");
+    const run = spawnSync(distEntry, ["digest", "--data", dataDir], {
+      encoding: "utf8",
+      env: { ...getDefaultEnvironment(), STATECORE_SCOPE: "e2e-scope" }
+    });
+    expect(run.status).toBe(0);
+    const lines = run.stdout.trim().split("\n");
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0])).toEqual({ ran: false, reason: "no-llm" });
+  });
+
   it("`hook session-start` on the built binary injects the remembered memory as hookSpecificOutput", async () => {
     await client.callTool({ name: "remember", arguments: { text: "hook probe fact about lanterns" } });
     const { spawnSync } = await import("node:child_process");
