@@ -71,7 +71,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
@@ -95,6 +95,9 @@ jobs:
 
       - name: Run API tests
         run: pnpm --filter @statecore/api test
+
+      - name: Run MCP tests
+        run: pnpm --filter statecore-mcp test
 
       - name: Type check
         run: pnpm --filter @statecore/core exec tsc --noEmit

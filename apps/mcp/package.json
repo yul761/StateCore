@@ -44,32 +44,22 @@
     },
     "./package.json": "./package.json"
   },
-  "files": [
-    "dist",
-    "schema.lite.prisma",
-    "lite-bootstrap.sql",
-    "README.md",
-    "scripts/postinstall.mjs",
-    "server.json"
-  ],
+  "files": ["dist", "README.md", "server.json"],
   "scripts": {
     "dev": "tsx --tsconfig ../../tsconfig.dev.json src/main.ts",
     "build": "tsup",
-    "prebundle": "pnpm --filter @statecore/core --filter @statecore/prompts --filter @statecore/db run build",
+    "prebundle": "pnpm --filter @statecore/core --filter @statecore/prompts run build",
     "bundle": "tsup",
     "test": "vitest run",
-    "prepublishOnly": "node scripts/prepare-publish.mjs && pnpm run bundle",
-    "postinstall": "node scripts/postinstall.mjs"
+    "prepublishOnly": "pnpm run bundle"
   },
+  "engines": { "node": ">=22.13" },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "@prisma/client": "^6.2.1",
-    "prisma": "^6.2.1",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@statecore/core": "workspace:*",
-    "@statecore/db": "workspace:*",
     "@statecore/prompts": "workspace:*",
     "@types/node": "^22.0.0",
     "tsup": "^8.3.5",

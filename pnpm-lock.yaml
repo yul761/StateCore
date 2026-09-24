@@ -112,12 +112,6 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.0
         version: 1.30.0(zod@3.25.76)
-      '@prisma/client':
-        specifier: ^6.2.1
-        version: 6.19.2(prisma@6.19.2(typescript@5.9.3))(typescript@5.9.3)
-      prisma:
-        specifier: ^6.2.1
-        version: 6.19.2(typescript@5.9.3)
       zod:
         specifier: ^3.24.1
         version: 3.25.76
@@ -125,9 +119,6 @@ importers:
       '@statecore/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@statecore/db':
-        specifier: workspace:*
-        version: link:../../packages/db
       '@statecore/prompts':
         specifier: workspace:*
         version: link:../../packages/prompts

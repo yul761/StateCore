@@ -19,22 +19,20 @@ const repoRoot = resolve(mcpRoot, "../..");
 const distEntry = join(mcpRoot, "dist", "main.js");
 
 /** Newest mtime (ms) across the TS sources this bundle is built from — this
- * package's own `src/`, plus the three workspace packages tsup inlines
- * (`@statecore/core`, `@statecore/prompts`, `@statecore/db`, via `noExternal` in
+ * package's own `src/`, plus the two workspace packages tsup inlines
+ * (`@statecore/core`, `@statecore/prompts`, via `noExternal` in
  * `tsup.config.ts`), whose *built* `dist/` output the bundle also depends on
  * (see `prebundle` in `package.json`), plus this package's own `tsup.config.ts`
  * (bundler entry/external/noExternal settings) and `package.json` (the `build`
  * script itself, and dependency/devDependency edits that change what tsup
- * inlines vs. externalizes). Walking only `.ts`/`.prisma` files under the
- * source roots keeps this cheap and avoids false staleness from each
- * package's own `dist/`. */
+ * inlines vs. externalizes). Walking only `.ts` files under the source roots
+ * keeps this cheap and avoids false staleness from each package's own
+ * `dist/`. */
 function newestSourceMtime(): number {
   const roots = [
     join(mcpRoot, "src"),
     join(repoRoot, "packages/core/src"),
-    join(repoRoot, "packages/prompts/src"),
-    join(repoRoot, "packages/db/src"),
-    join(repoRoot, "packages/db/prisma")
+    join(repoRoot, "packages/prompts/src")
   ];
   const files = [join(mcpRoot, "tsup.config.ts"), join(mcpRoot, "package.json")];
   let newest = 0;

@@ -1,14 +1,15 @@
-// packages/db/lite-bootstrap.sql and packages/db/prisma/schema.lite.prisma are
-// both hand-maintained, with no gate keeping them in sync (final-review.md
-// Important 6). The published package generates its Prisma client from the
-// schema and creates its tables from the DDL, so drift between them means a
-// client writing a column the DDL never created, on a user's first run. This
-// regenerates the DDL prisma itself would produce from the current schema and
-// compares it, statement by statement, against the committed bootstrap file.
+// apps/mcp/src/migrations.ts (migration 1) and packages/db/prisma/schema.lite.prisma
+// are both hand-maintained, with no gate keeping them in sync (final-review.md
+// Important 6). schema.lite.prisma remains the documentation of the shape;
+// migration 1 is what actually runs against the embedded node:sqlite store, so
+// drift between them means a client writing a column migration 1 never created,
+// on a user's first run. This regenerates the DDL prisma itself would produce
+// from the current schema and compares it, statement by statement, against the
+// committed migration.
 import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { MIGRATIONS } from "../src/migrations";
 
 const dbRoot = resolve(__dirname, "../../../packages/db");
 
@@ -30,14 +31,14 @@ function normalizeStatements(sql: string): string[] {
     .filter(Boolean);
 }
 
-describe("lite-bootstrap.sql matches schema.lite.prisma", () => {
-  it("regenerating the DDL from the schema yields the same statement set as the committed bootstrap file", () => {
+describe("migration 1 matches schema.lite.prisma", () => {
+  it("regenerating the DDL from the schema yields the same statement set as the committed migration", () => {
     const generated = execFileSync(
       "pnpm",
       ["exec", "prisma", "migrate", "diff", "--from-empty", "--to-schema-datamodel", "prisma/schema.lite.prisma", "--script"],
       { cwd: dbRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }
     );
-    const committed = readFileSync(resolve(dbRoot, "lite-bootstrap.sql"), "utf8");
+    const committed = MIGRATIONS[0].sql;
 
     const generatedStatements = new Set(normalizeStatements(generated));
     // DigestLock is MCP-private (apps/mcp/src/digest-lock.ts): it has no
@@ -54,7 +55,7 @@ describe("lite-bootstrap.sql matches schema.lite.prisma", () => {
 
     expect(
       { missingFromBootstrap, extraInBootstrap },
-      "packages/db/lite-bootstrap.sql has drifted from packages/db/prisma/schema.lite.prisma — regenerate it " +
+      "apps/mcp/src/migrations.ts (migration 1) has drifted from packages/db/prisma/schema.lite.prisma — regenerate it " +
         "with `pnpm exec prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.lite.prisma --script` " +
         "(cwd packages/db), reapply IF NOT EXISTS, and keep the DigestLock block"
     ).toEqual({ missingFromBootstrap: [], extraInBootstrap: [] });
