@@ -2,8 +2,9 @@ import { describe, it, expect, vi } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { shouldDigest, acquireDigestLock, releaseDigestLock, maybeRunDigest } from "../src/digest";
+import { shouldDigest, acquireDigestLock, releaseDigestLock, maybeRunDigest, countPendingEvents, hasUsableModel } from "../src/digest";
 import { openStore } from "../src/store";
+import { seedUser, seedScope, insertEvent, insertDigest } from "./helpers/seed";
 
 describe("digest trigger", () => {
   it("fires only at/over threshold", () => {
@@ -55,5 +56,36 @@ describe("digest trigger", () => {
     } finally {
       errorSpy.mockRestore();
     }
+  });
+});
+
+describe("countPendingEvents", () => {
+  it("counts unsuppressed stream events newer than the latest digest and reports the oldest", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sc-pending-"));
+    const store = await openStore(dir);
+    seedUser(store.db);
+    const scope = seedScope(store.db, { name: "/p" });
+    expect(countPendingEvents(store.db, scope.id)).toEqual({ events: 0, oldest: null });
+    insertEvent(store.db, { scopeId: scope.id, content: "old", createdAt: new Date(1_000) });
+    const digest = insertDigest(store.db, { scopeId: scope.id, summary: "d" });
+    // insertDigest stamps createdAt = now; events after it are pending
+    insertEvent(store.db, { scopeId: scope.id, content: "new-1", createdAt: new Date(Date.now() + 10) });
+    insertEvent(store.db, { scopeId: scope.id, content: "new-2", createdAt: new Date(Date.now() + 20) });
+    const pending = countPendingEvents(store.db, scope.id);
+    expect(pending.events).toBe(2);
+    expect(typeof pending.oldest).toBe("number");
+    void digest;
+    await store.close();
+  });
+});
+
+describe("hasUsableModel", () => {
+  it("is true with an injected model or FEATURE_LLM + key, false otherwise", () => {
+    expect(hasUsableModel({}, { chat: async () => "" })).toBe(true);
+    expect(hasUsableModel({ FEATURE_LLM: "true", MODEL_API_KEY: "k" })).toBe(true);
+    expect(hasUsableModel({ FEATURE_LLM: "true", MODEL_STRUCTURED_OUTPUT_API_KEY: "k" })).toBe(true);
+    expect(hasUsableModel({ FEATURE_LLM: "true" })).toBe(false);
+    expect(hasUsableModel({ MODEL_API_KEY: "k" })).toBe(false);
+    expect(hasUsableModel({})).toBe(false);
   });
 });
