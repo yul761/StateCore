@@ -25,7 +25,17 @@ interface ToolRegistrar {
 // `rememberSchema`'s cross-field refinement: both must accept the same
 // field-level constraints so the refinement only ever narrows arguments that
 // already passed SDK-level validation.
-const rememberShape = { text: z.string().min(1).max(2000), consolidate: z.boolean().optional() };
+const rememberShape = {
+  text: z
+    .string()
+    .min(1)
+    .max(2000)
+    .describe("One self-contained fact, in plain language. Up to 500 characters, or 2000 with consolidate=true."),
+  consolidate: z
+    .boolean()
+    .optional()
+    .describe("true for longer conversational context to be distilled into facts in the background; omit for a single fact.")
+};
 
 // Enforces the note-path cap (500 chars) that HTTP mode's server already
 // enforces via `AddNoteInput.max(500)` (packages/contracts/src/index.ts),
@@ -49,7 +59,7 @@ const rememberSchema = z.object(rememberShape).superRefine((value, ctx) => {
   }
 });
 
-/** Registers the five memory verbs — remember/recall/facts/why/forget — as MCP tools backed by `backend`. */
+/** Registers the six memory verbs — remember/recall/facts/why/forget/handoff — as MCP tools backed by `backend`. */
 export function registerTools(server: McpServer, backend: MemoryBackend): void {
   const registrar = server as unknown as ToolRegistrar;
 
@@ -72,8 +82,20 @@ export function registerTools(server: McpServer, backend: MemoryBackend): void {
     "recall",
     {
       description:
-        "Retrieve project memory relevant to a query, packed into a character budget. Returns the distilled digest, believed facts, recent events, and a budget report of what was left out. Call at the start of a session or before relying on past context.",
-      inputSchema: { query: z.string().optional(), maxChars: z.number().int().positive().max(32000).optional() }
+        "Retrieve project memory relevant to a query, packed into a character budget. Read-only. Returns the active session handoff, the distilled digest, believed facts (with factIds for why), recent events, and a budget report of what was left out. Call at the start of a session or before relying on past context; use facts instead to see the whole memory unranked.",
+      inputSchema: {
+        query: z
+          .string()
+          .optional()
+          .describe("What you are about to work on, in natural language. Ranks facts and events by relevance; omit to rank by confidence and recency."),
+        maxChars: z
+          .number()
+          .int()
+          .positive()
+          .max(32000)
+          .optional()
+          .describe("Character budget for the whole response (default 4000, max 32000). Items that do not fit are listed in the budget report, not silently dropped.")
+      }
     },
     async (args) => {
       const a = args as { query?: string; maxChars?: number };
@@ -84,7 +106,7 @@ export function registerTools(server: McpServer, backend: MemoryBackend): void {
     "facts",
     {
       description:
-        "List everything currently believed about this project, grouped, with fact ids, plus how many captured events are still waiting for distillation. Use to review or audit the memory."
+        "List everything currently believed about this project, grouped, with each fact's factId (for why) and factKey (for forget), plus how many captured events are still waiting for distillation. Read-only, takes no arguments, and returns the full set unranked. Use to review or audit the memory; use recall instead to get only what is relevant to a task."
     },
     async () => {
       const groups = await backend.facts();
@@ -96,16 +118,17 @@ export function registerTools(server: McpServer, backend: MemoryBackend): void {
     "why",
     {
       description:
-        "Explain why a fact is believed: its source evidence and the full version chain, including superseded and retired versions. Pass a factId from facts or recall.",
-      inputSchema: { factId: z.string().min(1) }
+        "Explain why a fact is believed: its source evidence and the full version chain, including superseded and retired versions. Read-only. Use before trusting or correcting a fact that looks stale or surprising.",
+      inputSchema: { factId: z.string().min(1).describe("The factId of a fact, as returned by facts or recall, or a handoffId from handoff.") }
     },
     async (args) => json(await backend.why(args as { factId: string }))
   );
   registrar.registerTool(
     "forget",
     {
-      description: "Suppress a fact by factKey. The record is retired, not deleted — the audit chain is preserved.",
-      inputSchema: { factKey: z.string().min(1) }
+      description:
+        "Suppress a fact that is wrong or no longer relevant, so recall and facts stop returning it. The record is retired, not deleted — why still shows it and the audit chain is preserved. To change a fact rather than drop it, call remember with the corrected version instead; the engine supersedes the old one.",
+      inputSchema: { factKey: z.string().min(1).describe("The factKey of the fact to retire, as listed by facts (not its factId).") }
     },
     async (args) => json(await backend.forget(args as { factKey: string }))
   );
