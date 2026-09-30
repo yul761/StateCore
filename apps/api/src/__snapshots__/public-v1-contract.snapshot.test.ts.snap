@@ -311,6 +311,29 @@ exports[`public /v1 contract surface (frozen) > matches the committed JSON-schem
           },
           "type": "array",
         },
+        "evidence": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "content": {
+                "type": "string",
+              },
+              "createdAt": {
+                "type": "string",
+              },
+              "id": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "id",
+              "content",
+              "createdAt",
+            ],
+            "type": "object",
+          },
+          "type": "array",
+        },
         "fact": {
           "additionalProperties": false,
           "properties": {

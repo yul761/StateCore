@@ -14,7 +14,7 @@ exports[`buildOpenApiDocument > matches the committed snapshot 1`] = `
   "info": {
     "description": "Frozen public /v1 surface of the StateCore memory runtime.",
     "title": "StateCore API",
-    "version": "1.7.0",
+    "version": "1.8.0",
   },
   "openapi": "3.0.3",
   "paths": {
@@ -946,6 +946,29 @@ exports[`buildOpenApiDocument > matches the committed snapshot 1`] = `
                           "addedAt",
                           "evidenceId",
                           "evidenceType",
+                        ],
+                        "type": "object",
+                      },
+                      "type": "array",
+                    },
+                    "evidence": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "content": {
+                            "type": "string",
+                          },
+                          "createdAt": {
+                            "type": "string",
+                          },
+                          "id": {
+                            "type": "string",
+                          },
+                        },
+                        "required": [
+                          "id",
+                          "content",
+                          "createdAt",
                         ],
                         "type": "object",
                       },

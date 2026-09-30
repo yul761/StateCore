@@ -66,8 +66,11 @@ import { MemoryFactsService } from "./memory-facts.service";
 import { parseOutput } from "./output";
 import type { RequestWithUser } from "./types";
 import { apiEnv } from "./env";
+
 import { answerSystemPrompt, answerUserPrompt, runtimeSystemPrompt, runtimeUserPrompt } from "@statecore/prompts";
 
+// Evidence can be a whole ingested document; provenance is a reader, not an export.
+const PROVENANCE_EVIDENCE_MAX_CHARS = 2000;
 const WORKING_MEMORY_CAUGHT_UP_WINDOW_MS = 15_000;
 const STABLE_STATE_CAUGHT_UP_WINDOW_MS = 60_000;
 
@@ -549,7 +552,19 @@ export class MemoryController {
       }
     }
     if (!result) throw new NotFoundException(snapshot ? "Fact not found" : "No digest state for scope");
-    return result;
+    const evidenceIds = [...new Set(result.chain.map((entry) => entry.evidenceId))];
+    const rows = await prisma.memoryEvent.findMany({
+      where: { scopeId, id: { in: evidenceIds }, suppressedAt: null },
+      select: { id: true, content: true, createdAt: true }
+    });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const evidence = evidenceIds.flatMap((id) => {
+      const row = byId.get(id);
+      return row
+        ? [{ id: row.id, content: row.content.slice(0, PROVENANCE_EVIDENCE_MAX_CHARS), createdAt: row.createdAt.toISOString() }]
+        : [];
+    });
+    return { ...result, evidence };
   }
 
   @Post(["/memory/facts/forget", "/v1/memory/facts/forget"])

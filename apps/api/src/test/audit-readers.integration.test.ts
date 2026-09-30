@@ -40,7 +40,7 @@ describe("frozen /v1 audit readers answer with the shape the contract promises",
   }
 
   /** A digest whose state carries a two-version fact chain, plus a selection log. */
-  async function seedDigest(scopeId: string) {
+  async function seedDigest(scopeId: string, evidenceIds: [string, string] = ["evidence-1", "evidence-2"]) {
     const digest = await prisma.digest.create({
       data: {
         scopeId,
@@ -65,7 +65,7 @@ describe("frozen /v1 audit readers answer with the shape the contract promises",
               type: "profile",
               confidence: 0.85,
               addedAt: "2026-08-01T00:00:00.000Z",
-              evidenceId: "evidence-1",
+              evidenceId: evidenceIds[0],
               evidenceType: "document",
               facet: "identity",
               supersededBy: "fact-v2"
@@ -76,7 +76,7 @@ describe("frozen /v1 audit readers answer with the shape the contract promises",
               type: "profile",
               confidence: 0.85,
               addedAt: "2026-08-05T00:00:00.000Z",
-              evidenceId: "evidence-2",
+              evidenceId: evidenceIds[1],
               evidenceType: "document",
               facet: "identity"
             }
@@ -124,6 +124,28 @@ describe("frozen /v1 audit readers answer with the shape the contract promises",
     expect(provenance.fact.id).toBe("fact-v1");
     expect(provenance.chain.map((entry) => entry.id)).toEqual(["fact-v1", "fact-v2"]);
     expect(provenance.fact.evidenceId).toBe("evidence-1");
+  });
+
+  it("GET /v1/memory/facts/:factId/provenance carries the evidence text, leaving out what was forgotten", async () => {
+    const scopeId = await createScope("evidenced");
+    const { userId } = await prisma.projectScope.findUniqueOrThrow({ where: { id: scopeId } });
+    const [said, forgotten] = await Promise.all(
+      ["I just started at Acme", "I moved to Beta last week"].map((content) =>
+        prisma.memoryEvent.create({ data: { userId, scopeId, type: "stream", content } })
+      )
+    );
+    await prisma.memoryEvent.update({ where: { id: forgotten.id }, data: { suppressedAt: new Date() } });
+    await seedDigest(scopeId, [said.id, forgotten.id]);
+
+    const res = await request(app.getHttpServer())
+      .get(`/v1/memory/facts/fact-v2/provenance?scopeId=${scopeId}`)
+      .set("x-user-id", USER);
+
+    expect(res.status).toBe(200);
+    const provenance = FactProvenanceOutput.parse(res.body);
+    expect(provenance.evidence).toEqual([
+      { id: said.id, content: "I just started at Acme", createdAt: said.createdAt.toISOString() }
+    ]);
   });
 
   it("GET /v1/memory/digests/:digestId/selection returns what the digest kept and dropped", async () => {

@@ -329,7 +329,15 @@ export const FacetPackOutput = z.object({
 // holding an id from a retrieval can hand it straight back here.
 export const FactProvenanceOutput = z.object({
   fact: FactRegistryEntrySchema,
-  chain: z.array(FactRegistryEntrySchema)
+  chain: z.array(FactRegistryEntrySchema),
+  // Additive and optional (contract 1.8.0): the source text behind the chain's
+  // evidenceIds, so a caller can show "you said this" without a second lookup
+  // /v1 has no operation for. One entry per distinct evidence event still held,
+  // in chain order; suppressed (forgotten) and missing evidence is left out
+  // rather than reported, so absence never leaks what was forgotten.
+  evidence: z
+    .array(z.object({ id: z.string(), content: z.string(), createdAt: z.string() }))
+    .optional()
 });
 
 export const DigestSelectionOutput = z.object({
