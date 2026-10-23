@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEmbeddedBackend, createHttpBackend, type DigestChatModel } from "../src/lib";
+import { MAX_CONSECUTIVE_STAGE2_FAILURES } from "../src/digest";
 import { openStore } from "../src/store";
 import { countRows, latestDigest } from "./helpers/seed";
 
@@ -153,6 +154,71 @@ describe("MemoryBackend.digestNow", () => {
       expect(errorSpy).toHaveBeenCalledWith("[statecore-mcp] digest run failed", expect.any(Error));
     } finally {
       errorSpy.mockRestore();
+      await backend.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("embedded: after the failure ceiling the degraded digest is written as partial, so the scope moves on", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sc-mcp-digestnow-ceiling-"));
+    let calls = 0;
+    const llm: DigestChatModel = { chat: async () => (calls++, "never JSON") };
+    const backend = createEmbeddedBackend({ dataDir, scopeName: "/tmp/digest-now-ceiling", env: {} as NodeJS.ProcessEnv, digestLlm: llm, backgroundDigest: false });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await backend.init();
+      await backend.remember({ text: "an explicit note" });
+      await backend.remember({ text: "an event the model can never digest", consolidate: true });
+
+      const outcomes = [];
+      for (let i = 0; i < MAX_CONSECUTIVE_STAGE2_FAILURES; i++) outcomes.push(await backend.digestNow());
+
+      expect(outcomes.slice(0, -1).every((o) => !o.ran && o.reason === "failed")).toBe(true);
+      expect(outcomes[outcomes.length - 1]).toEqual({ ran: true, partial: true });
+      expect(await backend.pendingEvents!()).toBeNull();
+      const store = await openStore(dataDir);
+      try {
+        expect(countRows(store.db, "DigestFailure")).toBe(0); // reset once a digest is written
+      } finally {
+        await store.close();
+      }
+      // Nothing pending any more: no further model calls.
+      const before = calls;
+      expect(await backend.digestNow()).toEqual({ ran: false, reason: "below-threshold" });
+      expect(calls).toBe(before);
+    } finally {
+      errorSpy.mockRestore();
+      await backend.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("embedded: one unparseable chunk among chunks that extracted nothing is written as partial, not failed", async () => {
+    // Treating this as a total failure threw away the chunks that did succeed
+    // and, with a deterministic bad chunk, failed every retry.
+    const dataDir = mkdtempSync(join(tmpdir(), "sc-mcp-digestnow-mixed-"));
+    // The first chunk's pass (both attempts: maxRetries is 1) gets nothing
+    // parseable; every later pass succeeds with no facts.
+    let calls = 0;
+    const llm: DigestChatModel = {
+      chat: async () => {
+        calls += 1;
+        return calls <= 2 ? "not json" : JSON.stringify(STAGE2_OUTPUT);
+      }
+    };
+    const backend = createEmbeddedBackend({ dataDir, scopeName: "/tmp/digest-now-mixed", env: {} as NodeJS.ProcessEnv, digestLlm: llm, backgroundDigest: false });
+    try {
+      await backend.init();
+      await backend.remember({ text: "an explicit note" });
+      // ~40k characters each, so stage 2 runs in more than one chunk.
+      await backend.remember({ text: `POISON chunk ${"p ".repeat(20_000)}`, consolidate: true });
+      await backend.remember({ text: `healthy chunk one ${"a ".repeat(20_000)}`, consolidate: true });
+      await backend.remember({ text: `healthy chunk two ${"b ".repeat(20_000)}`, consolidate: true });
+
+      expect(await backend.digestNow()).toEqual({ ran: true, partial: true });
+      expect(calls).toBeGreaterThan(2); // more than one chunk was processed
+      expect(await backend.pendingEvents!()).toBeNull();
+    } finally {
       await backend.close();
       rmSync(dataDir, { recursive: true, force: true });
     }

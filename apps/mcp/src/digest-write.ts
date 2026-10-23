@@ -18,12 +18,6 @@ export interface CreateDigestWithSnapshotInput {
   /** `{ rationale, drops }` — what the selection stage kept and what it discarded. */
   selectionLog?: unknown;
   rebuildGroupId?: string;
-  /**
-   * The scope's forgotten fact keys. The note carry-over skips (and retires)
-   * forgotten notes; without them a digest re-appends every note the pipeline
-   * pruned as forgotten, and forgotten notes never free their slots.
-   */
-  forgottenFactKeys?: ReadonlySet<string>;
   /** The tenant's facet pack (notes cap and display group); defaults to the deployment pack. */
   pack?: FacetPack;
 }
@@ -41,10 +35,12 @@ export async function createDigestWithSnapshot(db: LiteDb, input: CreateDigestWi
     );
     const latestState = latest ? parseJson<DigestState | null>(latest.state, null) : null;
     if (latestState) {
-      carryOverConcurrentNotes(input.state as DigestState, latestState, {
-        forgottenFactKeys: input.forgottenFactKeys,
-        pack: input.pack
-      });
+      // Read inside the write transaction (BEGIN IMMEDIATE holds the write
+      // lock), so a forget committed at any point before this write is seen.
+      const forgottenFactKeys = new Set(
+        db.all<{ factKey: string }>(`SELECT "factKey" FROM "ForgottenFact" WHERE "scopeId" = ?`, input.scopeId).map((f) => f.factKey)
+      );
+      carryOverConcurrentNotes(input.state as DigestState, latestState, { forgottenFactKeys, pack: input.pack });
     }
 
     const now = nowMs();

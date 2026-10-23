@@ -3,7 +3,7 @@ import {
   resolveFacetPackForScope,
   buildFacetPromptSection,
   runDigestControlPipeline,
-  isEmptyInvalidJsonPass,
+  isTotalStage2Failure,
   type DigestState,
   type FacetPackStore
 } from "@statecore/core";
@@ -93,6 +93,26 @@ export function countPendingEvents(db: LiteDb, scopeId: string): { events: numbe
 function pendingEventIds(db: LiteDb, scopeId: string): string[] {
   const since = latestDigestAt(db, scopeId);
   return db.all<{ id: string }>(`SELECT "id" FROM "MemoryEvent" WHERE ${PENDING_WHERE}`, scopeId, since, since).map((r) => r.id);
+}
+
+/**
+ * Consecutive runs whose stage 2 distilled nothing, after which the run is
+ * written anyway (degraded, `partial`) so the scope moves past the events it
+ * cannot digest instead of retrying them forever.
+ */
+export const MAX_CONSECUTIVE_STAGE2_FAILURES = 3;
+
+function recordStage2Failure(db: LiteDb, scopeId: string, error: string): number {
+  db.run(
+    `INSERT INTO "DigestFailure" ("scopeId", "count", "lastFailedAt", "lastError") VALUES (?, 1, ?, ?)
+     ON CONFLICT("scopeId") DO UPDATE SET "count" = "count" + 1, "lastFailedAt" = excluded."lastFailedAt", "lastError" = excluded."lastError"`,
+    scopeId, Date.now(), error
+  );
+  return db.get<{ count: number }>(`SELECT "count" FROM "DigestFailure" WHERE "scopeId" = ?`, scopeId)!.count;
+}
+
+function stage2FailureCount(db: LiteDb, scopeId: string): number {
+  return db.get<{ count: number }>(`SELECT "count" FROM "DigestFailure" WHERE "scopeId" = ?`, scopeId)?.count ?? 0;
 }
 
 /** Every forgotten fact key in the scope (keys are cheap; only their content is bounded for the prompt). */
@@ -273,12 +293,24 @@ async function runDigestPipelineCore(db: LiteDb, userId: string, scopeId: string
     forgottenFactContents
   });
 
-  // Every stage-2 reply was unparseable: nothing was distilled, and the
-  // "digest" is the previous one carried forward. Writing it would advance the
-  // latest-Digest watermark past events that were never read — they would stop
-  // counting as pending and never be digested. Fail instead; they stay pending.
-  if (isEmptyInvalidJsonPass(result.digest)) {
-    throw new Error(`digest: stage 2 produced no parseable output (${result.digest.degraded!.reason}); events left pending`);
+  // Stage 2 distilled nothing (every chunk, or the single pass, unparseable):
+  // the "digest" is the previous one carried forward. Writing it would advance
+  // the latest-Digest watermark past events that were never read. Fail instead
+  // and leave them pending — up to a ceiling of consecutive failures, after
+  // which the degraded digest is written (reported partial) so a scope whose
+  // events can never be digested stops burning a model call on every trigger.
+  // A run that distilled some chunks is written as partial, never failed.
+  let gaveUp = false;
+  if (isTotalStage2Failure(result.digest)) {
+    const reason = `stage 2 produced no parseable output (${result.digest.degraded?.reason ?? "unknown"})`;
+    if (stage2FailureCount(db, scopeId) + 1 < MAX_CONSECUTIVE_STAGE2_FAILURES) {
+      recordStage2Failure(db, scopeId, reason);
+      throw new Error(`digest: ${reason}; events left pending`);
+    }
+    console.error(
+      `[statecore-mcp] digest: ${reason} ${MAX_CONSECUTIVE_STAGE2_FAILURES} runs in a row for scope ${scopeId}; writing the degraded digest so the scope moves on`
+    );
+    gaveUp = true;
   }
 
   await createDigestWithSnapshot(db, {
@@ -289,13 +321,11 @@ async function runDigestPipelineCore(db: LiteDb, userId: string, scopeId: string
     state: result.state,
     consistency: result.consistency,
     selectionLog: { rationale: result.selection.rationale, drops: result.dropLog },
-    // Re-read at write time, so a forget that landed while the pipeline ran
-    // is honoured by the note carry-over too.
-    forgottenFactKeys: forgottenFactKeys(db, scopeId),
     pack: facetPack
   });
+  db.run(`DELETE FROM "DigestFailure" WHERE "scopeId" = ?`, scopeId);
 
-  return { partial: isPartialRun(pendingIds, result.selection, result.digest) };
+  return { partial: gaveUp || isPartialRun(pendingIds, result.selection, result.digest) };
 }
 
 /**
