@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { computeFactKey, getDefaultFacetPack } from "@statecore/core";
 import { createDigestWithSnapshot, type DigestWritePrisma, type DigestWriteTx } from "./digest-write";
 
 function makePrismaStub(
@@ -216,5 +217,52 @@ describe("createDigestWithSnapshot — concurrent-note carry-over", () => {
 
     const written = snapshotCreateArgs[0].data.state as any;
     expect(written.factRegistry).toEqual([]);
+  });
+
+  it("does not carry a forgotten note back in, so a digest frees its slot", async () => {
+    // The pipeline pruned the forgotten note, so its registry id is missing from
+    // the pipeline state — without the keys it looks like a concurrent write.
+    const forgottenKey = computeFactKey("Notes", noteEntry.content);
+    const latestState = { profile: { notes: [noteEntry.content] }, factRegistry: [noteEntry] };
+    const { prisma, snapshotCreateArgs } = makePrismaStub(false, latestState);
+
+    await createDigestWithSnapshot(prisma, {
+      scopeId: "scope-1",
+      summary: "s",
+      changes: "",
+      nextSteps: [],
+      state: { profile: { notes: [] }, factRegistry: [] },
+      consistency: null,
+      forgottenFactKeys: new Set([forgottenKey])
+    });
+
+    const written = snapshotCreateArgs[0].data.state as any;
+    expect(written.profile.notes).toEqual([]);
+    expect(written.factRegistry).toEqual([]);
+  });
+
+  it("holds the carried notes to the pack's cap", async () => {
+    const pack = { ...getDefaultFacetPack(), facets: getDefaultFacetPack().facets.map((f) => (f.name === "notes" ? { ...f, cap: 2 } : f)) };
+    const callerNote = (i: number) => ({ ...noteEntry, id: `c${i}`, content: `caller note ${i}`, origin: "note" });
+    const pipelineState = {
+      profile: { notes: ["caller note 0", "digest note"] },
+      factRegistry: [callerNote(0), { ...noteEntry, id: "d0", content: "digest note", confidence: 0.6 }]
+    };
+    const latestState = { profile: { notes: ["caller note 0", "caller note 1"] }, factRegistry: [callerNote(0), callerNote(1)] };
+    const { prisma, snapshotCreateArgs } = makePrismaStub(false, latestState);
+
+    await createDigestWithSnapshot(prisma, {
+      scopeId: "scope-1",
+      summary: "s",
+      changes: "",
+      nextSteps: [],
+      state: pipelineState,
+      consistency: null,
+      pack
+    });
+
+    const written = snapshotCreateArgs[0].data.state as any;
+    expect(written.profile.notes).toEqual(["caller note 0", "caller note 1"]);
+    expect(written.factRegistry.find((e: any) => e.id === "d0").retiredReason).toBe("cap_evicted");
   });
 });

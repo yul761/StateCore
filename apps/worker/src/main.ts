@@ -286,7 +286,16 @@ async function runDigestScopeJob(data: { userId: string; scopeId: string }): Pro
     take: 100,
     select: { factKey: true, contentSnapshot: true }
   });
-  const forgottenFactKeys = new Set(forgottenRows.map((f) => f.factKey));
+  // Contents feed the stage-2 prompt, so they stay bounded to the latest 100;
+  // the keys are cheap, and every one of them is needed for the prune and the
+  // note carry-over at write time.
+  const readForgottenKeys = async () =>
+    new Set(
+      (await prisma.forgottenFact.findMany({ where: { scopeId: data.scopeId }, select: { factKey: true } })).map(
+        (f) => f.factKey
+      )
+    );
+  const forgottenFactKeys = await readForgottenKeys();
   // Semantic guard: the verbatim content the user forgot, fed to the digest LLM so it omits
   // re-worded / re-grouped restatements the hash-based prune (factKey) cannot catch.
   const forgottenFactContents = forgottenRows
@@ -331,7 +340,11 @@ async function runDigestScopeJob(data: { userId: string; scopeId: string }): Pro
     nextSteps: result.digest.nextSteps,
     state: result.state,
     consistency: result.consistency,
-    selectionLog: { rationale: result.selection.rationale, drops: result.dropLog }
+    selectionLog: { rationale: result.selection.rationale, drops: result.dropLog },
+    // Re-read at write time, so a forget that landed while the pipeline ran
+    // is honoured by the note carry-over too.
+    forgottenFactKeys: await readForgottenKeys(),
+    pack: facetPack
   });
 
   logger.info({
@@ -463,6 +476,11 @@ async function runRebuildDigestChainJob(data: { userId: string; scopeId: string;
     lastState = (snapshot?.state as unknown as DigestState) ?? null;
   }
 
+  // The note carry-over at each write must not bring a forgotten note back.
+  const rebuildForgottenKeys = new Set(
+    (await prisma.forgottenFact.findMany({ where: { scopeId: data.scopeId }, select: { factKey: true } })).map((f) => f.factKey)
+  );
+
   for (let i = 0; i < events.length; i += workerEnv.digestRebuildChunkSize) {
     const chunk = events.slice(i, i + workerEnv.digestRebuildChunkSize).reverse();
 
@@ -507,7 +525,9 @@ async function runRebuildDigestChainJob(data: { userId: string; scopeId: string;
       nextSteps: result.digest.nextSteps,
       state: result.state,
       consistency: result.consistency,
-      rebuildGroupId
+      rebuildGroupId,
+      forgottenFactKeys: rebuildForgottenKeys,
+      pack: facetPack
     }) as any;
 
     lastState = result.state;
