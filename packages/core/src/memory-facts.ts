@@ -126,7 +126,8 @@ export function attachFactIds(
 export function pruneForgottenFacts(
   state: DigestState,
   forgottenFactKeys: ReadonlySet<string>,
-  pack: FacetPack = getDefaultFacetPack()
+  pack: FacetPack = getDefaultFacetPack(),
+  makeNow: () => string = () => new Date().toISOString()
 ): void {
   if (forgottenFactKeys.size === 0) return;
 
@@ -142,12 +143,19 @@ export function pruneForgottenFacts(
     }
   }
 
-  // Profile-type factRegistry entries (those with a facet mapping to a display group).
+  // Profile-type factRegistry entries (those with a facet mapping to a display
+  // group) are retired, not deleted: this used to filter them out, so the
+  // `retiredReason: "forgotten"` record vanished at the next digest and why()
+  // lost the fact's history. Inactive entries are left as they are.
   if (Array.isArray(state.factRegistry)) {
-    state.factRegistry = state.factRegistry.filter((entry) => {
+    let now: string | undefined;
+    for (const entry of state.factRegistry) {
+      if (entry.supersededBy || entry.retiredAt) continue;
       const group = entry.facet ? factToGroup(entry.facet, pack) : null;
-      if (!group) return true; // not a displayable profile fact → keep
-      return !forgottenFactKeys.has(computeFactKey(group, entry.content));
-    });
+      if (!group) continue; // not a displayable profile fact
+      if (!forgottenFactKeys.has(computeFactKey(group, entry.content))) continue;
+      entry.retiredAt = now ??= makeNow();
+      entry.retiredReason = "forgotten";
+    }
   }
 }

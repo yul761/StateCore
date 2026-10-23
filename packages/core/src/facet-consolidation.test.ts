@@ -257,6 +257,30 @@ describe("consolidation never touches caller-written notes", () => {
     expect(active).not.toContain("d0");
   });
 
+  it("treats a legacy consolidation output at confidence 0.9 as consolidatable, not as a caller note", async () => {
+    const state = mixedNotes();
+    // A legacy merge of two notes, written before caller notes were excluded:
+    // shaped like a caller note (facet notes, 0.9, no origin), but two sources point at it.
+    state.factRegistry!.push(
+      { id: "old-a", content: "old a", type: "profile", confidence: 0.9, addedAt: "2026-06-01T00:00:00.000Z", evidenceId: "ea", evidenceType: "event", facet: "notes", supersededBy: "lm" },
+      { id: "old-b", content: "old b", type: "profile", confidence: 0.6, addedAt: "2026-06-01T00:00:00.000Z", evidenceId: "eb", evidenceType: "event", facet: "notes", supersededBy: "lm" },
+      { id: "lm", content: "legacy merged", type: "profile", confidence: 0.9, addedAt: "2026-06-01T00:00:00.000Z", evidenceId: "ea", evidenceType: "event", facet: "notes" }
+    );
+    state.profile!.notes!.push("legacy merged");
+    const seen: string[] = [];
+    const llm = {
+      chat: async (m: { role: string; content: string }[]) => {
+        seen.push(m[1].content);
+        return '[{"text":"all digest notes","mergedFrom":[0,1,2,3,4]}]';
+      }
+    };
+
+    await consolidateChangedFacets({ state, changedFacets: ["notes"], llm, prompts: PROMPTS, makeId: ids(), makeNow: now });
+
+    expect(seen[0]).toContain("legacy merged");
+    expect(state.profile?.notes).toEqual(["caller A", "all digest notes", "caller B (legacy)"]);
+  });
+
   it("skips the facet when fewer than two digest notes remain to consolidate", async () => {
     const state = mixedNotes();
     state.profile!.notes = ["caller A", "digest 1", "caller B (legacy)"];

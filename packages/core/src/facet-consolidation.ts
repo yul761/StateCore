@@ -36,7 +36,7 @@ export function applyFacetConsolidation(
   // their registry entries and their place in the profile untouched.
   const callerNoteTexts = callerNoteTextsOf(state, facet);
   const findEntry = (source: string): FactRegistryEntry | undefined =>
-    registry.find((e) => !e.supersededBy && e.type === "profile" && e.facet === facet && !isCallerNoteEntry(e)
+    registry.find((e) => !e.supersededBy && e.type === "profile" && e.facet === facet && !isCallerNoteEntry(e, registry)
       && (e.content.trim() === source.trim() || sameFactCjkAware(e.content, source, 0.6)));
 
   // Sources consumed by each output, so the originals can be linked to their
@@ -77,7 +77,7 @@ export function applyFacetConsolidation(
   // traced back to the statements it was merged from.
   for (const e of registry) {
     if (e.supersededBy || e.retiredAt || e.type !== "profile" || e.facet !== facet) continue;
-    if (isCallerNoteEntry(e)) continue;
+    if (isCallerNoteEntry(e, registry)) continue;
     const replacement = supersededByNewId.get(e.id);
     if (replacement) {
       e.supersededBy = replacement;
@@ -119,7 +119,7 @@ const normalizeKey = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
 function callerNoteTextsOf(state: DigestState, facet: string): Set<string> {
   return new Set(
     (state.factRegistry ?? [])
-      .filter((e) => !e.supersededBy && !e.retiredAt && e.facet === facet && isCallerNoteEntry(e))
+      .filter((e) => !e.supersededBy && !e.retiredAt && e.facet === facet && isCallerNoteEntry(e, state.factRegistry))
       .map((e) => normalizeKey(e.content))
   );
 }

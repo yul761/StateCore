@@ -61,6 +61,7 @@ export {
   chunkDeltaCandidates,
   boundProtectedState,
   generateDigestStage2,
-  isEmptyInvalidJsonPass
+  isEmptyInvalidJsonPass,
+  isTotalStage2Failure
 } from "./digest/stage2";
 export { runDigestControlPipeline } from "./digest/pipeline";

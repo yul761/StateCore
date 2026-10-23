@@ -139,15 +139,16 @@ describe("carryOverConcurrentNotes", () => {
     expect(notesOf(pipeline)).not.toContain("caller note 7");
   });
 
-  it("without forgotten keys the old re-append still happens (callers must pass them)", () => {
+  it("keeps the forgotten note's retired record in the written state (why() history survives)", () => {
     const latest = withNotes(callerNotes(3));
     const forgotten = new Set([NOTES_KEY("caller note 1")]);
     const pipeline = withNotes(callerNotes(3));
-    pruneForgottenFacts(pipeline, forgotten);
+    pruneForgottenFacts(pipeline, forgotten, undefined, () => "T");
 
-    carryOverConcurrentNotes(pipeline, latest);
+    carryOverConcurrentNotes(pipeline, latest, { forgottenFactKeys: forgotten });
 
-    expect(notesOf(pipeline)).toContain("caller note 1");
+    expect(notesOf(pipeline)).not.toContain("caller note 1");
+    expect(pipeline.factRegistry!.find((e) => e.id === "n1")).toMatchObject({ retiredAt: "T", retiredReason: "forgotten" });
   });
 
   it("retires a forgotten note the pipeline still holds (forget landed mid-digest)", () => {

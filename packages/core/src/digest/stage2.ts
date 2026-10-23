@@ -8,7 +8,9 @@ import type { DeltaCandidate, DigestControlConfig, DigestOutput, DigestState, Fa
 import { DigestOutputSchema } from "./types";
 
 function formatProtectedState(state: DigestState) {
-  return JSON.stringify(state, null, 2);
+  // Forgotten facts stay on the record (retired) but never go back to the model.
+  const registry = state.factRegistry?.filter((e) => e.retiredReason !== "forgotten");
+  return JSON.stringify(registry && registry.length !== state.factRegistry!.length ? { ...state, factRegistry: registry } : state, null, 2);
 }
 
 function formatDeltaCandidates(candidates: DeltaCandidate[]) {
@@ -284,6 +286,20 @@ function chunksFailed(failed: number, total: number, errors: string[]): NonNulla
  */
 export function isEmptyInvalidJsonPass(out: DigestOutput): boolean {
   return Boolean(out.degraded?.errors.includes("invalid_json_output")) && !(out.profileFacts?.length);
+}
+
+/**
+ * Whether stage 2 distilled nothing at all. A chunked run that skipped some
+ * chunks is partial, not failed — even when the chunks that did succeed
+ * extracted no facts — so it is a failure only when every chunk failed. A
+ * single pass (or the all-chunks-failed fallback pass) fails when it is an
+ * empty, unparseable carry-forward.
+ */
+export function isTotalStage2Failure(out: DigestOutput): boolean {
+  if (out.degraded?.reason === "stage2_chunks_failed") {
+    return out.degraded.failed !== undefined && out.degraded.failed === out.degraded.total;
+  }
+  return isEmptyInvalidJsonPass(out);
 }
 
 async function runStage2Pass(input: Stage2Input): Promise<DigestOutput> {

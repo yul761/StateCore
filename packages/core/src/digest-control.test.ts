@@ -2866,9 +2866,14 @@ describe("runDigestControlPipeline", () => {
     expect(styleItems.every((item) => !item.includes("blunt"))).toBe(true);
     // The forgotten fact itself must not appear verbatim either
     expect(styleItems).not.toContain("Prefers terse, blunt phrasing");
-    // The factRegistry must not retain any entry with the forgotten content
-    const registryContents = (result.state.factRegistry ?? []).map((e) => e.content);
-    expect(registryContents.every((c) => !c.includes("blunt"))).toBe(true);
+    // No ACTIVE registry entry may carry the forgotten content. Since forgotten
+    // facts are retired rather than deleted (why() keeps their history), any
+    // entry that does carry it must be retired as forgotten.
+    const activeContents = getActiveFactRegistry(result.state).map((e) => e.content);
+    expect(activeContents.every((c) => !c.includes("blunt"))).toBe(true);
+    for (const e of (result.state.factRegistry ?? []).filter((x) => x.content.includes("blunt") && !x.supersededBy)) {
+      expect(e.retiredReason).toBe("forgotten");
+    }
   });
 });
 

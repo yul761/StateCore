@@ -456,7 +456,7 @@ export function applyProfileFactsFromDigest(
           !e.supersededBy &&
           !e.retiredAt &&
           e.type === "profile" &&
-          !isCallerNoteEntry(e) &&
+          !isCallerNoteEntry(e, state.factRegistry) &&
           sameFactCjkAware(e.content, existing, 0.6)
       );
 
@@ -485,7 +485,7 @@ export function applyProfileFactsFromDigest(
         const authorityIncreased = activeEntry !== undefined && authority > activeEntry.confidence;
         if (contentChanged || authorityIncreased) {
           supersedeFact(state, existing, value, evidence, makeId, { facet, confidence: authority, type: "profile", entities }, makeNow, {
-            exclude: isCallerNoteEntry
+            exclude: (e) => isCallerNoteEntry(e, state.factRegistry)
           });
         }
       }
@@ -513,7 +513,7 @@ export function applyProfileFactsFromDigest(
       if (evicted && dropLog) recordDrop(dropLog, "cap_evicted", { facet, value: evicted, cap });
       // Retire, don't delete: the fact stops being active but the record of
       // having believed it survives.
-      if (evicted) retireFact(state, evicted, "cap_evicted", makeNow, { facet, exclude: isCallerNoteEntry });
+      if (evicted) retireFact(state, evicted, "cap_evicted", makeNow, { facet, exclude: (e) => isCallerNoteEntry(e, state.factRegistry) });
     }
 
     facetFacts.push(value);

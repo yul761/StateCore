@@ -173,10 +173,23 @@ const normalizeNote = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase()
  * but `addNoteFact` has always written them the same way — facet `notes`,
  * confidence 0.9 — and no digest path writes that confidence (stream evidence
  * is 0.6, document evidence 0.85), so the shape identifies them.
+ *
+ * One exception to the shape: consolidation used to merge caller notes and
+ * gave its output the highest source confidence, so a legacy consolidated
+ * note can also read as 0.9. A consolidation output is the `supersededBy`
+ * target of every source it merged; a caller's revision supersedes exactly
+ * one. Pass `registry` to exclude legacy entries that more than one source
+ * points at.
  */
-export function isCallerNoteEntry(entry: FactRegistryEntry): boolean {
+export function isCallerNoteEntry(entry: FactRegistryEntry, registry?: readonly FactRegistryEntry[]): boolean {
   if (entry.origin !== undefined) return entry.origin === CALLER_NOTE_ORIGIN;
-  return entry.type === "profile" && entry.facet === NOTES_FACET && entry.confidence === CALLER_NOTE_CONFIDENCE;
+  if (!(entry.type === "profile" && entry.facet === NOTES_FACET && entry.confidence === CALLER_NOTE_CONFIDENCE)) return false;
+  if (!registry) return true;
+  let sources = 0;
+  for (const e of registry) {
+    if (e.supersededBy === entry.id && ++sources > 1) return false;
+  }
+  return true;
 }
 
 /** Whether `text`, as held in `profile[facet]`, is backed by an active caller-note entry. */
@@ -187,8 +200,8 @@ export function isCallerNoteText(state: DigestState, facet: string, text: string
       !e.supersededBy &&
       !e.retiredAt &&
       e.facet === facet &&
-      isCallerNoteEntry(e) &&
-      normalizeNote(e.content) === target
+      normalizeNote(e.content) === target &&
+      isCallerNoteEntry(e, state.factRegistry)
   );
 }
 
@@ -285,6 +298,14 @@ export function addNoteFact(
   // checks below must all see the notes with forgotten ones already gone.
   const healed = forgottenKeys ? retireForgottenNotes(state, forgottenKeys, makeNow, pack) > 0 : false;
 
+  // The exact text of a forgotten note stays forgotten: its ForgottenFact row
+  // still hides it from facts(), so writing it would only take a slot (at the
+  // cap, evicting a visible note) for something nobody can see. A caller that
+  // wants it shown again writes a variant; a revision is a different key and
+  // links to the forgotten version below.
+  const notesGroup = getFacetDisplayGroup(pack, NOTES_FACET);
+  if (forgottenKeys && notesGroup && forgottenKeys.has(computeFactKey(notesGroup, value))) return { changed: healed };
+
   // Normalize helper: trim, collapse internal whitespace, lowercase.
   const norm = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
 
@@ -334,6 +355,23 @@ export function addNoteFact(
     return { changed: true, superseded };
   }
 
+  // A revision of a note the caller forgot: "forget the old decision, remember
+  // the new one" is how a caller updates a note, and the chain old → new must
+  // survive it. Before forget retired notes, the forgotten note was still in
+  // profile.notes and matched above; now it is matched among the entries
+  // retired as forgotten (newest first). The forgotten note holds no slot, so
+  // the revision takes one like any new note (cap enforcement below), and the
+  // retired entry is linked rather than revived.
+  const forgottenPrior = [...state.factRegistry]
+    .reverse()
+    .find(
+      (e) =>
+        e.retiredReason === "forgotten" &&
+        !e.supersededBy &&
+        e.facet === NOTES_FACET &&
+        isNoteRevision(e.content, value)
+    );
+
   // Cap enforcement: evict the oldest entry (index 0) and retire its registry
   // record. Retiring rather than deleting keeps the audit chain intact — the
   // note stops being active, but the record that it was once held remains.
@@ -344,6 +382,11 @@ export function addNoteFact(
   }
 
   notes.push(value);
+
+  if (forgottenPrior) {
+    registerNote(forgottenPrior);
+    return { changed: true, superseded: forgottenPrior.content };
+  }
 
   // Promote to factRegistry so flattenScopeFacts surfaces createdAt + evidenceId.
   // Notes use exact-match dedup for the registry guard: the shared promoteToFactRegistry

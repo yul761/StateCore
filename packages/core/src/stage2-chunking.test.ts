@@ -3,6 +3,7 @@ import {
   chunkDeltaCandidates,
   generateDigestStage2,
   isEmptyInvalidJsonPass,
+  isTotalStage2Failure,
   normalizeDigestState,
   STAGE2_SECTION_CHAR_BUDGET,
   STAGE2_MAX_CHUNKS,
@@ -314,5 +315,51 @@ describe("a run that skipped chunks says so", () => {
     });
     expect(out.degraded?.errors).toEqual(["invalid_json_output"]);
     expect(isEmptyInvalidJsonPass(out)).toBe(true);
+    expect(isTotalStage2Failure(out)).toBe(true);
+  });
+
+  it("one unparseable chunk among chunks that extracted nothing is partial, not a total failure", async () => {
+    // The chunks that succeeded distilled their events (into no facts); treating
+    // the run as failed threw all of that away, and a deterministic bad chunk
+    // then failed every retry.
+    let n = 0;
+    const llm = {
+      chat: async () => {
+        n += 1;
+        return n === 1 ? "not json" : JSON.stringify(okOutput([]));
+      }
+    };
+    const out = await run(llm, 6, { summary: "prior", changes: "old", nextSteps: ["ship it"] });
+
+    expect(out.degraded?.reason).toBe("stage2_chunks_failed");
+    expect(isEmptyInvalidJsonPass(out)).toBe(true); // the old, too-broad test
+    expect(isTotalStage2Failure(out)).toBe(false);
+  });
+
+  it("every chunk unparseable is a total failure", async () => {
+    const out = await run({ chat: async () => "never json" }, 6, { summary: "prior", changes: "old", nextSteps: ["ship it"] });
+    expect(isTotalStage2Failure(out)).toBe(true);
+  });
+
+  it("never shows forgotten (retired) registry entries to the model", async () => {
+    const llm = llmReturning(() => okOutput([]));
+    const state = normalizeDigestState(null);
+    state.factRegistry = [
+      { id: "f", content: "FORGOTTEN-SECRET", type: "profile", confidence: 0.9, addedAt: "t", evidenceId: "e", evidenceType: "event", facet: "notes", retiredAt: "t", retiredReason: "forgotten" },
+      { id: "k", content: "KEPT-FACT", type: "profile", confidence: 0.9, addedAt: "t", evidenceId: "e", evidenceType: "event", facet: "notes" }
+    ];
+    await generateDigestStage2({
+      scope: SCOPE,
+      lastDigest: null,
+      protectedState: state,
+      deltaCandidates: [delta("a", 100)],
+      documents: [],
+      llm,
+      systemPrompt: "sys",
+      userPromptTemplate: "{{protectedState}}",
+      maxRetries: 0
+    });
+    expect(llm.prompts[0]).toContain("KEPT-FACT");
+    expect(llm.prompts[0]).not.toContain("FORGOTTEN-SECRET");
   });
 });

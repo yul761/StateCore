@@ -138,6 +138,90 @@ describe("forgotten notes free their slots", () => {
   });
 });
 
+describe("forget, then remember", () => {
+  const OLD = "[decision:db] 用 PostgreSQL 存储会话";
+  const NEW = "[decision:db] 用 MySQL 存储会话";
+  const key = (text: string) => computeFactKey("Notes", text);
+  let n = 0;
+  const id = () => `x-${n++}`;
+
+  it("a revision of a forgotten note supersedes it, keeping the chain", () => {
+    // How a caller updates a note: forget the old one, remember the new one.
+    // Once forget retired the note (instead of leaving it in profile.notes),
+    // revision matching no longer saw it and the chain broke.
+    const state = { stableFacts: {}, factRegistry: [], profile: { notes: [] } } as unknown as DigestState;
+    addNoteFact(state, OLD, id, NOW);
+    const forgotten = new Set([key(OLD)]);
+    retireForgottenNotes(state, forgotten, NOW);
+
+    const result = addNoteFact(state, NEW, id, NOW, undefined, forgotten);
+
+    expect(result).toEqual({ changed: true, superseded: OLD });
+    expect(notesOf(state)).toEqual([NEW]);
+    const oldEntry = state.factRegistry!.find((e) => e.content === OLD)!;
+    const newEntry = state.factRegistry!.find((e) => e.content === NEW)!;
+    expect(oldEntry.supersededBy).toBe(newEntry.id);
+    expect(oldEntry.retiredReason).toBe("forgotten");
+    expect(newEntry.retiredAt).toBeUndefined();
+    expect(newEntry.supersededBy).toBeUndefined();
+  });
+
+  it("the revision takes one slot and the forgotten note none, even at the cap", () => {
+    const state = fillNotes(29);
+    addNoteFact(state, OLD, id, NOW);
+    const forgotten = new Set([key(OLD)]);
+    retireForgottenNotes(state, forgotten, NOW);
+    expect(notesOf(state)).toHaveLength(29);
+
+    expect(addNoteFact(state, NEW, id, NOW, undefined, forgotten).superseded).toBe(OLD);
+
+    expect(notesOf(state)).toHaveLength(30);
+    expect(notesOf(state)).toContain(noteText(0));
+    expect(state.factRegistry!.some((e) => e.retiredReason === "cap_evicted")).toBe(false);
+  });
+
+  it("the exact text of a forgotten note stays forgotten and evicts nothing at the cap", () => {
+    // Its ForgottenFact row still hides it, so writing it would push a visible
+    // note out for something facts() never shows.
+    const state = fillNotes(30);
+    const forgotten = new Set([key(noteText(5))]);
+    retireForgottenNotes(state, forgotten, NOW);
+    addNoteFact(state, "a fresh note filling the slot", id, NOW, undefined, forgotten);
+    const before = JSON.stringify(state);
+
+    const result = addNoteFact(state, noteText(5), id, NOW, undefined, forgotten);
+
+    expect(result).toEqual({ changed: false });
+    expect(JSON.stringify(state)).toBe(before);
+    expect(notesOf(state)).toContain(noteText(0));
+  });
+});
+
+describe("legacy consolidated notes are not caller notes", () => {
+  it("excludes a legacy 0.9 note that several sources were merged into", () => {
+    const merged = entry({ id: "m", content: "merged note", confidence: 0.9 });
+    const registry = [
+      entry({ id: "s1", content: "a", confidence: 0.9, supersededBy: "m" }),
+      entry({ id: "s2", content: "b", confidence: 0.6, supersededBy: "m" }),
+      merged
+    ];
+    expect(isCallerNoteEntry(merged, registry)).toBe(false);
+    expect(isCallerNoteEntry(merged)).toBe(true); // shape alone cannot tell
+  });
+
+  it("keeps a legacy caller revision (exactly one source) as a caller note", () => {
+    const revised = entry({ id: "r", content: "revised", confidence: 0.9 });
+    const registry = [entry({ id: "o", content: "original", confidence: 0.9, supersededBy: "r" }), revised];
+    expect(isCallerNoteEntry(revised, registry)).toBe(true);
+  });
+
+  it("never applies the exclusion to entries that carry an origin", () => {
+    const tagged = entry({ id: "t", confidence: 0.9, origin: "note" });
+    const registry = [entry({ id: "a", supersededBy: "t" }), entry({ id: "b", supersededBy: "t" }), tagged];
+    expect(isCallerNoteEntry(tagged, registry)).toBe(true);
+  });
+});
+
 describe("caller notes are tagged", () => {
   it("addNoteFact stamps origin 'note' on the registry entry", () => {
     const state = { stableFacts: {}, factRegistry: [], profile: {} } as unknown as DigestState;
