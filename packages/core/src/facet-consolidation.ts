@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { sameFactCjkAware, type DigestState, type FactRegistryEntry } from "./digest-control";
+import { isCallerNoteEntry } from "./digest/fact-registry";
 import { recordDrop, type DropRecord } from "./drop-log";
 import { getFacetDescription, isRegisteredFacet, listFacets, getDefaultFacetPack, type FacetPack } from "./facet-registry";
 
@@ -29,8 +30,13 @@ export function applyFacetConsolidation(
   }
 
   const registry = state.factRegistry ?? [];
+  // Caller-written notes are outside consolidation: the caller's wording is the
+  // fact, so it is never merged, reworded or dropped by a model. `items` holds
+  // only the consolidatable entries (see consolidateOne); the caller notes keep
+  // their registry entries and their place in the profile untouched.
+  const callerNoteTexts = callerNoteTextsOf(state, facet);
   const findEntry = (source: string): FactRegistryEntry | undefined =>
-    registry.find((e) => !e.supersededBy && e.type === "profile" && e.facet === facet
+    registry.find((e) => !e.supersededBy && e.type === "profile" && e.facet === facet && !isCallerNoteEntry(e, registry)
       && (e.content.trim() === source.trim() || sameFactCjkAware(e.content, source, 0.6)));
 
   // Sources consumed by each output, so the originals can be linked to their
@@ -71,6 +77,7 @@ export function applyFacetConsolidation(
   // traced back to the statements it was merged from.
   for (const e of registry) {
     if (e.supersededBy || e.retiredAt || e.type !== "profile" || e.facet !== facet) continue;
+    if (isCallerNoteEntry(e, registry)) continue;
     const replacement = supersededByNewId.get(e.id);
     if (replacement) {
       e.supersededBy = replacement;
@@ -84,8 +91,37 @@ export function applyFacetConsolidation(
   state.factRegistry.push(...newEntries);
 
   const profileMap = (state.profile ?? (state.profile = {})) as Record<string, string[]>;
-  profileMap[facet] = result.map((r) => r.text);
+  const consolidated = result.map((r) => r.text);
+  if (callerNoteTexts.size === 0) {
+    profileMap[facet] = consolidated;
+    return true;
+  }
+  // Keep caller notes where they were; the consolidated set takes the place of
+  // the first consolidatable entry, so relative age (eviction order) holds.
+  const merged: string[] = [];
+  let placed = false;
+  for (const text of profileMap[facet] ?? []) {
+    if (callerNoteTexts.has(normalizeKey(text))) {
+      merged.push(text);
+    } else if (!placed) {
+      merged.push(...consolidated);
+      placed = true;
+    }
+  }
+  if (!placed) merged.push(...consolidated);
+  profileMap[facet] = merged;
   return true;
+}
+
+const normalizeKey = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+
+/** Normalized texts of the facet's active caller-written notes. */
+function callerNoteTextsOf(state: DigestState, facet: string): Set<string> {
+  return new Set(
+    (state.factRegistry ?? [])
+      .filter((e) => !e.supersededBy && !e.retiredAt && e.facet === facet && isCallerNoteEntry(e, state.factRegistry))
+      .map((e) => normalizeKey(e.content))
+  );
 }
 
 function parseJsonArray(raw: string): unknown {
@@ -152,7 +188,10 @@ type ConsolidatePrompts = { systemPrompt: string; userPromptTemplate: string };
 // carries a {{facetDescription}} slot the caller fills from this map.
 async function consolidateOne(state: DigestState, facet: string, llm: LlmLike, prompts: ConsolidatePrompts, makeId: () => string, makeNow: (() => string) | undefined, pack: FacetPack): Promise<boolean> {
   const profileMap = (state.profile ?? {}) as Record<string, string[]>;
-  const items = profileMap[facet] ?? [];
+  // Caller-written notes never go to the model (see applyFacetConsolidation).
+  const callerNotes = callerNoteTextsOf(state, facet);
+  const items = (profileMap[facet] ?? []).filter((text) => !callerNotes.has(normalizeKey(text)));
+  if (callerNotes.size > 0 && items.length < 2) return false;
   const siblings: Record<string, string[]> = {};
   for (const f of listFacets(pack)) {
     if (f !== facet && (profileMap[f]?.length ?? 0) > 0) siblings[f] = profileMap[f];

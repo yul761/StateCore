@@ -21,6 +21,10 @@
  * for concurrently written notes.
  */
 import type { DigestState, FactRegistryEntry } from "./digest-control";
+import { computeFactKey } from "./digest/fact-key";
+import { isCallerNoteText, NOTES_FACET, retireFact, retireForgottenNotes } from "./digest/fact-registry";
+import { createDefaultNowFactory } from "./digest/state";
+import { getDefaultFacetPack, getFacetCap, getFacetDisplayGroup, type FacetPack } from "./facet-registry";
 
 /** Reserved facet name; kept for filtering out legacy in-registry entries. */
 export const HANDOFF_FACET = "handoff";
@@ -96,6 +100,20 @@ export function handoffRowsToRegistry(rows: HandoffRow[]): FactRegistryEntry[] {
   }));
 }
 
+export interface CarryOverOptions {
+  /**
+   * The scope's forgotten fact keys. A forgotten note is never carried over,
+   * and any forgotten note still active in `pipeline` is retired. Without
+   * this, a full digest re-appended every note the pipeline had just pruned
+   * as forgotten — the registry ids were gone from the pipeline state, so they
+   * looked like concurrent writes — and forgotten notes kept their slots.
+   */
+  forgottenFactKeys?: ReadonlySet<string>;
+  /** The tenant's facet ontology (the notes cap and display group). Defaults to the deployment pack. */
+  pack?: FacetPack;
+  makeNow?: () => string;
+}
+
 /**
  * Closes the digest-side lost-update race for notes: the pipeline reads the
  * latest snapshot, runs for seconds-to-minutes, then CREATES a new snapshot
@@ -104,28 +122,75 @@ export function handoffRowsToRegistry(rows: HandoffRow[]): FactRegistryEntry[] {
  * write time with the freshly re-read latest state; appends note-facet
  * registry entries (and their active profile strings) the pipeline never saw.
  * Registry entries are append-only, so an id present in `latest` but absent
- * from `pipeline` can only be a concurrent write. Scoped to the notes facet,
- * the one deterministic-write path that races the digest by design.
+ * from `pipeline` can only be a concurrent write — unless it was forgotten,
+ * which the pipeline prunes and this skips. Scoped to the notes facet, the one
+ * deterministic-write path that races the digest by design.
+ *
+ * A note the pipeline still holds active but `latest` retired or superseded in
+ * the meantime (a concurrent forget, cap eviction or revision) leaves the
+ * active set here too, and the carried
+ * set is held to the notes cap: the oldest digest-produced note goes first,
+ * then the oldest note, each retired as `cap_evicted`.
  *
  * @returns how many entries were carried over.
  */
-export function carryOverConcurrentNotes(pipeline: DigestState, latest: DigestState): number {
-  const pipelineIds = new Set((pipeline.factRegistry ?? []).map((e) => e.id));
-  const missedNotes = (latest.factRegistry ?? []).filter(
-    (e) => e.facet === "notes" && !pipelineIds.has(e.id)
-  );
-  if (!missedNotes.length) return 0;
+export function carryOverConcurrentNotes(
+  pipeline: DigestState,
+  latest: DigestState,
+  options: CarryOverOptions = {}
+): number {
+  const pack = options.pack ?? getDefaultFacetPack();
+  const makeNow = options.makeNow ?? createDefaultNowFactory();
+  const forgotten = options.forgottenFactKeys ?? new Set<string>();
+  const group = getFacetDisplayGroup(pack, NOTES_FACET);
+  const isForgotten = (content: string) => (group ? forgotten.has(computeFactKey(group, content)) : false);
 
-  if (!pipeline.factRegistry) pipeline.factRegistry = [];
-  if (!pipeline.profile) pipeline.profile = {};
-  const profileMap = pipeline.profile as Record<string, string[]>;
-  if (!profileMap.notes) profileMap.notes = [];
+  // Lazily created: a run with nothing to carry leaves the pipeline state untouched.
+  const notes = (): string[] => {
+    if (!pipeline.profile) pipeline.profile = {};
+    const profileMap = pipeline.profile as Record<string, string[]>;
+    if (!profileMap.notes) profileMap.notes = [];
+    return profileMap.notes;
+  };
+  const norm = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
 
-  for (const entry of missedNotes) {
+  const pipelineById = new Map((pipeline.factRegistry ?? []).map((e) => [e.id, e]));
+  let carried = 0;
+  for (const entry of latest.factRegistry ?? []) {
+    if (entry.facet !== NOTES_FACET) continue;
+    const mine = pipelineById.get(entry.id);
+    if (mine) {
+      // Retired or revised concurrently (a forget, a note write's cap
+      // eviction, or a note revision whose replacement is carried below).
+      if ((entry.retiredAt || entry.supersededBy) && !mine.retiredAt && !mine.supersededBy) {
+        if (entry.supersededBy) mine.supersededBy = entry.supersededBy;
+        if (entry.retiredAt) {
+          mine.retiredAt = entry.retiredAt;
+          mine.retiredReason = entry.retiredReason;
+        }
+        const list = notes();
+        const idx = list.findIndex((n) => norm(n) === norm(mine.content));
+        if (idx !== -1) list.splice(idx, 1);
+      }
+      continue;
+    }
+    if (isForgotten(entry.content)) continue;
+    if (!pipeline.factRegistry) pipeline.factRegistry = [];
     pipeline.factRegistry.push(entry);
-    if (!entry.supersededBy && !entry.retiredAt && !profileMap.notes.includes(entry.content)) {
-      profileMap.notes.push(entry.content);
+    carried += 1;
+    if (!entry.supersededBy && !entry.retiredAt && !notes().includes(entry.content)) {
+      notes().push(entry.content);
     }
   }
-  return missedNotes.length;
+
+  if (forgotten.size > 0) retireForgottenNotes(pipeline, forgotten, makeNow, pack);
+
+  const cap = getFacetCap(pack, NOTES_FACET);
+  const held = (pipeline.profile as Record<string, string[]> | undefined)?.notes;
+  while (held && held.length > cap) {
+    const digestIdx = held.findIndex((n) => !isCallerNoteText(pipeline, NOTES_FACET, n));
+    const [evicted] = held.splice(digestIdx === -1 ? 0 : digestIdx, 1);
+    retireFact(pipeline, evicted, "cap_evicted", makeNow, { exact: true, facet: NOTES_FACET });
+  }
+  return carried;
 }

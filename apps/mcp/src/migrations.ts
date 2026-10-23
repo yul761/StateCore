@@ -217,6 +217,25 @@ CREATE TABLE IF NOT EXISTS "SessionHandoff" (
 CREATE INDEX IF NOT EXISTS "SessionHandoff_scopeId_createdAt_idx" ON "SessionHandoff"("scopeId", "createdAt");
 `;
 
-export const MIGRATIONS: Migration[] = [{ version: 1, sql: MIGRATION_1_BOOTSTRAP }];
+/**
+ * MCP-private, like DigestLock: no schema.lite.prisma model, read and written
+ * with plain SQL by apps/mcp/src/digest.ts. Counts consecutive digest runs for
+ * a scope whose stage 2 distilled nothing, so a deterministic failure (a chunk
+ * the model can never answer) stops retrying after a ceiling instead of
+ * burning tokens on every trigger while the backlog grows.
+ */
+const MIGRATION_2_DIGEST_FAILURE = `
+CREATE TABLE IF NOT EXISTS "DigestFailure" (
+    "scopeId" TEXT NOT NULL PRIMARY KEY,
+    "count" INTEGER NOT NULL DEFAULT 0,
+    "lastFailedAt" INTEGER NOT NULL,
+    "lastError" TEXT
+);
+`;
+
+export const MIGRATIONS: Migration[] = [
+  { version: 1, sql: MIGRATION_1_BOOTSTRAP },
+  { version: 2, sql: MIGRATION_2_DIGEST_FAILURE }
+];
 
 export const CURRENT_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

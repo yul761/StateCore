@@ -209,3 +209,87 @@ describe("consolidateChangedFacets", () => {
     expect(state.profile?.identity).toEqual(["merged"]);
   });
 });
+
+describe("consolidation never touches caller-written notes", () => {
+  const ids = () => { let n = 0; return () => `c-${++n}`; };
+  const now = () => "2026-07-01T00:00:00.000Z";
+  const PROMPTS = { systemPrompt: "sys", userPromptTemplate: "u {{items}}" };
+
+  // Two caller notes (origin "note", and a legacy one by shape) around four digest notes.
+  function mixedNotes(): DigestState {
+    const rows: Array<{ id: string; content: string; confidence: number; origin?: string }> = [
+      { id: "c0", content: "caller A", confidence: 0.9, origin: "note" },
+      { id: "d0", content: "digest 1", confidence: 0.6 },
+      { id: "d1", content: "digest 2", confidence: 0.6 },
+      { id: "c1", content: "caller B (legacy)", confidence: 0.9 },
+      { id: "d2", content: "digest 3", confidence: 0.6 },
+      { id: "d3", content: "digest 4", confidence: 0.85 }
+    ];
+    return {
+      stableFacts: { decisions: [] }, workingNotes: {}, todos: [],
+      profile: { notes: rows.map((r) => r.content) } as DigestState["profile"],
+      factRegistry: rows.map((r) => ({
+        id: r.id, content: r.content, type: "profile" as const, confidence: r.confidence,
+        addedAt: "2026-06-20T00:00:00.000Z", evidenceId: `e-${r.id}`, evidenceType: "event" as const, facet: "notes",
+        ...(r.origin ? { origin: r.origin } : {})
+      }))
+    };
+  }
+
+  it("sends only digest-produced notes to the model and keeps caller notes in place", async () => {
+    const state = mixedNotes();
+    const seen: string[] = [];
+    const llm = {
+      chat: async (m: { role: string; content: string }[]) => {
+        seen.push(m[1].content);
+        return '[{"text":"digest merged","mergedFrom":[0,1,2,3]}]';
+      }
+    };
+
+    const changed = await consolidateChangedFacets({ state, changedFacets: ["notes"], llm, prompts: PROMPTS, makeId: ids(), makeNow: now });
+
+    expect(changed).toEqual(["notes"]);
+    expect(seen[0]).not.toContain("caller");
+    expect(state.profile?.notes).toEqual(["caller A", "digest merged", "caller B (legacy)"]);
+    const active = getActiveFactRegistry(state).map((e) => e.id);
+    expect(active).toContain("c0");
+    expect(active).toContain("c1");
+    expect(active).not.toContain("d0");
+  });
+
+  it("treats a legacy consolidation output at confidence 0.9 as consolidatable, not as a caller note", async () => {
+    const state = mixedNotes();
+    // A legacy merge of two notes, written before caller notes were excluded:
+    // shaped like a caller note (facet notes, 0.9, no origin), but two sources point at it.
+    state.factRegistry!.push(
+      { id: "old-a", content: "old a", type: "profile", confidence: 0.9, addedAt: "2026-06-01T00:00:00.000Z", evidenceId: "ea", evidenceType: "event", facet: "notes", supersededBy: "lm" },
+      { id: "old-b", content: "old b", type: "profile", confidence: 0.6, addedAt: "2026-06-01T00:00:00.000Z", evidenceId: "eb", evidenceType: "event", facet: "notes", supersededBy: "lm" },
+      { id: "lm", content: "legacy merged", type: "profile", confidence: 0.9, addedAt: "2026-06-01T00:00:00.000Z", evidenceId: "ea", evidenceType: "event", facet: "notes" }
+    );
+    state.profile!.notes!.push("legacy merged");
+    const seen: string[] = [];
+    const llm = {
+      chat: async (m: { role: string; content: string }[]) => {
+        seen.push(m[1].content);
+        return '[{"text":"all digest notes","mergedFrom":[0,1,2,3,4]}]';
+      }
+    };
+
+    await consolidateChangedFacets({ state, changedFacets: ["notes"], llm, prompts: PROMPTS, makeId: ids(), makeNow: now });
+
+    expect(seen[0]).toContain("legacy merged");
+    expect(state.profile?.notes).toEqual(["caller A", "all digest notes", "caller B (legacy)"]);
+  });
+
+  it("skips the facet when fewer than two digest notes remain to consolidate", async () => {
+    const state = mixedNotes();
+    state.profile!.notes = ["caller A", "digest 1", "caller B (legacy)"];
+    state.factRegistry = state.factRegistry!.filter((e) => ["c0", "d0", "c1"].includes(e.id));
+    const llm = { chat: async () => { throw new Error("must not be called"); } };
+
+    const changed = await consolidateAllProfileFacets({ state, llm, prompts: PROMPTS, makeId: ids(), makeNow: now });
+
+    expect(changed).toEqual([]);
+    expect(state.profile?.notes).toEqual(["caller A", "digest 1", "caller B (legacy)"]);
+  });
+});

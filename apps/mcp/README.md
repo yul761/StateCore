@@ -179,7 +179,7 @@ For embedding the engine in-process instead of talking MCP over stdio — the su
 - `createEmbeddedBackend` / `createHttpBackend` — the two `MemoryBackend` implementations, with an injectable `digestLlm` (a `DigestChatModel`) replacing the env-derived model on the embedded path
 - `resolveScopeName` — the git-root/cwd project-scope rule, shared so co-installed front ends land in the same scope
 - `runScopeDigest` — one locked digest pass against an injected chat model
-- `MemoryBackend.digestNow()` — a caller-demanded, threshold-1 digest pass with an honest outcome (`{ ran: true }` or `{ ran: false, reason }`), for moments when raw context is about to leave a model's view (a host compacting its conversation). Embedded mode waits out startup catch-up first; `--url` mode reports `unsupported` because the server deployment's worker owns digest scheduling.
+- `MemoryBackend.digestNow()` — a caller-demanded, threshold-1 digest pass with an honest outcome (`{ ran: true }`, `{ ran: true, partial: true }` when the written digest did not distill every pending event, or `{ ran: false, reason }` — `"failed"` writes nothing and leaves the events pending), for moments when raw context is about to leave a model's view (a host compacting its conversation). Embedded mode waits out startup catch-up first; `--url` mode reports `unsupported` because the server deployment's worker owns digest scheduling.
 
 ## Limitations
 

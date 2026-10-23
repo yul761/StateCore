@@ -3,6 +3,7 @@ import {
   resolveFacetPackForScope,
   buildFacetPromptSection,
   runDigestControlPipeline,
+  isTotalStage2Failure,
   type DigestState,
   type FacetPackStore
 } from "@statecore/core";
@@ -71,15 +72,52 @@ export function shouldDigest(pendingCount: number, threshold: number): boolean {
   return pendingCount >= threshold;
 }
 
+const PENDING_WHERE = `"scopeId" = ? AND "type" = 'stream' AND "suppressedAt" IS NULL AND ("createdAt" > ? OR "ingestedAt" > ?)`;
+
+function latestDigestAt(db: LiteDb, scopeId: string): number {
+  const lastDigest = db.get<{ createdAt: number }>(`SELECT "createdAt" FROM "Digest" WHERE "scopeId" = ? ORDER BY "createdAt" DESC, "id" DESC LIMIT 1`, scopeId);
+  return lastDigest?.createdAt ?? 0;
+}
+
 /** Stream events not yet folded into a digest: newer than the latest digest by either clock (see selectDigestEventWindow for why both), unsuppressed. `oldest` answers "how long has this been waiting" — the earliest pending event's `ingestedAt` (when we learned it, never overwritten) in ms, or null. */
 export function countPendingEvents(db: LiteDb, scopeId: string): { events: number; oldest: number | null } {
-  const lastDigest = db.get<{ createdAt: number }>(`SELECT "createdAt" FROM "Digest" WHERE "scopeId" = ? ORDER BY "createdAt" DESC, "id" DESC LIMIT 1`, scopeId);
-  const since = lastDigest?.createdAt ?? 0;
+  const since = latestDigestAt(db, scopeId);
   const row = db.get<{ n: number; oldest: number | null }>(
-    `SELECT COUNT(*) AS n, MIN("ingestedAt") AS oldest FROM "MemoryEvent" WHERE "scopeId" = ? AND "type" = 'stream' AND "suppressedAt" IS NULL AND ("createdAt" > ? OR "ingestedAt" > ?)`,
+    `SELECT COUNT(*) AS n, MIN("ingestedAt") AS oldest FROM "MemoryEvent" WHERE ${PENDING_WHERE}`,
     scopeId, since, since
   )!;
   return { events: Number(row.n), oldest: row.n ? row.oldest : null };
+}
+
+/** Ids of the events {@link countPendingEvents} counts. */
+function pendingEventIds(db: LiteDb, scopeId: string): string[] {
+  const since = latestDigestAt(db, scopeId);
+  return db.all<{ id: string }>(`SELECT "id" FROM "MemoryEvent" WHERE ${PENDING_WHERE}`, scopeId, since, since).map((r) => r.id);
+}
+
+/**
+ * Consecutive runs whose stage 2 distilled nothing, after which the run is
+ * written anyway (degraded, `partial`) so the scope moves past the events it
+ * cannot digest instead of retrying them forever.
+ */
+export const MAX_CONSECUTIVE_STAGE2_FAILURES = 3;
+
+function recordStage2Failure(db: LiteDb, scopeId: string, error: string): number {
+  db.run(
+    `INSERT INTO "DigestFailure" ("scopeId", "count", "lastFailedAt", "lastError") VALUES (?, 1, ?, ?)
+     ON CONFLICT("scopeId") DO UPDATE SET "count" = "count" + 1, "lastFailedAt" = excluded."lastFailedAt", "lastError" = excluded."lastError"`,
+    scopeId, Date.now(), error
+  );
+  return db.get<{ count: number }>(`SELECT "count" FROM "DigestFailure" WHERE "scopeId" = ?`, scopeId)!.count;
+}
+
+function stage2FailureCount(db: LiteDb, scopeId: string): number {
+  return db.get<{ count: number }>(`SELECT "count" FROM "DigestFailure" WHERE "scopeId" = ?`, scopeId)?.count ?? 0;
+}
+
+/** Every forgotten fact key in the scope (keys are cheap; only their content is bounded for the prompt). */
+export function forgottenFactKeys(db: LiteDb, scopeId: string): Set<string> {
+  return new Set(db.all<{ factKey: string }>(`SELECT "factKey" FROM "ForgottenFact" WHERE "scopeId" = ?`, scopeId).map((f) => f.factKey));
 }
 
 /** Whether a digest could run at all: an injected chat model, or the env-configured provider gate `maybeRunDigest` applies. */
@@ -169,6 +207,11 @@ function makeFacetPackStore(db: LiteDb): FacetPackStore {
   };
 }
 
+/** What one completed pipeline run wrote: `partial` when it did not distill every pending event. */
+interface DigestRunResult {
+  partial: boolean;
+}
+
 /**
  * Digest-pipeline body shared by the env-configured path
  * ({@link runDigestPipeline}) and the injected-llm path ({@link runScopeDigest}):
@@ -178,11 +221,12 @@ function makeFacetPackStore(db: LiteDb): FacetPackStore {
  * working-memory refresh, BullMQ job logging, and drift metrics — none of
  * which the embedded backend has anywhere to send.
  */
-async function runDigestPipelineCore(db: LiteDb, userId: string, scopeId: string, llm: DigestChatModel): Promise<void> {
+async function runDigestPipelineCore(db: LiteDb, userId: string, scopeId: string, llm: DigestChatModel): Promise<DigestRunResult> {
   const scopeRow = db.get<ScopeRow>(`SELECT ${SCOPE_COLUMNS} FROM "ProjectScope" WHERE "id" = ? AND "userId" = ?`, scopeId, userId);
   if (!scopeRow) {
-    console.error(`[statecore-mcp] digest: scope ${scopeId} not found for user ${userId}; skipping`);
-    return;
+    // A failure, not a run: reporting "ran" here told the caller its events
+    // had been distilled when nothing was even attempted.
+    throw new Error(`digest: scope ${scopeId} not found for user ${userId}`);
   }
   const scope = scopeFromRow(scopeRow);
   const facetPack = await resolveFacetPackForScope(makeFacetPackStore(db), userId, scope.template ?? "project");
@@ -207,12 +251,17 @@ async function runDigestPipelineCore(db: LiteDb, userId: string, scopeId: string
   const recentEvents = [...recentStreamEvents, ...recentDocumentEvents];
 
   const prevDigestState = lastStateRow ? parseJson<DigestState | null>(lastStateRow.state, null) : null;
+  // Read before the run: what this digest is expected to distill.
+  const pendingIds = pendingEventIds(db, scopeId);
 
-  const forgottenRows = db.all<{ factKey: string; contentSnapshot: string | null }>(
-    `SELECT "factKey", "contentSnapshot" FROM "ForgottenFact" WHERE "scopeId" = ? ORDER BY "forgottenAt" DESC LIMIT 100`,
+  // The verbatim content of forgotten facts goes into the stage-2 prompt, so
+  // it stays bounded to the latest 100; the hash keys cost nothing and are all
+  // read, so an older forget is still pruned.
+  const forgottenRows = db.all<{ contentSnapshot: string | null }>(
+    `SELECT "contentSnapshot" FROM "ForgottenFact" WHERE "scopeId" = ? ORDER BY "forgottenAt" DESC LIMIT 100`,
     scopeId
   );
-  const forgottenFactKeys = new Set(forgottenRows.map((f) => f.factKey));
+  const forgottenKeys = forgottenFactKeys(db, scopeId);
   const forgottenFactContents = forgottenRows.map((f) => (f.contentSnapshot ?? "").trim()).filter(Boolean);
 
   const result = await runDigestControlPipeline({
@@ -240,9 +289,29 @@ async function runDigestPipelineCore(db: LiteDb, userId: string, scopeId: string
       useLlmClassifier: DIGEST_CONFIG.useLlmClassifier,
       debug: DIGEST_CONFIG.debug
     },
-    forgottenFactKeys,
+    forgottenFactKeys: forgottenKeys,
     forgottenFactContents
   });
+
+  // Stage 2 distilled nothing (every chunk, or the single pass, unparseable):
+  // the "digest" is the previous one carried forward. Writing it would advance
+  // the latest-Digest watermark past events that were never read. Fail instead
+  // and leave them pending — up to a ceiling of consecutive failures, after
+  // which the degraded digest is written (reported partial) so a scope whose
+  // events can never be digested stops burning a model call on every trigger.
+  // A run that distilled some chunks is written as partial, never failed.
+  let gaveUp = false;
+  if (isTotalStage2Failure(result.digest)) {
+    const reason = `stage 2 produced no parseable output (${result.digest.degraded?.reason ?? "unknown"})`;
+    if (stage2FailureCount(db, scopeId) + 1 < MAX_CONSECUTIVE_STAGE2_FAILURES) {
+      recordStage2Failure(db, scopeId, reason);
+      throw new Error(`digest: ${reason}; events left pending`);
+    }
+    console.error(
+      `[statecore-mcp] digest: ${reason} ${MAX_CONSECUTIVE_STAGE2_FAILURES} runs in a row for scope ${scopeId}; writing the degraded digest so the scope moves on`
+    );
+    gaveUp = true;
+  }
 
   await createDigestWithSnapshot(db, {
     scopeId,
@@ -251,8 +320,34 @@ async function runDigestPipelineCore(db: LiteDb, userId: string, scopeId: string
     nextSteps: result.digest.nextSteps,
     state: result.state,
     consistency: result.consistency,
-    selectionLog: { rationale: result.selection.rationale, drops: result.dropLog }
+    selectionLog: { rationale: result.selection.rationale, drops: result.dropLog },
+    pack: facetPack
   });
+  db.run(`DELETE FROM "DigestFailure" WHERE "scopeId" = ?`, scopeId);
+
+  return { partial: gaveUp || isPartialRun(pendingIds, result.selection, result.digest) };
+}
+
+/**
+ * Whether a written digest left pending events undistilled: stage 2 skipped
+ * chunks, or selection (event count / character budget) left pending events
+ * out or cut one short. Those events are behind the new digest's watermark,
+ * so the caller should know the run was partial.
+ */
+function isPartialRun(
+  pendingIds: string[],
+  selection: { selectedEvents: Array<{ event: { id: string } }>; rationale: string[] },
+  digest: { degraded?: { reason: string } }
+): boolean {
+  if (digest.degraded?.reason === "stage2_chunks_failed") return true;
+  if (selection.rationale.some((r) => r.startsWith("char_budget_truncated:"))) return true;
+  const handled = new Set(selection.selectedEvents.map((s) => s.event.id));
+  // Near-duplicates folded into a kept event were read, not lost.
+  for (const r of selection.rationale) {
+    const m = /^dedup(?:_near)?:(.+)$/.exec(r);
+    if (m) handled.add(m[1]);
+  }
+  return pendingIds.some((id) => !handled.has(id));
 }
 
 /**
@@ -260,7 +355,7 @@ async function runDigestPipelineCore(db: LiteDb, userId: string, scopeId: string
  * fields and delegates to {@link runDigestPipelineCore}. Used by
  * `maybeRunDigest`'s default (non-injected) path.
  */
-async function runDigestPipeline(db: LiteDb, userId: string, scopeId: string, digestEnv: DigestEnvConfig): Promise<void> {
+async function runDigestPipeline(db: LiteDb, userId: string, scopeId: string, digestEnv: DigestEnvConfig): Promise<DigestRunResult> {
   const provider = createModelProvider({
     provider: digestEnv.provider,
     apiKey: digestEnv.apiKey,
@@ -272,8 +367,7 @@ async function runDigestPipeline(db: LiteDb, userId: string, scopeId: string, di
     timeoutMs: digestEnv.timeoutMs
   });
   if (!provider) {
-    console.error("[statecore-mcp] digest: model provider unavailable despite FEATURE_LLM=true; skipping");
-    return;
+    throw new Error("digest: model provider unavailable despite FEATURE_LLM=true");
   }
   // Mirrors apps/worker/src/main.ts:204-213's `llm.chat` wrapper: an unset
   // reasoningEffort/maxOutputTokens must stay absent from the options object
@@ -288,7 +382,7 @@ async function runDigestPipeline(db: LiteDb, userId: string, scopeId: string, di
         ...(digestEnv.structuredOutputReasoningEffort ? { reasoningEffort: digestEnv.structuredOutputReasoningEffort } : {})
       })
   };
-  await runDigestPipelineCore(db, userId, scopeId, llm);
+  return runDigestPipelineCore(db, userId, scopeId, llm);
 }
 
 /**
@@ -342,8 +436,10 @@ let running = false;
  * How one `maybeRunDigest` invocation ended: `"ran"` means the pipeline
  * completed and wrote a digest; each `"skipped-*"` names the gate that
  * stopped the run before the pipeline started; `"failed"` means a read, the
- * lock, or the pipeline threw — the error is logged to stderr and the
- * triggering events remain pending for the next attempt.
+ * lock, or the pipeline threw, the scope was missing, no model provider could
+ * be built, or stage 2 returned nothing parseable — the error is logged to
+ * stderr, nothing is written, and the triggering events remain pending for
+ * the next attempt.
  */
 export type DigestRunOutcome =
   | "ran"
@@ -372,18 +468,29 @@ export type DigestRunOutcome =
  *   embedded backend's opt-in for a caller supplying its own LLM client.
  * @returns how the invocation ended; never rejects.
  */
-export async function maybeRunDigest(opts: {
+export async function maybeRunDigest(opts: MaybeRunDigestOptions): Promise<DigestRunOutcome> {
+  return (await runDigestAttempt(opts)).outcome;
+}
+
+interface MaybeRunDigestOptions {
   db: LiteDb;
   userId: string;
   scopeId: string;
   env: NodeJS.ProcessEnv;
   reason: "startup" | "threshold" | "explicit";
   digestLlm?: DigestChatModel;
-}): Promise<DigestRunOutcome> {
+}
+
+/**
+ * {@link maybeRunDigest} with the detail its outcome string cannot carry:
+ * `partial` is true when the run wrote a digest that did not distill every
+ * pending event (see `isPartialRun`). Never rejects.
+ */
+export async function runDigestAttempt(opts: MaybeRunDigestOptions): Promise<{ outcome: DigestRunOutcome; partial?: boolean }> {
   const { db, userId, scopeId, env, reason, digestLlm } = opts;
   try {
     const digestEnv = readDigestEnv(env);
-    if (!hasUsableModel(env, digestLlm)) return "skipped-no-llm";
+    if (!hasUsableModel(env, digestLlm)) return { outcome: "skipped-no-llm" };
 
     // Same either-clock condition as the lookback window this trigger feeds
     // (selectDigestEventWindow, digest-lookback.ts): an event is "pending"
@@ -393,19 +500,18 @@ export async function maybeRunDigest(opts: {
     // triggering it.
     const pendingCount = countPendingEvents(db, scopeId).events;
     const threshold = reason === "threshold" ? digestEnv.threshold : 1;
-    if (!shouldDigest(pendingCount, threshold)) return "skipped-below-threshold";
+    if (!shouldDigest(pendingCount, threshold)) return { outcome: "skipped-below-threshold" };
 
-    if (running) return "skipped-locked";
+    if (running) return { outcome: "skipped-locked" };
     const locked = await acquireDigestLock(db, scopeId);
-    if (!locked) return "skipped-locked"; // another process is already catching this scope up; skipping is harmless
+    if (!locked) return { outcome: "skipped-locked" }; // another process is already catching this scope up; skipping is harmless
 
     running = true;
+    let result: DigestRunResult;
     try {
-      if (digestLlm) {
-        await runDigestPipelineCore(db, userId, scopeId, digestLlm);
-      } else {
-        await runDigestPipeline(db, userId, scopeId, digestEnv);
-      }
+      result = digestLlm
+        ? await runDigestPipelineCore(db, userId, scopeId, digestLlm)
+        : await runDigestPipeline(db, userId, scopeId, digestEnv);
     } finally {
       // Always runs once the lock is held, whether the pipeline resolved or
       // threw — release on failure too, so a crashed run doesn't strand the
@@ -413,7 +519,7 @@ export async function maybeRunDigest(opts: {
       running = false;
       await releaseDigestLock(db, scopeId);
     }
-    return "ran";
+    return result.partial ? { outcome: "ran", partial: true } : { outcome: "ran" };
   } catch (err) {
     // stdout is the MCP protocol channel; diagnostics go to stderr only.
     // Every await above this catch — including the pending-count reads and
@@ -425,6 +531,6 @@ export async function maybeRunDigest(opts: {
     // triggering events stay in the store, so the next threshold/startup
     // check retries them.
     console.error("[statecore-mcp] digest run failed", err);
-    return "failed";
+    return { outcome: "failed" };
   }
 }

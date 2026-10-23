@@ -7,7 +7,7 @@ import {
   groupFactsForDisplay,
   pruneForgottenFacts
 } from "./memory-facts";
-import type { DigestState } from "./digest-control";
+import { getActiveFactRegistry, type DigestState } from "./digest-control";
 import type { FacetPack } from "./facet-registry";
 
 describe("computeFactKey", () => {
@@ -205,12 +205,24 @@ describe("pruneForgottenFacts", () => {
     expect(state.profile!.style).toEqual(["Prefers meetings after 2pm"]); // untouched
   });
 
-  it("removes a profile-type factRegistry entry whose key is forgotten", () => {
+  it("retires (never deletes) a profile-type factRegistry entry whose key is forgotten", () => {
+    // It used to filter the entry out, so the forgotten record — and why()'s
+    // history of the fact — disappeared at the next digest.
     const state = baseState();
     const key = computeFactKey("Projects", "Launching Remi in July"); // goals → Projects
-    pruneForgottenFacts(state, new Set([key]));
-    expect(state.factRegistry!.find((e) => e.id === "f1")).toBeUndefined();
-    expect(state.factRegistry!.find((e) => e.id === "f2")).toBeDefined(); // non-profile decision kept
+    pruneForgottenFacts(state, new Set([key]), undefined, () => "T");
+    expect(state.factRegistry!.find((e) => e.id === "f1")).toMatchObject({ retiredAt: "T", retiredReason: "forgotten" });
+    expect(getActiveFactRegistry(state).some((e) => e.id === "f1")).toBe(false);
+    expect(state.factRegistry!.find((e) => e.id === "f2")!.retiredAt).toBeUndefined(); // non-profile decision kept
+  });
+
+  it("leaves an already retired entry as it was", () => {
+    const state = baseState();
+    const f1 = state.factRegistry!.find((e) => e.id === "f1")!;
+    f1.retiredAt = "EARLIER";
+    f1.retiredReason = "cap_evicted";
+    pruneForgottenFacts(state, new Set([computeFactKey("Projects", "Launching Remi in July")]), undefined, () => "T");
+    expect(f1).toMatchObject({ retiredAt: "EARLIER", retiredReason: "cap_evicted" });
   });
 
   it("never prunes identity (factToGroup → null) and is a no-op for an empty set", () => {

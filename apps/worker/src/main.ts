@@ -286,7 +286,14 @@ async function runDigestScopeJob(data: { userId: string; scopeId: string }): Pro
     take: 100,
     select: { factKey: true, contentSnapshot: true }
   });
-  const forgottenFactKeys = new Set(forgottenRows.map((f) => f.factKey));
+  // Contents feed the stage-2 prompt, so they stay bounded to the latest 100;
+  // the keys are cheap, and every one of them is needed for the prune. (The
+  // write re-reads them under the scope lock for the note carry-over.)
+  const forgottenFactKeys = new Set(
+    (await prisma.forgottenFact.findMany({ where: { scopeId: data.scopeId }, select: { factKey: true } })).map(
+      (f) => f.factKey
+    )
+  );
   // Semantic guard: the verbatim content the user forgot, fed to the digest LLM so it omits
   // re-worded / re-grouped restatements the hash-based prune (factKey) cannot catch.
   const forgottenFactContents = forgottenRows
@@ -331,7 +338,8 @@ async function runDigestScopeJob(data: { userId: string; scopeId: string }): Pro
     nextSteps: result.digest.nextSteps,
     state: result.state,
     consistency: result.consistency,
-    selectionLog: { rationale: result.selection.rationale, drops: result.dropLog }
+    selectionLog: { rationale: result.selection.rationale, drops: result.dropLog },
+    pack: facetPack
   });
 
   logger.info({
@@ -507,7 +515,8 @@ async function runRebuildDigestChainJob(data: { userId: string; scopeId: string;
       nextSteps: result.digest.nextSteps,
       state: result.state,
       consistency: result.consistency,
-      rebuildGroupId
+      rebuildGroupId,
+      pack: facetPack
     }) as any;
 
     lastState = result.state;

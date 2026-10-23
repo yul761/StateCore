@@ -82,6 +82,13 @@ export interface FactRegistryEntry {
    */
   retiredAt?: string;
   retiredReason?: string;
+  /**
+   * Who wrote the fact, when that matters to the digest. `"note"` marks a note
+   * a caller wrote through `addNoteFact`; a digest may not evict, rewrite or
+   * consolidate it. Absent on digest-produced facts and on entries written
+   * before the field existed (see `isCallerNoteEntry` for legacy notes).
+   */
+  origin?: string;
 }
 
 export interface DigestEvidenceRef {
@@ -149,7 +156,18 @@ export interface DigestOutput {
    * carried forward. Memory stays continuous; callers can surface or alert on
    * the degradation instead of it passing as a normal digest.
    */
-  degraded?: { reason: string; errors: string[] };
+  degraded?: {
+    reason: string;
+    errors: string[];
+    /**
+     * Set when `reason` is `"stage2_chunks_failed"`: how many of the run's
+     * stage-2 chunks produced nothing usable, out of how many. The facts from
+     * the chunks that succeeded are kept; the failed chunks' events were not
+     * distilled.
+     */
+    failed?: number;
+    total?: number;
+  };
 }
 
 export interface DigestConsistencyResult {

@@ -5,7 +5,9 @@ import { buildFacetPromptSection, getDefaultFacetPack } from "./facet-registry";
 // The facet vocabulary now lives in the registry, not in the prompt template, so
 // the "real" stage-2 prompt is the template rendered against the active pack.
 const digestStage2SystemPrompt = buildDigestStage2SystemPrompt(buildFacetPromptSection(getDefaultFacetPack()));
+import type { DropRecord } from "./drop-log";
 import {
+  applyProfileFactsFromDigest,
   consistencyCheck,
   detectDeltas,
   generateDigestStage2,
@@ -2864,9 +2866,14 @@ describe("runDigestControlPipeline", () => {
     expect(styleItems.every((item) => !item.includes("blunt"))).toBe(true);
     // The forgotten fact itself must not appear verbatim either
     expect(styleItems).not.toContain("Prefers terse, blunt phrasing");
-    // The factRegistry must not retain any entry with the forgotten content
-    const registryContents = (result.state.factRegistry ?? []).map((e) => e.content);
-    expect(registryContents.every((c) => !c.includes("blunt"))).toBe(true);
+    // No ACTIVE registry entry may carry the forgotten content. Since forgotten
+    // facts are retired rather than deleted (why() keeps their history), any
+    // entry that does carry it must be retired as forgotten.
+    const activeContents = getActiveFactRegistry(result.state).map((e) => e.content);
+    expect(activeContents.every((c) => !c.includes("blunt"))).toBe(true);
+    for (const e of (result.state.factRegistry ?? []).filter((x) => x.content.includes("blunt") && !x.supersededBy)) {
+      expect(e.retiredReason).toBe("forgotten");
+    }
   });
 });
 
@@ -4680,5 +4687,112 @@ describe("prompt-content regression guards — 行事作风 style broadening", (
 
   it("digestStage2UserPrompt mentions 行事作风 for the style facet", () => {
     expect(digestStage2UserPrompt).toContain("行事作风");
+  });
+});
+
+describe("a digest never evicts or rewrites a caller's note", () => {
+  // Before: applyProfileFactsFromDigest evicted profile.notes[0] at the cap no
+  // matter who wrote it, and rewrote any note at ≥0.6 similarity in place — so
+  // a digest could silently replace or push out a note the caller asked to keep.
+  const NOW = () => "2026-09-01T00:00:00.000Z";
+  const evidence = { id: "evt-1", sourceType: "event" as const };
+  const idGen = () => {
+    let n = 0;
+    return () => `gen-${++n}`;
+  };
+  // Distinct CJK topics so similarity matching never pairs two of them.
+  const topic = (i: number) => `主题${String.fromCharCode(0x4e00 + i * 13)}的笔记`;
+
+  function notesState(rows: Array<{ content: string; caller: boolean }>): DigestState {
+    const state = normalizeDigestState(null);
+    state.profile = { notes: rows.map((r) => r.content) } as DigestState["profile"];
+    state.factRegistry = rows.map((r, i) => ({
+      id: `r${i}`,
+      content: r.content,
+      type: "profile" as const,
+      confidence: r.caller ? 0.9 : 0.6,
+      addedAt: "2026-08-01T00:00:00.000Z",
+      evidenceId: `e${i}`,
+      evidenceType: "event" as const,
+      facet: "notes",
+      ...(r.caller ? { origin: "note" } : {})
+    }));
+    return state;
+  }
+  const notesOf = (state: DigestState) => (state.profile as Record<string, string[]>).notes;
+
+  it("evicts the oldest digest-produced note, not the oldest note", () => {
+    const rows = Array.from({ length: 30 }, (_, i) => ({ content: topic(i), caller: i !== 4 && i !== 9 }));
+    const state = notesState(rows);
+    const dropLog: DropRecord[] = [];
+
+    applyProfileFactsFromDigest(state, [{ facet: "notes", value: "一条新的摘要笔记" }], [], evidence, idGen(), NOW, dropLog);
+
+    expect(notesOf(state)).toHaveLength(30);
+    expect(notesOf(state)).toContain(topic(0));
+    expect(notesOf(state)).not.toContain(topic(4));
+    expect(notesOf(state)).toContain(topic(9));
+    expect(notesOf(state)).toContain("一条新的摘要笔记");
+    expect(state.factRegistry!.find((e) => e.id === "r4")!.retiredReason).toBe("cap_evicted");
+    expect(state.factRegistry!.find((e) => e.id === "r0")!.retiredAt).toBeUndefined();
+  });
+
+  it("drops the incoming note when every slot is a caller note", () => {
+    const state = notesState(Array.from({ length: 30 }, (_, i) => ({ content: topic(i), caller: true })));
+    const dropLog: DropRecord[] = [];
+
+    applyProfileFactsFromDigest(state, [{ facet: "notes", value: "一条新的摘要笔记" }], [], evidence, idGen(), NOW, dropLog);
+
+    expect(notesOf(state)).toEqual(Array.from({ length: 30 }, (_, i) => topic(i)));
+    expect(state.factRegistry!.every((e) => !e.retiredAt)).toBe(true);
+    expect(dropLog).toEqual([
+      expect.objectContaining({ reason: "cap_rejected_incoming", detail: expect.objectContaining({ facet: "notes", heldBy: "caller_notes" }) })
+    ]);
+  });
+
+  it("treats legacy caller notes (no origin, confidence 0.9) as caller notes", () => {
+    const state = notesState(Array.from({ length: 30 }, (_, i) => ({ content: topic(i), caller: true })));
+    for (const e of state.factRegistry!) delete e.origin;
+
+    applyProfileFactsFromDigest(state, [{ facet: "notes", value: "一条新的摘要笔记" }], [], evidence, idGen(), NOW);
+
+    expect(notesOf(state)).not.toContain("一条新的摘要笔记");
+    expect(notesOf(state)).toContain(topic(0));
+  });
+
+  it("does not rewrite a caller note in place at ≥0.6 similarity", () => {
+    const state = notesState([{ content: "API keys rotate every 90 days for the billing service", caller: true }]);
+    const dropLog: DropRecord[] = [];
+
+    applyProfileFactsFromDigest(
+      state,
+      [{ facet: "notes", value: "API keys rotate every 90 days for the billing service team" }],
+      [],
+      evidence,
+      idGen(),
+      NOW,
+      dropLog
+    );
+
+    expect(notesOf(state)).toEqual(["API keys rotate every 90 days for the billing service"]);
+    expect(state.factRegistry).toHaveLength(1);
+    expect(state.factRegistry![0].supersededBy).toBeUndefined();
+    expect(dropLog[0]?.reason).toBe("protected_lower_authority");
+  });
+
+  it("still rewrites a digest-produced note in place", () => {
+    const state = notesState([{ content: "API keys rotate every 90 days for the billing service", caller: false }]);
+
+    applyProfileFactsFromDigest(
+      state,
+      [{ facet: "notes", value: "API keys rotate every 90 days for the billing service team" }],
+      [],
+      evidence,
+      idGen(),
+      NOW
+    );
+
+    expect(notesOf(state)).toEqual(["API keys rotate every 90 days for the billing service team"]);
+    expect(state.factRegistry![0].supersededBy).toBeDefined();
   });
 });

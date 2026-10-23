@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -261,5 +261,169 @@ describe("createEmbeddedBackend({ backgroundDigest })", () => {
     await be.init();
     expect(await be.pendingEvents!()).toBeNull();
     await be.close();
+  });
+});
+
+describe("notes cap and forget", () => {
+  // An earlier test installs a custom pack for user "local" in the
+  // process-wide resolver cache; these tests need the default one.
+  beforeEach(() => clearFacetPackCache("local"));
+  // Distinct CJK topic per note so note-revision matching never merges two of them.
+  const noteText = (i: number) => `主题${String.fromCharCode(0x4e00 + i * 13)}的笔记`;
+  const noteTexts = async (be: ReturnType<typeof createEmbeddedBackend>) =>
+    ((await be.facts()) as any[]).flatMap((g) => g.items).map((f: any) => f.text as string);
+  const snapshotNotes = async (dataDir: string) => {
+    const store = await openStore(dataDir);
+    try {
+      const row = store.db.get<{ state: string }>(`SELECT "state" FROM "DigestStateSnapshot" ORDER BY "createdAt" DESC, "id" DESC LIMIT 1`);
+      return (JSON.parse(row!.state) as DigestState).profile?.notes ?? [];
+    } finally {
+      await store.close();
+    }
+  };
+
+  it("forget frees the slot: a full notes facet keeps its oldest live note on the next write", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sc-emb-notecap-"));
+    const be = createEmbeddedBackend({ dataDir, scopeName: "/tmp/notecap", env: {} as any, backgroundDigest: false });
+    await be.init();
+    try {
+      for (let i = 0; i < 30; i++) await be.remember({ text: noteText(i) });
+      const target = ((await be.facts()) as any[]).flatMap((g) => g.items).find((f: any) => f.text === noteText(10));
+
+      await be.forget({ factKey: target.factKey });
+      expect(await snapshotNotes(dataDir)).toHaveLength(29); // the slot is free right away
+
+      await be.remember({ text: "a brand new note after forgetting" });
+      const texts = await noteTexts(be);
+      expect(texts).toContain(noteText(0)); // used to be evicted: the forgotten note still held its slot
+      expect(texts).toContain("a brand new note after forgetting");
+      expect(texts).not.toContain(noteText(10));
+      expect(texts).toHaveLength(30);
+
+      const prov: any = await be.why({ factId: target.factId });
+      expect(prov.fact.retiredReason).toBe("forgotten"); // retired, not deleted
+    } finally {
+      await be.close();
+    }
+  });
+
+  it("a store written before forget retired notes heals on the next note write", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sc-emb-notecap-heal-"));
+    const be = createEmbeddedBackend({ dataDir, scopeName: "/tmp/notecap-heal", env: {} as any, backgroundDigest: false });
+    await be.init();
+    try {
+      for (let i = 0; i < 30; i++) await be.remember({ text: noteText(i) });
+      const target = ((await be.facts()) as any[]).flatMap((g) => g.items).find((f: any) => f.text === noteText(4));
+      // The old forget: a ForgottenFact row only, the note still in the snapshot.
+      const store = await openStore(dataDir);
+      try {
+        store.db.run(
+          `INSERT INTO "ForgottenFact" ("id", "userId", "scopeId", "factKey", "contentSnapshot", "forgottenAt") SELECT ?, 'local', "id", ?, ?, ? FROM "ProjectScope" LIMIT 1`,
+          "legacy-forget", target.factKey, noteText(4), Date.now()
+        );
+      } finally {
+        await store.close();
+      }
+
+      await be.remember({ text: "written after a legacy forget" });
+
+      const notes = await snapshotNotes(dataDir);
+      expect(notes).toHaveLength(30);
+      expect(notes).toContain(noteText(0));
+      expect(notes).not.toContain(noteText(4));
+    } finally {
+      await be.close();
+    }
+  });
+
+  it("a digest after forget does not bring the forgotten note back", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sc-emb-notecap-digest-"));
+    const be = createEmbeddedBackend({ dataDir, scopeName: "/tmp/notecap-digest", env: {} as any, digestLlm: makeStubLlm(), backgroundDigest: false });
+    await be.init();
+    try {
+      for (let i = 0; i < 5; i++) await be.remember({ text: noteText(i) });
+      const target = ((await be.facts()) as any[]).flatMap((g) => g.items).find((f: any) => f.text === noteText(2));
+      await be.forget({ factKey: target.factKey });
+      await be.remember({ text: "an event to digest", consolidate: true });
+
+      expect(await be.digestNow()).toMatchObject({ ran: true });
+
+      const notes = await snapshotNotes(dataDir);
+      expect(notes).toHaveLength(4);
+      expect(notes).not.toContain(noteText(2));
+    } finally {
+      await be.close();
+    }
+  });
+
+  it("forget then remember a revision keeps the old version on the why chain (regression)", async () => {
+    // How a caller updates a decision: forget the old note, remember the new
+    // text. Mirrors Butler's statecore.test.ts scenario against this backend.
+    const dataDir = mkdtempSync(join(tmpdir(), "sc-emb-forget-revise-"));
+    const be = createEmbeddedBackend({ dataDir, scopeName: "/tmp/forget-revise", env: {} as any, backgroundDigest: false });
+    await be.init();
+    try {
+      await be.remember({ text: "[decision:db] 用 PostgreSQL 存储会话" });
+      const [old] = ((await be.facts()) as any[]).flatMap((g) => g.items);
+      await be.forget({ factKey: old.factKey });
+
+      expect(await be.remember({ text: "[decision:db] 用 MySQL 存储会话" })).toEqual({
+        ok: true,
+        mode: "note",
+        superseded: "[decision:db] 用 PostgreSQL 存储会话"
+      });
+
+      const items = ((await be.facts()) as any[]).flatMap((g) => g.items);
+      expect(items.map((i: any) => i.text)).toEqual(["[decision:db] 用 MySQL 存储会话"]);
+      const cur = items[0];
+      const prov: any = await be.why({ factId: cur.factId });
+      expect(prov.chain.map((e: any) => e.content)).toEqual(["[decision:db] 用 PostgreSQL 存储会话", "[decision:db] 用 MySQL 存储会话"]);
+      expect(prov.chain[0].supersededBy).toBe(cur.factId);
+      expect(prov.chain[1].supersededBy ?? null).toBeNull();
+      expect(prov.chain[1].retiredAt ?? null).toBeNull();
+      expect(await snapshotNotes(dataDir)).toEqual(["[decision:db] 用 MySQL 存储会话"]); // one slot
+    } finally {
+      await be.close();
+    }
+  });
+
+  it("re-remembering the exact text of a forgotten note at the cap stays hidden and evicts nothing", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sc-emb-forget-exact-"));
+    const be = createEmbeddedBackend({ dataDir, scopeName: "/tmp/forget-exact", env: {} as any, backgroundDigest: false });
+    await be.init();
+    try {
+      for (let i = 0; i < 30; i++) await be.remember({ text: noteText(i) });
+      const target = ((await be.facts()) as any[]).flatMap((g) => g.items).find((f: any) => f.text === noteText(7));
+      await be.forget({ factKey: target.factKey });
+      await be.remember({ text: "fills the freed slot" });
+      const before = await noteTexts(be);
+      expect(before).toHaveLength(30);
+
+      await be.remember({ text: noteText(7) });
+
+      expect(await noteTexts(be)).toEqual(before); // still hidden, and noteText(0) was not pushed out
+      expect(await snapshotNotes(dataDir)).toHaveLength(30);
+      expect(await snapshotNotes(dataDir)).not.toContain(noteText(7));
+    } finally {
+      await be.close();
+    }
+  });
+
+  it("events ingested before the first note stay pending (the placeholder digest predates them)", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sc-emb-first-note-"));
+    const be = createEmbeddedBackend({ dataDir, scopeName: "/tmp/first-note", env: {} as any, backgroundDigest: false });
+    await be.init();
+    try {
+      await be.remember({ text: "an early conversational turn", consolidate: true });
+      await be.remember({ text: "another early turn about the build", consolidate: true });
+      expect((await be.pendingEvents!())!.events).toBe(2);
+
+      await be.remember({ text: "the first explicit note" });
+
+      // Used to drop to null: the note's placeholder Digest was stamped "now".
+      expect((await be.pendingEvents!())!.events).toBe(2);
+    } finally {
+      await be.close();
+    }
   });
 });

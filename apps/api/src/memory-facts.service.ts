@@ -1,8 +1,18 @@
 import { Injectable, Optional } from "@nestjs/common";
-import { flattenScopeFacts, groupFactsForDisplay, attachFactIds, addNoteFact, resolveFacetPackForScope, formatHandoff, type DisplayFact } from "@statecore/core";
+import {
+  flattenScopeFacts,
+  groupFactsForDisplay,
+  attachFactIds,
+  addNoteFact,
+  retireForgottenNotes,
+  resolveFacetPackForScope,
+  formatHandoff,
+  type DisplayFact
+} from "@statecore/core";
 import type { DigestState } from "@statecore/core";
 import { prisma as defaultPrisma } from "@statecore/db";
 import { randomUUID } from "node:crypto";
+import { lockScopeForWrite } from "./scope-lock";
 
 @Injectable()
 export class MemoryFactsService {
@@ -32,19 +42,29 @@ export class MemoryFactsService {
   }
 
   async forgetFact(userId: string, scopeId: string, factKey: string): Promise<{ ok: true }> {
-    const snapshot = await this.prisma.digestStateSnapshot.findFirst({
-      where: { scopeId },
-      orderBy: { createdAt: "desc" }
-    });
     const pack = await this.packFor(userId, scopeId);
-    const facts = snapshot ? flattenScopeFacts(snapshot.state as unknown as DigestState, undefined, pack) : [];
-    const match = facts.find((f) => f.factKey === factKey);
-    const contentSnapshot = match?.text ?? "";
+    const forgotten = new Set([factKey]);
 
-    await this.prisma.forgottenFact.upsert({
-      where: { scopeId_factKey: { scopeId, factKey } },
-      create: { userId, scopeId, factKey, contentSnapshot },
-      update: {}
+    // One transaction under the scope's write lock: the snapshot read, the
+    // ForgottenFact row and the snapshot rewrite. A forgotten note leaves
+    // profile.notes and its registry entry is retired, so it stops holding one
+    // of the notes facet's slots. Without the lock, READ COMMITTED lets a
+    // concurrent addNote or digest write read the same snapshot and overwrite
+    // this one (or be overwritten by it).
+    const match = await this.prisma.$transaction(async (tx: any) => {
+      await lockScopeForWrite(tx, scopeId);
+      const snapshot = await tx.digestStateSnapshot.findFirst({ where: { scopeId }, orderBy: { createdAt: "desc" } });
+      const state = snapshot ? (snapshot.state as unknown as DigestState) : null;
+      const found = state ? flattenScopeFacts(state, undefined, pack).find((f) => f.factKey === factKey) : undefined;
+      await tx.forgottenFact.upsert({
+        where: { scopeId_factKey: { scopeId, factKey } },
+        create: { userId, scopeId, factKey, contentSnapshot: found?.text ?? "" },
+        update: {}
+      });
+      if (snapshot && state && retireForgottenNotes(state, forgotten, () => new Date().toISOString(), pack) > 0) {
+        await tx.digestStateSnapshot.update({ where: { id: snapshot.id }, data: { state: state as any } });
+      }
+      return found;
     });
 
     if (match?.evidenceId) {
@@ -60,20 +80,28 @@ export class MemoryFactsService {
   }
 
   async addNote(userId: string, scopeId: string, text: string): Promise<{ ok: true }> {
-    const snap = await this.prisma.digestStateSnapshot.findFirst({
-      where: { scopeId },
-      orderBy: { createdAt: "desc" }
-    });
+    const pack = await this.packFor(userId, scopeId);
 
-    if (snap) {
-      const state = snap.state as unknown as DigestState;
-      if (addNoteFact(state, text, () => randomUUID(), () => new Date().toISOString(), await this.packFor(userId, scopeId)).changed) {
-        await this.prisma.digestStateSnapshot.update({
-          where: { id: snap.id },
-          data: { state: state as any }
-        });
+    // The read-modify-write runs in one transaction under the scope's write
+    // lock, so two note writes (or a note write and a forget or digest write)
+    // cannot both read the same snapshot and drop each other's change.
+    await this.prisma.$transaction(async (tx: any) => {
+      await lockScopeForWrite(tx, scopeId);
+      const snap = await tx.digestStateSnapshot.findFirst({ where: { scopeId }, orderBy: { createdAt: "desc" } });
+
+      if (snap) {
+        const state = snap.state as unknown as DigestState;
+        // Forgotten keys let a snapshot written before forget retired notes heal
+        // here instead of the cap evicting a live note, keep a forgotten text
+        // forgotten, and let a revision link to the note it replaces.
+        const forgotten = await tx.forgottenFact.findMany({ where: { scopeId }, select: { factKey: true } });
+        const forgottenKeys = new Set<string>(forgotten.map((f: { factKey: string }) => f.factKey));
+        if (addNoteFact(state, text, () => randomUUID(), () => new Date().toISOString(), pack, forgottenKeys).changed) {
+          await tx.digestStateSnapshot.update({ where: { id: snap.id }, data: { state: state as any } });
+        }
+        return;
       }
-    } else {
+
       const state: DigestState = {
         stableFacts: { decisions: [] },
         workingNotes: {},
@@ -81,16 +109,21 @@ export class MemoryFactsService {
         factRegistry: [],
         profile: {}
       };
-      addNoteFact(state, text, () => randomUUID(), () => new Date().toISOString(), await this.packFor(userId, scopeId));
-      await this.prisma.$transaction(async (tx: any) => {
-        const digest = await tx.digest.create({
-          data: { scopeId, summary: "Notes", changes: "", nextSteps: [] }
-        });
-        await tx.digestStateSnapshot.create({
-          data: { scopeId, digestId: digest.id, state: state as any, consistency: null }
-        });
+      addNoteFact(state, text, () => randomUUID(), () => new Date().toISOString(), pack);
+      // Pending events are those newer than the latest Digest, so a placeholder
+      // stamped "now" hid every event ingested before the first note from the
+      // digest (it exited no_new_events). Stamp it just before the earliest one.
+      const earliest = await tx.memoryEvent.aggregate({ where: { scopeId }, _min: { ingestedAt: true } });
+      const oldest: Date | null | undefined = earliest?._min?.ingestedAt;
+      const now = new Date();
+      const createdAt = oldest && oldest.getTime() - 1 < now.getTime() ? new Date(oldest.getTime() - 1) : now;
+      const digest = await tx.digest.create({
+        data: { scopeId, summary: "Notes", changes: "", nextSteps: [], createdAt }
       });
-    }
+      await tx.digestStateSnapshot.create({
+        data: { scopeId, digestId: digest.id, state: state as any, consistency: null, createdAt }
+      });
+    });
 
     return { ok: true };
   }

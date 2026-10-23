@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { computeFactKey } from "./digest/fact-key";
 import { getActiveFactRegistry, type DigestState } from "./digest-control";
 import { recordDrop, type DropRecord } from "./drop-log";
 import { getFacetDisplayGroup, listFacets, getDefaultFacetPack, type FacetPack } from "./facet-registry";
@@ -31,16 +31,7 @@ function groupOrder(pack: FacetPack): DisplayGroup[] {
   return seen;
 }
 
-function normalize(s: string): string {
-  return s.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-export function computeFactKey(group: string, content: string): string {
-  return createHash("sha256")
-    .update(`${normalize(group)}|${normalize(content)}`)
-    .digest("hex")
-    .slice(0, 16);
-}
+export { computeFactKey };
 
 export function factToGroup(facet: string, pack: FacetPack = getDefaultFacetPack()): DisplayGroup | null {
   return getFacetDisplayGroup(pack, facet);
@@ -135,7 +126,8 @@ export function attachFactIds(
 export function pruneForgottenFacts(
   state: DigestState,
   forgottenFactKeys: ReadonlySet<string>,
-  pack: FacetPack = getDefaultFacetPack()
+  pack: FacetPack = getDefaultFacetPack(),
+  makeNow: () => string = () => new Date().toISOString()
 ): void {
   if (forgottenFactKeys.size === 0) return;
 
@@ -151,12 +143,19 @@ export function pruneForgottenFacts(
     }
   }
 
-  // Profile-type factRegistry entries (those with a facet mapping to a display group).
+  // Profile-type factRegistry entries (those with a facet mapping to a display
+  // group) are retired, not deleted: this used to filter them out, so the
+  // `retiredReason: "forgotten"` record vanished at the next digest and why()
+  // lost the fact's history. Inactive entries are left as they are.
   if (Array.isArray(state.factRegistry)) {
-    state.factRegistry = state.factRegistry.filter((entry) => {
+    let now: string | undefined;
+    for (const entry of state.factRegistry) {
+      if (entry.supersededBy || entry.retiredAt) continue;
       const group = entry.facet ? factToGroup(entry.facet, pack) : null;
-      if (!group) return true; // not a displayable profile fact → keep
-      return !forgottenFactKeys.has(computeFactKey(group, entry.content));
-    });
+      if (!group) continue; // not a displayable profile fact
+      if (!forgottenFactKeys.has(computeFactKey(group, entry.content))) continue;
+      entry.retiredAt = now ??= makeNow();
+      entry.retiredReason = "forgotten";
+    }
   }
 }

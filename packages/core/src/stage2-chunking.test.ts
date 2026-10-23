@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   chunkDeltaCandidates,
   generateDigestStage2,
+  isEmptyInvalidJsonPass,
+  isTotalStage2Failure,
   normalizeDigestState,
   STAGE2_SECTION_CHAR_BUDGET,
   STAGE2_MAX_CHUNKS,
@@ -237,5 +239,127 @@ describe("a consistency failure must not also lose the facts", () => {
     // The digest degrades to the previous summary — that part is intended. The
     // facts are a separate output and did not fail anything.
     expect((out.profileFacts ?? []).map((f) => f.value)).toContain("fact 1");
+  });
+});
+
+describe("a run that skipped chunks says so", () => {
+  // Skipping a failed chunk keeps the run alive, but the run used to return as
+  // if the whole corpus had been distilled. Now it carries a degraded marker the
+  // caller can act on.
+  const run = (llm: { chat: (m: { role: string; content: string }[]) => Promise<string> }, chunks: number, lastDigest: unknown = null) =>
+    generateDigestStage2({
+      scope: SCOPE,
+      lastDigest: lastDigest as never,
+      protectedState: STATE,
+      deltaCandidates: Array.from({ length: chunks }, (_, i) => delta(`e${i}`, 40_000)),
+      documents: [],
+      llm: llm as never,
+      systemPrompt: "sys",
+      userPromptTemplate: TEMPLATE,
+      maxRetries: 0
+    });
+
+  it("marks stage2_chunks_failed with counts when a chunk's pass throws", async () => {
+    let n = 0;
+    const llm = {
+      chat: async () => {
+        n += 1;
+        if (n === 2) throw new Error("provider 500");
+        return JSON.stringify(okOutput([{ facet: "goals", value: `fact ${n}` }]));
+      }
+    };
+    const total = chunkDeltaCandidates(Array.from({ length: 6 }, (_, i) => delta(`e${i}`, 40_000))).length;
+
+    const out = await run(llm, 6);
+
+    expect(out.degraded).toEqual({ reason: "stage2_chunks_failed", errors: ["provider 500"], failed: 1, total });
+    const values = (out.profileFacts ?? []).map((f) => f.value);
+    expect(values).toContain("fact 1");
+    expect(values).toContain("fact 3");
+  });
+
+  it("counts a chunk whose every reply was unparseable as failed", async () => {
+    let n = 0;
+    const llm = {
+      chat: async () => {
+        n += 1;
+        return n === 1 ? "not json at all" : JSON.stringify(okOutput([{ facet: "goals", value: `fact ${n}` }]));
+      }
+    };
+
+    const out = await run(llm, 6, { summary: "prior", changes: "old", nextSteps: ["ship it"] });
+
+    expect(out.degraded?.reason).toBe("stage2_chunks_failed");
+    expect(out.degraded?.failed).toBe(1);
+    expect(out.degraded?.errors).toEqual(["invalid_json_output"]);
+  });
+
+  it("carries no marker when every chunk succeeded", async () => {
+    const llm = llmReturning((n) => okOutput([{ facet: "goals", value: `fact ${n}` }]));
+    const out = await run(llm, 6);
+    expect(out.degraded).toBeUndefined();
+  });
+
+  it("a single pass with only unparseable replies degrades with no facts", async () => {
+    const llm = { chat: async () => "still not json" };
+    const out = await generateDigestStage2({
+      scope: SCOPE,
+      lastDigest: { summary: "prior", changes: "old", nextSteps: ["ship it"] } as never,
+      protectedState: STATE,
+      deltaCandidates: [delta("a", 200)],
+      documents: [],
+      llm,
+      systemPrompt: "sys",
+      userPromptTemplate: TEMPLATE,
+      maxRetries: 1
+    });
+    expect(out.degraded?.errors).toEqual(["invalid_json_output"]);
+    expect(isEmptyInvalidJsonPass(out)).toBe(true);
+    expect(isTotalStage2Failure(out)).toBe(true);
+  });
+
+  it("one unparseable chunk among chunks that extracted nothing is partial, not a total failure", async () => {
+    // The chunks that succeeded distilled their events (into no facts); treating
+    // the run as failed threw all of that away, and a deterministic bad chunk
+    // then failed every retry.
+    let n = 0;
+    const llm = {
+      chat: async () => {
+        n += 1;
+        return n === 1 ? "not json" : JSON.stringify(okOutput([]));
+      }
+    };
+    const out = await run(llm, 6, { summary: "prior", changes: "old", nextSteps: ["ship it"] });
+
+    expect(out.degraded?.reason).toBe("stage2_chunks_failed");
+    expect(isEmptyInvalidJsonPass(out)).toBe(true); // the old, too-broad test
+    expect(isTotalStage2Failure(out)).toBe(false);
+  });
+
+  it("every chunk unparseable is a total failure", async () => {
+    const out = await run({ chat: async () => "never json" }, 6, { summary: "prior", changes: "old", nextSteps: ["ship it"] });
+    expect(isTotalStage2Failure(out)).toBe(true);
+  });
+
+  it("never shows forgotten (retired) registry entries to the model", async () => {
+    const llm = llmReturning(() => okOutput([]));
+    const state = normalizeDigestState(null);
+    state.factRegistry = [
+      { id: "f", content: "FORGOTTEN-SECRET", type: "profile", confidence: 0.9, addedAt: "t", evidenceId: "e", evidenceType: "event", facet: "notes", retiredAt: "t", retiredReason: "forgotten" },
+      { id: "k", content: "KEPT-FACT", type: "profile", confidence: 0.9, addedAt: "t", evidenceId: "e", evidenceType: "event", facet: "notes" }
+    ];
+    await generateDigestStage2({
+      scope: SCOPE,
+      lastDigest: null,
+      protectedState: state,
+      deltaCandidates: [delta("a", 100)],
+      documents: [],
+      llm,
+      systemPrompt: "sys",
+      userPromptTemplate: "{{protectedState}}",
+      maxRetries: 0
+    });
+    expect(llm.prompts[0]).toContain("KEPT-FACT");
+    expect(llm.prompts[0]).not.toContain("FORGOTTEN-SECRET");
   });
 });

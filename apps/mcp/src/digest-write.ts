@@ -3,7 +3,7 @@
 // write rolls back the digest — no snapshotless latest-digest for data_gc to
 // mishandle.
 import { randomUUID } from "node:crypto";
-import { carryOverConcurrentNotes, type DigestState } from "@statecore/core";
+import { carryOverConcurrentNotes, type DigestState, type FacetPack } from "@statecore/core";
 import type { LiteDb } from "./lite-db";
 import { nowMs } from "./embedded-repos";
 import { parseJson, toJson } from "./rows";
@@ -18,6 +18,8 @@ export interface CreateDigestWithSnapshotInput {
   /** `{ rationale, drops }` — what the selection stage kept and what it discarded. */
   selectionLog?: unknown;
   rebuildGroupId?: string;
+  /** The tenant's facet pack (notes cap and display group); defaults to the deployment pack. */
+  pack?: FacetPack;
 }
 
 export async function createDigestWithSnapshot(db: LiteDb, input: CreateDigestWithSnapshotInput): Promise<{ id: string }> {
@@ -32,7 +34,14 @@ export async function createDigestWithSnapshot(db: LiteDb, input: CreateDigestWi
       input.scopeId
     );
     const latestState = latest ? parseJson<DigestState | null>(latest.state, null) : null;
-    if (latestState) carryOverConcurrentNotes(input.state as DigestState, latestState);
+    if (latestState) {
+      // Read inside the write transaction (BEGIN IMMEDIATE holds the write
+      // lock), so a forget committed at any point before this write is seen.
+      const forgottenFactKeys = new Set(
+        db.all<{ factKey: string }>(`SELECT "factKey" FROM "ForgottenFact" WHERE "scopeId" = ?`, input.scopeId).map((f) => f.factKey)
+      );
+      carryOverConcurrentNotes(input.state as DigestState, latestState, { forgottenFactKeys, pack: input.pack });
+    }
 
     const now = nowMs();
     const digestId = randomUUID();
