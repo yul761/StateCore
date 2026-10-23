@@ -34,8 +34,10 @@ export function makeMockPrisma(
     // transaction. Defaults here so tests about something else need not stub them.
     forgottenFact: { findMany: vi.fn().mockResolvedValue([]) },
     memoryEvent: { aggregate: vi.fn().mockResolvedValue({ _min: { ingestedAt: null } }) },
-    // The interactive form runs against this same double as `tx`.
+    // The interactive form runs against this same double as `tx`. Writes take
+    // the scope's advisory lock through $executeRaw first (scope-lock.ts).
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(mock)),
+    $executeRaw: vi.fn().mockResolvedValue(0),
     ...overrides
   };
   return mock;

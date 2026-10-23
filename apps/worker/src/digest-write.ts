@@ -11,6 +11,10 @@ export type DigestWriteTx = {
     create: (args: { data: any }) => Promise<unknown>;
     findFirst: (args: { where: any; orderBy: any }) => Promise<{ state: unknown } | null>;
   };
+  forgottenFact: {
+    findMany: (args: any) => Promise<Array<{ factKey: string }>>;
+  };
+  $executeRaw: (query: TemplateStringsArray, ...values: any[]) => Promise<unknown>;
 };
 
 export type DigestWritePrisma = {
@@ -27,12 +31,6 @@ export interface CreateDigestWithSnapshotInput {
   /** `{ rationale, drops }` — what the selection stage kept and what it discarded. */
   selectionLog?: unknown;
   rebuildGroupId?: string;
-  /**
-   * The scope's forgotten fact keys. The note carry-over skips (and retires)
-   * forgotten notes; without them a digest re-appends every note the pipeline
-   * pruned as forgotten, and forgotten notes never free their slots.
-   */
-  forgottenFactKeys?: ReadonlySet<string>;
   /** The tenant's facet pack (notes cap and display group); defaults to the deployment pack. */
   pack?: FacetPack;
 }
@@ -42,6 +40,12 @@ export async function createDigestWithSnapshot(
   input: CreateDigestWithSnapshotInput
 ): Promise<{ id: string }> {
   return prisma.$transaction(async (tx) => {
+    // The scope's write lock, shared with the API's note write and forget
+    // (apps/api/src/scope-lock.ts — same key derivation; keep in sync). At READ
+    // COMMITTED with no row lock, a note write or forget committing between
+    // the re-read below and this create would otherwise be dropped.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${input.scopeId}))`;
+
     // Close the lost-update window for concurrently written notes: the
     // pipeline's state was projected from a snapshot read seconds-to-minutes
     // ago, and this create makes that stale view the latest. A note written to
@@ -52,8 +56,12 @@ export async function createDigestWithSnapshot(
       orderBy: { createdAt: "desc" }
     });
     if (latest?.state) {
+      // Read under the lock, so every committed forget is seen: the carry-over
+      // skips (and retires) forgotten notes instead of re-appending the ones
+      // the pipeline pruned.
+      const forgotten = await tx.forgottenFact.findMany({ where: { scopeId: input.scopeId }, select: { factKey: true } });
       carryOverConcurrentNotes(input.state as DigestState, latest.state as DigestState, {
-        forgottenFactKeys: input.forgottenFactKeys,
+        forgottenFactKeys: new Set(forgotten.map((f) => f.factKey)),
         pack: input.pack
       });
     }

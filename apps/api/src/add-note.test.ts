@@ -91,75 +91,72 @@ describe("MemoryFactsService.addNote", () => {
     expect(state.profile?.notes?.length).toBe(1);
   });
 
-  it("no-snapshot path: creates a digest + snapshot via $transaction with the note", async () => {
-    const txMock = vi.fn().mockImplementation(async (fn: any) => {
-      const tx = {
-        digest: {
-          create: vi.fn().mockResolvedValue({ id: "digest-1" })
-        },
-        digestStateSnapshot: {
-          create: vi.fn().mockResolvedValue({})
-        }
-      };
-      await fn(tx);
-      return { tx };
-    });
-    const mockPrisma = makeMockPrisma({
-      digestStateSnapshot: {
-        findFirst: vi.fn().mockResolvedValue(null)
-      },
-      $transaction: txMock
-    });
-
-    const service = new MemoryFactsService(mockPrisma);
-    const result = await service.addNote("user-1", "scope-new", "First note ever");
-
-    expect(result).toEqual({ ok: true });
-    expect(txMock).toHaveBeenCalledOnce();
-
-    // Introspect transaction calls
-    const txFn = txMock.mock.calls[0][0];
+  // No-snapshot path doubles: the transaction runs against the mock itself
+  // (makeMockPrisma's default $transaction), so tx.* is these tables.
+  const noSnapshotPrisma = (overrides: Record<string, unknown> = {}) => {
     const digestCreate = vi.fn().mockResolvedValue({ id: "digest-1" });
     const snapshotCreate = vi.fn().mockResolvedValue({});
-    await txFn({ digest: { create: digestCreate }, digestStateSnapshot: { create: snapshotCreate } });
+    const prisma = makeMockPrisma({
+      digest: { create: digestCreate },
+      digestStateSnapshot: { findFirst: vi.fn().mockResolvedValue(null), create: snapshotCreate },
+      ...overrides
+    });
+    return { prisma, digestCreate, snapshotCreate };
+  };
 
+  it("no-snapshot path: creates a digest + snapshot in one locked transaction with the note", async () => {
+    const { prisma, digestCreate, snapshotCreate } = noSnapshotPrisma();
+
+    const result = await new MemoryFactsService(prisma).addNote("user-1", "scope-new", "First note ever");
+
+    expect(result).toEqual({ ok: true });
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    expect(prisma.$executeRaw).toHaveBeenCalledOnce();
     expect(digestCreate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ scopeId: "scope-new", summary: "Notes" }) })
     );
+    expect(snapshotCreate.mock.calls[0][0].data.state?.profile?.notes).toContain("First note ever");
+  });
 
-    const snapshotData = snapshotCreate.mock.calls[0][0].data;
-    expect(snapshotData.state?.profile?.notes).toContain("First note ever");
+  it("takes the scope's advisory lock before reading the snapshot", async () => {
+    const order: string[] = [];
+    const prisma = makeMockPrisma({
+      digestStateSnapshot: {
+        findFirst: vi.fn(async () => (order.push("read"), { id: "s1", state: baseState() })),
+        update: vi.fn(async () => (order.push("write"), {}))
+      },
+      $executeRaw: vi.fn(async (sql: TemplateStringsArray, ...values: unknown[]) => {
+        order.push(`lock:${sql.join("?")}:${values.join(",")}`);
+        return 0;
+      })
+    });
+
+    await new MemoryFactsService(prisma).addNote("user-1", "scope-9", "a note");
+
+    expect(order).toEqual(["lock:SELECT pg_advisory_xact_lock(hashtext(?)):scope-9", "read", "write"]);
   });
 
   it("no-snapshot path: stamps the placeholder digest just before the scope's earliest event, so those events stay pending", async () => {
     // A placeholder stamped "now" put every earlier event behind the latest
     // Digest: the pending count missed them and the pipeline exited no_new_events.
     const earliest = new Date("2026-09-01T10:00:00.000Z");
-    const digestCreate = vi.fn().mockResolvedValue({ id: "digest-1" });
-    const snapshotCreate = vi.fn().mockResolvedValue({});
-    const mockPrisma = makeMockPrisma({
-      digestStateSnapshot: { findFirst: vi.fn().mockResolvedValue(null) },
-      memoryEvent: { aggregate: vi.fn().mockResolvedValue({ _min: { ingestedAt: earliest } }) },
-      $transaction: vi.fn(async (fn: any) => fn({ digest: { create: digestCreate }, digestStateSnapshot: { create: snapshotCreate } }))
+    const { prisma, digestCreate, snapshotCreate } = noSnapshotPrisma({
+      memoryEvent: { aggregate: vi.fn().mockResolvedValue({ _min: { ingestedAt: earliest } }) }
     });
 
-    await new MemoryFactsService(mockPrisma).addNote("user-1", "scope-1", "First note");
+    await new MemoryFactsService(prisma).addNote("user-1", "scope-1", "First note");
 
-    expect(mockPrisma.memoryEvent.aggregate).toHaveBeenCalledWith({ where: { scopeId: "scope-1" }, _min: { ingestedAt: true } });
+    expect(prisma.memoryEvent.aggregate).toHaveBeenCalledWith({ where: { scopeId: "scope-1" }, _min: { ingestedAt: true } });
     const createdAt: Date = digestCreate.mock.calls[0][0].data.createdAt;
     expect(createdAt.getTime()).toBe(earliest.getTime() - 1);
     expect(snapshotCreate.mock.calls[0][0].data.createdAt.getTime()).toBe(earliest.getTime() - 1);
   });
 
   it("no-snapshot path: stamps now when the scope has no events", async () => {
-    const digestCreate = vi.fn().mockResolvedValue({ id: "digest-1" });
-    const mockPrisma = makeMockPrisma({
-      digestStateSnapshot: { findFirst: vi.fn().mockResolvedValue(null) },
-      $transaction: vi.fn(async (fn: any) => fn({ digest: { create: digestCreate }, digestStateSnapshot: { create: vi.fn() } }))
-    });
+    const { prisma, digestCreate } = noSnapshotPrisma();
     const before = Date.now();
 
-    await new MemoryFactsService(mockPrisma).addNote("user-1", "scope-1", "First note");
+    await new MemoryFactsService(prisma).addNote("user-1", "scope-1", "First note");
 
     expect(digestCreate.mock.calls[0][0].data.createdAt.getTime()).toBeGreaterThanOrEqual(before);
   });

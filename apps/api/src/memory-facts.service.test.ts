@@ -164,6 +164,7 @@ describe("MemoryFactsService.forgetFact", () => {
     await new MemoryFactsService(mockPrisma).forgetFact("user-1", "scope-1", computeFactKey("Notes", "forget me"));
 
     expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
+    expect(mockPrisma.$executeRaw).toHaveBeenCalledOnce(); // the scope's advisory lock
     expect(update).toHaveBeenCalledOnce();
     const written = update.mock.calls[0][0];
     expect(written.where).toEqual({ id: "snap-1" });

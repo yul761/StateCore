@@ -4,7 +4,8 @@ import { createDigestWithSnapshot, type DigestWritePrisma, type DigestWriteTx } 
 
 function makePrismaStub(
   snapshotShouldReject = false,
-  latestSnapshotState: unknown = null
+  latestSnapshotState: unknown = null,
+  forgottenKeys: string[] = []
 ): {
   prisma: DigestWritePrisma;
   calls: string[];
@@ -36,7 +37,17 @@ function makePrismaStub(
             calls.push("snapshot.findFirst");
             return latestSnapshotState ? { state: latestSnapshotState } : null;
           })
-        }
+        },
+        forgottenFact: {
+          findMany: vi.fn(async () => {
+            calls.push("forgottenFact.findMany");
+            return forgottenKeys.map((factKey) => ({ factKey }));
+          })
+        },
+        $executeRaw: vi.fn(async (sql: TemplateStringsArray, ...values: unknown[]) => {
+          calls.push(`lock:${sql.join("?")}:${values.join(",")}`);
+          return 0;
+        })
       };
       return fn(tx);
     }
@@ -58,7 +69,31 @@ describe("createDigestWithSnapshot", () => {
       consistency: { score: 1 }
     });
 
-    expect(calls).toEqual(["snapshot.findFirst", "digest.create", "snapshot.create"]);
+    expect(calls).toEqual([
+      "lock:SELECT pg_advisory_xact_lock(hashtext(?)):scope-1",
+      "snapshot.findFirst",
+      "digest.create",
+      "snapshot.create"
+    ]);
+  });
+
+  it("takes the scope's advisory lock first and reads forgotten keys under it", async () => {
+    const { prisma, calls } = makePrismaStub(false, { profile: {}, factRegistry: [] });
+
+    await createDigestWithSnapshot(prisma, {
+      scopeId: "scope-7",
+      summary: "s",
+      changes: "",
+      nextSteps: [],
+      state: { profile: {}, factRegistry: [] },
+      consistency: null
+    });
+
+    expect(calls.slice(0, 3)).toEqual([
+      "lock:SELECT pg_advisory_xact_lock(hashtext(?)):scope-7",
+      "snapshot.findFirst",
+      "forgottenFact.findMany"
+    ]);
   });
 
   it("passes the created digest's id as digestId on the snapshot", async () => {
@@ -224,7 +259,7 @@ describe("createDigestWithSnapshot — concurrent-note carry-over", () => {
     // the pipeline state — without the keys it looks like a concurrent write.
     const forgottenKey = computeFactKey("Notes", noteEntry.content);
     const latestState = { profile: { notes: [noteEntry.content] }, factRegistry: [noteEntry] };
-    const { prisma, snapshotCreateArgs } = makePrismaStub(false, latestState);
+    const { prisma, snapshotCreateArgs } = makePrismaStub(false, latestState, [forgottenKey]);
 
     await createDigestWithSnapshot(prisma, {
       scopeId: "scope-1",
@@ -232,8 +267,7 @@ describe("createDigestWithSnapshot — concurrent-note carry-over", () => {
       changes: "",
       nextSteps: [],
       state: { profile: { notes: [] }, factRegistry: [] },
-      consistency: null,
-      forgottenFactKeys: new Set([forgottenKey])
+      consistency: null
     });
 
     const written = snapshotCreateArgs[0].data.state as any;
