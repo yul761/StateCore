@@ -116,7 +116,10 @@ describe("MemoryFactsService.forgetFact", () => {
       profile: {}
     };
     const mockPrisma = makeMockPrisma({
-      digestStateSnapshot: { findFirst: vi.fn().mockResolvedValue({ state: stateWithNote }) },
+      digestStateSnapshot: {
+        findFirst: vi.fn().mockResolvedValue({ id: "snap-1", state: stateWithNote }),
+        update: vi.fn().mockResolvedValue({})
+      },
       forgottenFact: { upsert: vi.fn().mockResolvedValue({}) },
       // updateMany matches 0 rows harmlessly — no throw (unlike update which throws P2025)
       memoryEvent: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
@@ -136,5 +139,52 @@ describe("MemoryFactsService.forgetFact", () => {
       where: { id: noteEvidenceId },
       data: { suppressedAt: expect.any(Date) }
     });
+  });
+
+  it("frees a forgotten note's slot: drops it from profile.notes and retires its entry, in the forget transaction", async () => {
+    const { computeFactKey } = await import("@statecore/core");
+    const state = {
+      stableFacts: { decisions: [] },
+      workingNotes: {},
+      todos: [],
+      profile: { notes: ["keep me", "forget me"] },
+      factRegistry: ["keep me", "forget me"].map((content, i) => ({
+        id: `n${i}`, content, type: "profile", confidence: 0.9, addedAt: "2026-06-27T00:00:00.000Z",
+        evidenceId: `nev${i}`, evidenceType: "event", facet: "notes", origin: "note"
+      }))
+    };
+    const update = vi.fn().mockResolvedValue({});
+    const mockPrisma = makeMockPrisma({
+      digestStateSnapshot: { findFirst: vi.fn().mockResolvedValue({ id: "snap-1", state }), update },
+      forgottenFact: { upsert: vi.fn().mockResolvedValue({}) },
+      memoryEvent: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      memoryEventToken: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) }
+    });
+
+    await new MemoryFactsService(mockPrisma).forgetFact("user-1", "scope-1", computeFactKey("Notes", "forget me"));
+
+    expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledOnce();
+    const written = update.mock.calls[0][0];
+    expect(written.where).toEqual({ id: "snap-1" });
+    expect(written.data.state.profile.notes).toEqual(["keep me"]);
+    const retired = written.data.state.factRegistry.find((e: { id: string }) => e.id === "n1");
+    expect(retired.retiredReason).toBe("forgotten");
+    expect(written.data.state.factRegistry).toHaveLength(2); // retired, not deleted
+  });
+
+  it("does not rewrite the snapshot when the forgotten fact is not a note", async () => {
+    const { computeFactKey } = await import("@statecore/core");
+    const update = vi.fn();
+    const mockPrisma = makeMockPrisma({
+      digestStateSnapshot: { findFirst: vi.fn().mockResolvedValue({ id: "snap-1", state: snapshotState }), update },
+      forgottenFact: { upsert: vi.fn().mockResolvedValue({}) },
+      memoryEvent: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      memoryEventToken: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) }
+    }, { template: "personal" });
+
+    await new MemoryFactsService(mockPrisma).forgetFact("user-1", "scope-1", computeFactKey("Projects", "Launching Remi in July"));
+
+    expect(update).not.toHaveBeenCalled();
   });
 });

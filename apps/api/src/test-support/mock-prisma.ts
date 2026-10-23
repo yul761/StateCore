@@ -26,9 +26,17 @@ export function makeMockPrisma(
   overrides: Record<string, unknown> = {},
   { template = "project" }: { template?: string } = {}
 ): any {
-  return {
+  const mock: any = {
     projectScope: { findUnique: vi.fn().mockResolvedValue({ template }) },
     user: { findUnique: vi.fn().mockResolvedValue({ facetPack: null }) },
+    // addNote reads the scope's forgotten keys (to heal forgotten notes) and,
+    // for a scope's first note, its earliest event; forgetFact writes inside a
+    // transaction. Defaults here so tests about something else need not stub them.
+    forgottenFact: { findMany: vi.fn().mockResolvedValue([]) },
+    memoryEvent: { aggregate: vi.fn().mockResolvedValue({ _min: { ingestedAt: null } }) },
+    // The interactive form runs against this same double as `tx`.
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(mock)),
     ...overrides
   };
+  return mock;
 }
