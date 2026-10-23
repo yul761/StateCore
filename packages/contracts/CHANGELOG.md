@@ -1,5 +1,11 @@
 # @statecore/contracts
 
+## 1.6.0
+
+### Minor Changes
+
+- [`724f309`](https://github.com/yul761/StateCore/commit/724f309de441ca2ac4ed95ba9cc5e72d93ed5272) Thanks [@yul761](https://github.com/yul761)! - `GET /v1/memory/facts/:factId/provenance` gains an optional `evidence` array (contract 1.8.0): the source text and time of each evidence event behind the chain, so a caller can show "you said this" without a second lookup. Forgotten (suppressed) evidence is omitted; text is capped at 2000 characters.
+
 ## 1.5.0
 
 ### Minor Changes

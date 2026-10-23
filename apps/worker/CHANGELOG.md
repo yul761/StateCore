@@ -1,5 +1,21 @@
 # @statecore/worker
 
+## 1.4.4
+
+### Patch Changes
+
+- [`98679dd`](https://github.com/yul761/StateCore/commit/98679ddaab8abcab179a5a265516ad80a4e72f74) Thanks [@yul761](https://github.com/yul761)! - Forgotten notes free their slots, a digest can no longer evict a caller's note, and a digest reports honestly when it did not process everything.
+
+  - **Forget frees the slot.** `forget` on a note now drops it from the active notes and retires its registry entry (`retiredReason: "forgotten"`, never deleted), in the same transaction as the ForgottenFact row (embedded and `POST /v1/memory/facts/forget`). Stores written before this heal on their next note write. A full digest no longer re-appends forgotten notes at write time, and the carried-over notes are held to the notes cap. A note evicted at the cap and written again gets a live registry entry again.
+  - **Forget, then remember a revision, keeps the chain.** A note that revises a forgotten note supersedes it (`superseded` is returned and `why` shows old → new); the revision takes one slot and the forgotten note none. Writing the exact text of a forgotten note stays a no-op (it remains hidden and evicts nothing). Digests now retire forgotten facts (`retiredReason: "forgotten"`) instead of deleting their registry entries, so `why` keeps their history; forgotten entries are never shown to the model.
+  - **Scope write lock (server).** Note writes, forgets and digest writes take a transaction-scoped Postgres advisory lock on the scope and read forgotten keys under it, so concurrent read-modify-writes of the snapshot no longer drop each other's changes.
+  - **Events before the first note are digested.** The placeholder digest the first note creates is stamped just before the scope's earliest event, so those events stay pending instead of being skipped.
+  - **Caller notes are protected from the digest (behaviour change).** Notes written through `remember` / `POST note` are tagged `origin: "note"` (older ones are recognised by shape). A digest-extracted note may evict only the oldest digest-extracted note; when every slot holds a caller note the incoming digest note is dropped and logged as `cap_rejected_incoming`. Digests no longer rewrite caller notes in place or consolidate them.
+  - **Honest digest outcomes (statecore-mcp).** `digestNow()` / `statecore-mcp digest` return `{ ran: true, partial: true }` (additive) when the written digest skipped stage-2 chunks or the selection budget left pending events out. A stage 2 that distilled nothing (the single pass, or every chunk, unparseable), a missing scope, or no model provider now report `{ ran: false, reason: "failed" }` and write nothing, leaving the events pending; after 3 consecutive such stage-2 failures for a scope the degraded digest is written as `partial` so the scope moves on (tracked in a new MCP-private `DigestFailure` table — embedded data file schema version 2). A run where only some chunks failed is written as `partial`. Core marks skipped chunks as `degraded: { reason: "stage2_chunks_failed", failed, total }`; the worker keeps its existing write-anyway behaviour.
+
+- Updated dependencies [[`98679dd`](https://github.com/yul761/StateCore/commit/98679ddaab8abcab179a5a265516ad80a4e72f74)]:
+  - @statecore/core@1.6.0
+
 ## 1.4.3
 
 ### Patch Changes

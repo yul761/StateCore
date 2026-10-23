@@ -18,6 +18,39 @@ surface. `docs/api.md` owns the rule.
 
 ## [Unreleased]
 
+## v1.8.0 — statecore-mcp 1.1.0
+
+### Added
+- `/v1` contract `info.version` 1.8.0 — `GET /v1/memory/facts/:factId/provenance`
+  gains an optional `evidence` array: the source text and time of each evidence
+  event behind the chain. Details: `docs/api.md`, `apps/api/CHANGELOG.md`.
+- `statecore-mcp@1.1.0` — `digestNow()` / `statecore-mcp digest` report
+  `{ ran: true, partial: true }` (additive) when a written digest skipped
+  stage-2 chunks or left pending events out, and `{ ran: false, reason:
+  "failed" }` (writing nothing, events stay pending) when stage 2 distilled
+  nothing; after three such failures in a row the degraded digest is written
+  as `partial`. Clearer tool and parameter descriptions. Details:
+  `apps/mcp/CHANGELOG.md`.
+
+### Fixed
+- The notes cap (30 per scope) counts only live notes: `forget` frees the
+  slot (the entry is retired as `forgotten`, never deleted, and `why` keeps
+  it), a full digest no longer re-appends forgotten notes, a note evicted at
+  the cap and written again is registered again, and remembering a revision
+  of a forgotten note still supersedes it on the `why` chain. Existing stores
+  heal on their next note write.
+- Events written before a scope's first note are no longer skipped by the
+  digest.
+- Note writes, forgets and digest writes take a per-scope Postgres advisory
+  lock, so concurrent snapshot updates no longer drop each other's changes.
+
+### Changed
+- **Caller notes are protected from the digest.** Notes written through
+  `remember` / `POST note` can no longer be evicted, rewritten in place or
+  consolidated by a digest; a digest-extracted note evicts only the oldest
+  digest-extracted note, and is dropped (logged as `cap_rejected_incoming`)
+  when every slot holds a caller note.
+
 ## v1.7.0 — statecore-mcp 1.0.0
 
 ### Added
