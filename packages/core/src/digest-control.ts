@@ -45,7 +45,11 @@ export {
   MAX_FACT_CHARS,
   isFactSized,
   retireFact,
-  addNoteFact
+  addNoteFact,
+  retireForgottenNotes,
+  isCallerNoteEntry,
+  NOTES_FACET,
+  CALLER_NOTE_ORIGIN
 } from "./digest/fact-registry";
 export type { AddNoteResult } from "./digest/fact-registry";
 export { applyProfileFactsFromDigest, protectedStateMerge } from "./digest/merge";
@@ -56,6 +60,7 @@ export {
   STAGE2_MAX_CHUNKS,
   chunkDeltaCandidates,
   boundProtectedState,
-  generateDigestStage2
+  generateDigestStage2,
+  isEmptyInvalidJsonPass
 } from "./digest/stage2";
 export { runDigestControlPipeline } from "./digest/pipeline";

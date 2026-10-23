@@ -1,6 +1,7 @@
 // The fact registry: promotion, retirement, supersession, and the deterministic
 // note write path. Split out of digest-control.ts (2026-08-28) — bodies moved verbatim.
-import { getDefaultFacetPack, getFacetCap, type FacetPack } from "../facet-registry";
+import { getDefaultFacetPack, getFacetCap, getFacetDisplayGroup, type FacetPack } from "../facet-registry";
+import { computeFactKey } from "./fact-key";
 import { isNoteRevision, sameFactCjkAware } from "./similarity";
 import { createDefaultNowFactory } from "./state";
 import type { DigestEvidenceRef, DigestState, FactRegistryEntry } from "./types";
@@ -62,7 +63,13 @@ export function retireFact(
    * "API v1 key…" and "API v2 key…" look identical to it and the wrong entry
    * would be retired.
    */
-  options?: { exact?: boolean }
+  options?: {
+    exact?: boolean;
+    /** Only consider entries of this facet (entries with no facet still match). */
+    facet?: string;
+    /** Never retire an entry this returns true for (e.g. a caller-written note). */
+    exclude?: (entry: FactRegistryEntry) => boolean;
+  }
 ): void {
   if (!state.factRegistry) return;
   const normalizeExact = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
@@ -71,7 +78,12 @@ export function retireFact(
     : (entryContent: string) => sameFactCjkAware(entryContent, content, 0.6);
 
   const target = state.factRegistry.find(
-    (entry) => !entry.supersededBy && !entry.retiredAt && matches(entry.content)
+    (entry) =>
+      !entry.supersededBy &&
+      !entry.retiredAt &&
+      (options?.facet === undefined || !entry.facet || entry.facet === options.facet) &&
+      !(options?.exclude?.(entry) ?? false) &&
+      matches(entry.content)
   );
   if (!target) return;
   target.retiredAt = makeNow();
@@ -115,11 +127,14 @@ export function supersedeFact(
   evidence: DigestEvidenceRef,
   makeId: () => string,
   overrides?: { facet?: string; confidence?: number; type?: FactRegistryEntry["type"]; entities?: string[] },
-  makeNow: () => string = createDefaultNowFactory()
+  makeNow: () => string = createDefaultNowFactory(),
+  /** `exclude`: never supersede an entry this returns true for (e.g. a caller-written note). */
+  options?: { exclude?: (entry: FactRegistryEntry) => boolean }
 ): void {
   if (!state.factRegistry) return;
   const toSupersede = state.factRegistry.find(
-    (entry) => !entry.supersededBy && sameFactCjkAware(entry.content, content, 0.6)
+    (entry) =>
+      !entry.supersededBy && !(options?.exclude?.(entry) ?? false) && sameFactCjkAware(entry.content, content, 0.6)
   );
   if (!toSupersede) return;
   const newId = makeId();
@@ -138,6 +153,87 @@ export function supersedeFact(
   state.factRegistry.push(newEntry);
 }
 
+
+/** The facet the deterministic note write path (`addNoteFact`) writes to. */
+export const NOTES_FACET = "notes";
+
+/** `FactRegistryEntry.origin` of a note written by a caller through `addNoteFact`. */
+export const CALLER_NOTE_ORIGIN = "note";
+
+/** Confidence `addNoteFact` stamps on a caller note. Digest-produced facts carry 0.6/0.85. */
+const CALLER_NOTE_CONFIDENCE = 0.9;
+
+const normalizeNote = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+
+/**
+ * Whether a registry entry is a note a caller wrote (remember / POST note), as
+ * opposed to one a digest extracted.
+ *
+ * Entries written since `origin` existed carry it. Older caller notes do not,
+ * but `addNoteFact` has always written them the same way — facet `notes`,
+ * confidence 0.9 — and no digest path writes that confidence (stream evidence
+ * is 0.6, document evidence 0.85), so the shape identifies them.
+ */
+export function isCallerNoteEntry(entry: FactRegistryEntry): boolean {
+  if (entry.origin !== undefined) return entry.origin === CALLER_NOTE_ORIGIN;
+  return entry.type === "profile" && entry.facet === NOTES_FACET && entry.confidence === CALLER_NOTE_CONFIDENCE;
+}
+
+/** Whether `text`, as held in `profile[facet]`, is backed by an active caller-note entry. */
+export function isCallerNoteText(state: DigestState, facet: string, text: string): boolean {
+  const target = normalizeNote(text);
+  return (state.factRegistry ?? []).some(
+    (e) =>
+      !e.supersededBy &&
+      !e.retiredAt &&
+      e.facet === facet &&
+      isCallerNoteEntry(e) &&
+      normalizeNote(e.content) === target
+  );
+}
+
+/**
+ * Takes forgotten notes out of the active set: their strings leave
+ * `profile.notes` (freeing their cap slots) and their registry entries are
+ * stamped `retiredAt` / `retiredReason: "forgotten"` — retired, never deleted,
+ * so the record that the note was once held survives.
+ *
+ * `forget` used to only insert a ForgottenFact row: `facts()` hid the note but
+ * it kept its slot, so a full notes facet stayed full and the next note evicted
+ * a live one. Matching is by display-fact key, the same key `forget` records.
+ *
+ * @returns how many notes were removed or retired (0 means the state is unchanged).
+ */
+export function retireForgottenNotes(
+  state: DigestState,
+  forgottenKeys: ReadonlySet<string>,
+  makeNow: () => string = createDefaultNowFactory(),
+  pack: FacetPack = getDefaultFacetPack()
+): number {
+  if (forgottenKeys.size === 0) return 0;
+  const group = getFacetDisplayGroup(pack, NOTES_FACET);
+  if (!group) return 0;
+  const isForgotten = (text: string) => forgottenKeys.has(computeFactKey(group, text));
+
+  let changed = 0;
+  const profileMap = state.profile as Record<string, string[]> | undefined;
+  const notes = profileMap?.[NOTES_FACET];
+  if (profileMap && Array.isArray(notes)) {
+    const kept = notes.filter((note) => !isForgotten(note));
+    changed += notes.length - kept.length;
+    profileMap[NOTES_FACET] = kept;
+  }
+
+  const now = makeNow();
+  for (const entry of state.factRegistry ?? []) {
+    if (entry.supersededBy || entry.retiredAt || entry.facet !== NOTES_FACET) continue;
+    if (!isForgotten(entry.content)) continue;
+    entry.retiredAt = now;
+    entry.retiredReason = "forgotten";
+    changed += 1;
+  }
+  return changed;
+}
 
 /** Result of `addNoteFact`: whether the state changed, and — when the note
  * superseded an active revision — the content of the note it replaced. */
@@ -163,17 +259,31 @@ export interface AddNoteResult {
  * - Enforces the `notes` cap (30); evicts the oldest entry (index 0) and retires
  *   its factRegistry record when the cap is reached.
  * - Promotes the note to the factRegistry as a `profile/notes` entry with
- *   confidence 0.9 so it surfaces via `flattenScopeFacts` with its timestamp.
+ *   confidence 0.9 and `origin: "note"` so it surfaces via `flattenScopeFacts`
+ *   with its timestamp, and so the digest path knows a caller wrote it (a
+ *   digest may never evict, rewrite or consolidate a caller note).
+ * - With `forgottenKeys`, retires forgotten notes still holding a slot first
+ *   (`retireForgottenNotes`), before the dedup and cap checks.
  */
 export function addNoteFact(
   state: DigestState,
   text: string,
   makeId: () => string,
   makeNow: () => string = createDefaultNowFactory(),
-  pack: FacetPack = getDefaultFacetPack()
+  pack: FacetPack = getDefaultFacetPack(),
+  /**
+   * The scope's forgotten fact keys. When given, forgotten notes still holding
+   * a slot (stores written before forget retired them) are retired first, so
+   * an existing store heals on its next write instead of evicting a live note.
+   */
+  forgottenKeys?: ReadonlySet<string>
 ): AddNoteResult {
   const value = text.trim();
   if (!value) return { changed: false };
+
+  // Heal before anything reads the active set: the dedup, revision and cap
+  // checks below must all see the notes with forgotten ones already gone.
+  const healed = forgottenKeys ? retireForgottenNotes(state, forgottenKeys, makeNow, pack) > 0 : false;
 
   // Normalize helper: trim, collapse internal whitespace, lowercase.
   const norm = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
@@ -182,7 +292,7 @@ export function addNoteFact(
   // Explicit notes must use exact match — fuzzy dedup would silently merge notes
   // differing only by short numeric tokens (e.g. "API v1 key…" vs "API v2 key…").
   const existingNotes = state.profile?.notes ?? [];
-  if (existingNotes.some((note) => norm(note) === norm(value))) return { changed: false };
+  if (existingNotes.some((note) => norm(note) === norm(value))) return { changed: healed };
 
   // Lazy-init profile and notes array.
   if (!state.profile) state.profile = {};
@@ -201,7 +311,8 @@ export function addNoteFact(
       addedAt: makeNow(),
       evidenceId: makeId(),
       evidenceType: "event" as const,
-      facet: "notes"
+      facet: NOTES_FACET,
+      origin: CALLER_NOTE_ORIGIN
     };
     state.factRegistry!.push(entry);
     if (supersedes) supersedes.supersededBy = id;
@@ -229,7 +340,7 @@ export function addNoteFact(
   const cap = getFacetCap(pack, "notes");
   if (notes.length >= cap) {
     const [evicted] = notes.splice(0, 1);
-    if (evicted) retireFact(state, evicted, "cap_evicted", makeNow, { exact: true });
+    if (evicted) retireFact(state, evicted, "cap_evicted", makeNow, { exact: true, facet: NOTES_FACET });
   }
 
   notes.push(value);
@@ -239,8 +350,11 @@ export function addNoteFact(
   // helper calls isInFactRegistry which uses fuzzy Jaccard, which would prevent distinct
   // notes like "note-1" from being registered if a fuzzy-similar "note-0" already exists.
   // Instead, push directly with a facet-scoped exact-match guard.
+  // Retired entries do not count: a note that was cap-evicted and is now
+  // written again must get a live registry entry, or it would sit in
+  // profile.notes with nothing active behind it.
   const alreadyRegistered = state.factRegistry.some(
-    (e) => !e.supersededBy && e.facet === "notes" && norm(e.content) === norm(value)
+    (e) => !e.supersededBy && !e.retiredAt && e.facet === "notes" && norm(e.content) === norm(value)
   );
   if (!alreadyRegistered) registerNote();
 

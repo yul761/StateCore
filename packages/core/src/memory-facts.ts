@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { computeFactKey } from "./digest/fact-key";
 import { getActiveFactRegistry, type DigestState } from "./digest-control";
 import { recordDrop, type DropRecord } from "./drop-log";
 import { getFacetDisplayGroup, listFacets, getDefaultFacetPack, type FacetPack } from "./facet-registry";
@@ -31,16 +31,7 @@ function groupOrder(pack: FacetPack): DisplayGroup[] {
   return seen;
 }
 
-function normalize(s: string): string {
-  return s.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-export function computeFactKey(group: string, content: string): string {
-  return createHash("sha256")
-    .update(`${normalize(group)}|${normalize(content)}`)
-    .digest("hex")
-    .slice(0, 16);
-}
+export { computeFactKey };
 
 export function factToGroup(facet: string, pack: FacetPack = getDefaultFacetPack()): DisplayGroup | null {
   return getFacetDisplayGroup(pack, facet);

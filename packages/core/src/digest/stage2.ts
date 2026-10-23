@@ -224,6 +224,11 @@ export async function generateDigestStage2(input: Stage2Input): Promise<DigestOu
   const seen = new Set<string>();
   let carried: Digest | null | undefined = input.lastDigest;
   let last: DigestOutput | null = null;
+  // Chunks whose events produced nothing: the pass threw, or every reply was
+  // unparseable. Skipping them keeps the run alive, but the run must say so —
+  // it used to return as if the whole corpus had been distilled.
+  let failed = 0;
+  const failedErrors: string[] = [];
 
   for (const chunk of chunks) {
     // One chunk that cannot satisfy the consistency gate must not discard the
@@ -232,7 +237,14 @@ export async function generateDigestStage2(input: Stage2Input): Promise<DigestOu
     let out: DigestOutput;
     try {
       out = await runStage2Pass({ ...input, deltaCandidates: chunk, lastDigest: carried });
-    } catch {
+    } catch (error) {
+      failed += 1;
+      failedErrors.push(error instanceof Error ? error.message : String(error));
+      continue;
+    }
+    if (isEmptyInvalidJsonPass(out)) {
+      failed += 1;
+      failedErrors.push("invalid_json_output");
       continue;
     }
     for (const fact of out.profileFacts ?? []) {
@@ -251,9 +263,27 @@ export async function generateDigestStage2(input: Stage2Input): Promise<DigestOu
   }
 
   // Every pass failed. Nothing to degrade to, so fail the way a single pass does.
-  if (!last) return runStage2Pass({ ...input, deltaCandidates: chunks[chunks.length - 1] });
+  if (!last) {
+    const retried = await runStage2Pass({ ...input, deltaCandidates: chunks[chunks.length - 1] });
+    if (retried.degraded) return retried;
+    return { ...retried, degraded: chunksFailed(chunks.length - 1, chunks.length, failedErrors) };
+  }
 
-  return { ...last, profileFacts: facts };
+  return failed > 0
+    ? { ...last, profileFacts: facts, degraded: chunksFailed(failed, chunks.length, failedErrors) }
+    : { ...last, profileFacts: facts };
+}
+
+function chunksFailed(failed: number, total: number, errors: string[]): NonNullable<DigestOutput["degraded"]> {
+  return { reason: "stage2_chunks_failed", errors: [...new Set(errors)], failed, total };
+}
+
+/**
+ * A pass whose every reply was unparseable comes back as a degraded carry-forward
+ * of the previous digest with no facts: nothing from its events was distilled.
+ */
+export function isEmptyInvalidJsonPass(out: DigestOutput): boolean {
+  return Boolean(out.degraded?.errors.includes("invalid_json_output")) && !(out.profileFacts?.length);
 }
 
 async function runStage2Pass(input: Stage2Input): Promise<DigestOutput> {

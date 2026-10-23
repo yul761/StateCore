@@ -35,6 +35,8 @@ import {
 } from "./state";
 import {
   MAX_FACT_CHARS,
+  isCallerNoteEntry,
+  isCallerNoteText,
   isFactSized,
   isInFactRegistry,
   promoteToFactRegistry,
@@ -427,6 +429,22 @@ export function applyProfileFactsFromDigest(
     if (existingIdx !== -1) {
       const existing = facetFacts[existingIdx];
       const contentChanged = existing.trim() !== value.trim();
+
+      // A note a caller wrote is theirs: a digest restating something close to
+      // it must not rewrite it in place. The caller's wording stands; the
+      // incoming variant is dropped (and logged when it actually differed).
+      if (isCallerNoteText(state, facet, existing)) {
+        if (contentChanged && dropLog) {
+          recordDrop(dropLog, "protected_lower_authority", {
+            facet,
+            value,
+            existing,
+            incomingAuthority: authority,
+            existingOrigin: "note"
+          });
+        }
+        continue;
+      }
       // supersedeFact re-stamps the registry entry's addedAt to "now", so it must only run
       // when something real changes: the content was corrected, or the evidence authority
       // increased (e.g. a stream-sourced fact later confirmed by a document). A plain
@@ -435,7 +453,11 @@ export function applyProfileFactsFromDigest(
       // so compare authority, not id.)
       const activeEntry = (state.factRegistry ?? []).find(
         (e) =>
-          !e.supersededBy && !e.retiredAt && e.type === "profile" && sameFactCjkAware(e.content, existing, 0.6)
+          !e.supersededBy &&
+          !e.retiredAt &&
+          e.type === "profile" &&
+          !isCallerNoteEntry(e) &&
+          sameFactCjkAware(e.content, existing, 0.6)
       );
 
       // Write protection, on the path that actually runs every digest.
@@ -462,7 +484,9 @@ export function applyProfileFactsFromDigest(
       if (evidence) {
         const authorityIncreased = activeEntry !== undefined && authority > activeEntry.confidence;
         if (contentChanged || authorityIncreased) {
-          supersedeFact(state, existing, value, evidence, makeId, { facet, confidence: authority, type: "profile", entities }, makeNow);
+          supersedeFact(state, existing, value, evidence, makeId, { facet, confidence: authority, type: "profile", entities }, makeNow, {
+            exclude: isCallerNoteEntry
+          });
         }
       }
       if (contentChanged) facetFacts[existingIdx] = value;
@@ -475,11 +499,21 @@ export function applyProfileFactsFromDigest(
         if (dropLog) recordDrop(dropLog, "cap_rejected_incoming", { facet, value, cap });
         continue;
       }
-      const [evicted] = facetFacts.splice(0, 1); // volatile facets: evict oldest (index 0)
+      // Volatile facets: evict the oldest digest-produced entry. A note a caller
+      // wrote is never evicted by a digest — it used to be (index 0 regardless
+      // of who wrote it), so a digest could silently push out something the
+      // caller explicitly asked to keep. When every slot holds a caller note
+      // there is nothing a digest may evict, and the incoming fact is dropped.
+      const evictIdx = facetFacts.findIndex((fact) => !isCallerNoteText(state, facet, fact));
+      if (evictIdx === -1) {
+        if (dropLog) recordDrop(dropLog, "cap_rejected_incoming", { facet, value, cap, heldBy: "caller_notes" });
+        continue;
+      }
+      const [evicted] = facetFacts.splice(evictIdx, 1);
       if (evicted && dropLog) recordDrop(dropLog, "cap_evicted", { facet, value: evicted, cap });
       // Retire, don't delete: the fact stops being active but the record of
       // having believed it survives.
-      if (evicted) retireFact(state, evicted, "cap_evicted", makeNow);
+      if (evicted) retireFact(state, evicted, "cap_evicted", makeNow, { facet, exclude: isCallerNoteEntry });
     }
 
     facetFacts.push(value);
