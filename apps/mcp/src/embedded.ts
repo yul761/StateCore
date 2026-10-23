@@ -7,6 +7,7 @@ import {
   groupFactsForDisplay,
   attachFactIds,
   addNoteFact,
+  retireForgottenNotes,
   resolveFacetPackForScope,
   buildFactProvenance,
   getActiveFactRegistry,
@@ -24,7 +25,7 @@ import type { LiteDb } from "./lite-db";
 import { makeProjectsRepo, makeUserStateRepo, makeMemoryRepo, makeDigestRepo, nowMs } from "./embedded-repos";
 import { parseJson, toJson, fromMs, fromMsNullable, type SnapshotRow } from "./rows";
 import type { MemoryBackend } from "./backend";
-import { maybeRunDigest, countPendingEvents, hasUsableModel, type DigestChatModel } from "./digest";
+import { maybeRunDigest, runDigestAttempt, countPendingEvents, hasUsableModel, forgottenFactKeys, type DigestChatModel } from "./digest";
 
 const USER = "local";
 
@@ -66,6 +67,18 @@ const handoffRows = (db: LiteDb, scopeId: string) =>
   }));
 
 const EMPTY_STATE = (): DigestState => ({ stableFacts: { decisions: [] }, workingNotes: {}, todos: [], factRegistry: [], profile: {} });
+
+/**
+ * `createdAt` for the placeholder Digest row the first note creates. Pending
+ * events are those newer than the latest Digest, so a row stamped "now" made
+ * every event ingested before the first note invisible to the digest trigger
+ * (and the pipeline exited no_new_events) — they were never distilled. Stamping
+ * it just before the scope's earliest event keeps all of them pending.
+ */
+export function placeholderDigestCreatedAt(db: LiteDb, scopeId: string, now: number): number {
+  const row = db.get<{ oldest: number | null }>(`SELECT MIN("ingestedAt") AS "oldest" FROM "MemoryEvent" WHERE "scopeId" = ?`, scopeId);
+  return row?.oldest != null ? Math.min(now, Number(row.oldest) - 1) : now;
+}
 
 /**
  * The keyless, in-process `MemoryBackend`: five memory operations over an
@@ -170,14 +183,16 @@ export function createEmbeddedBackend(opts: {
           const snap = latestSnapshotRow();
           if (snap) {
             const state = parseJson<DigestState>(snap.state, EMPTY_STATE());
-            const result = addNoteFact(state, text, () => randomUUID(), () => new Date().toISOString(), pack);
+            // Forgotten keys let a store written before forget retired notes
+            // heal here, instead of the cap evicting a live note.
+            const result = addNoteFact(state, text, () => randomUUID(), () => new Date().toISOString(), pack, forgottenFactKeys(store.db, scopeId));
             if (result.changed) store.db.run(`UPDATE "DigestStateSnapshot" SET "state" = ? WHERE "id" = ?`, toJson(state), snap.id);
             return result.superseded;
           }
           const state = EMPTY_STATE();
           addNoteFact(state, text, () => randomUUID(), () => new Date().toISOString(), pack);
           const digestId = randomUUID();
-          const now = nowMs();
+          const now = placeholderDigestCreatedAt(store.db, scopeId, nowMs());
           store.db.run(`INSERT INTO "Digest" ("id", "scopeId", "summary", "changes", "nextSteps", "createdAt") VALUES (?, ?, 'Notes', '', '[]', ?)`, digestId, scopeId, now);
           store.db.run(
             `INSERT INTO "DigestStateSnapshot" ("id", "scopeId", "digestId", "state", "consistency", "createdAt") VALUES (?, ?, ?, ?, 'null', ?)`,
@@ -358,7 +373,7 @@ export function createEmbeddedBackend(opts: {
       // would report "locked" for a backlog that pass is already digesting.
       // runStartupDigestCatchUp never rejects, so this await cannot throw.
       await startupCatchUp;
-      const outcome = await maybeRunDigest({
+      const { outcome, partial } = await runDigestAttempt({
         db: store.db,
         userId: USER,
         scopeId,
@@ -368,7 +383,10 @@ export function createEmbeddedBackend(opts: {
       });
       switch (outcome) {
         case "ran":
-          return { ran: true };
+          // `partial`: the digest was written but did not distill every
+          // pending event (skipped stage-2 chunks, or the selection budget
+          // left some out). Additive — absent on a complete run.
+          return partial ? { ran: true, partial: true } : { ran: true };
         case "skipped-no-llm":
           return { ran: false, reason: "no-llm" };
         case "skipped-below-threshold":
@@ -382,21 +400,32 @@ export function createEmbeddedBackend(opts: {
 
     async forget({ factKey }) {
       // Mirrors apps/api/src/memory-facts.service.ts#forgetFact; keep in sync.
-      const snapshot = latestSnapshotRow();
+      // One transaction (BEGIN IMMEDIATE) across the snapshot read, the
+      // ForgottenFact insert and the snapshot rewrite, so a concurrent note
+      // write cannot land between them and be overwritten.
       const pack = await packFor();
-      const facts = snapshot ? flattenScopeFacts(parseJson<DigestState>(snapshot.state, EMPTY_STATE()), undefined, pack) : [];
-      const match = facts.find((f) => f.factKey === factKey);
-      store.db.run(
-        `INSERT INTO "ForgottenFact" ("id", "userId", "scopeId", "factKey", "contentSnapshot", "forgottenAt") VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT("scopeId", "factKey") DO NOTHING`,
-        randomUUID(), USER, scopeId, factKey, match?.text ?? "", Date.now()
-      );
-      if (match?.evidenceId) {
-        store.db.run(`UPDATE "MemoryEvent" SET "suppressedAt" = ? WHERE "id" = ?`, Date.now(), match.evidenceId);
-        // A suppressed event must also leave the lexical index, or it keeps
-        // occupying candidate slots that findByIds then filters out.
-        store.db.run(`DELETE FROM "MemoryEventToken" WHERE "eventId" = ?`, match.evidenceId);
-      }
+      store.db.transaction(() => {
+        const snapshot = latestSnapshotRow();
+        const state = snapshot ? parseJson<DigestState>(snapshot.state, EMPTY_STATE()) : null;
+        const facts = state ? flattenScopeFacts(state, undefined, pack) : [];
+        const match = facts.find((f) => f.factKey === factKey);
+        store.db.run(
+          `INSERT INTO "ForgottenFact" ("id", "userId", "scopeId", "factKey", "contentSnapshot", "forgottenAt") VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT("scopeId", "factKey") DO NOTHING`,
+          randomUUID(), USER, scopeId, factKey, match?.text ?? "", Date.now()
+        );
+        // A forgotten note leaves profile.notes and its registry entry is
+        // retired, so it stops holding one of the notes facet's slots.
+        if (snapshot && state && retireForgottenNotes(state, new Set([factKey]), () => new Date().toISOString(), pack) > 0) {
+          store.db.run(`UPDATE "DigestStateSnapshot" SET "state" = ? WHERE "id" = ?`, toJson(state), snapshot.id);
+        }
+        if (match?.evidenceId) {
+          store.db.run(`UPDATE "MemoryEvent" SET "suppressedAt" = ? WHERE "id" = ?`, Date.now(), match.evidenceId);
+          // A suppressed event must also leave the lexical index, or it keeps
+          // occupying candidate slots that findByIds then filters out.
+          store.db.run(`DELETE FROM "MemoryEventToken" WHERE "eventId" = ?`, match.evidenceId);
+        }
+      });
       return { ok: true };
     },
 

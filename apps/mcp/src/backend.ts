@@ -91,5 +91,11 @@ export interface MemoryBackend {
  * for retry), or a backend mode with no digest trigger at all.
  */
 export type DigestNowResult =
-  | { ran: true }
+  /**
+   * `partial: true` (additive, absent otherwise): a digest was written but did
+   * not distill every pending event — stage 2 skipped chunks it could not
+   * process, or the selection budget left pending events out. Those events
+   * are behind the new digest and will not be retried automatically.
+   */
+  | { ran: true; partial?: true }
   | { ran: false; reason: "no-llm" | "below-threshold" | "locked" | "failed" | "unsupported" };

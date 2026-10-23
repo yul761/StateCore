@@ -3,7 +3,7 @@
 // write rolls back the digest — no snapshotless latest-digest for data_gc to
 // mishandle.
 import { randomUUID } from "node:crypto";
-import { carryOverConcurrentNotes, type DigestState } from "@statecore/core";
+import { carryOverConcurrentNotes, type DigestState, type FacetPack } from "@statecore/core";
 import type { LiteDb } from "./lite-db";
 import { nowMs } from "./embedded-repos";
 import { parseJson, toJson } from "./rows";
@@ -18,6 +18,14 @@ export interface CreateDigestWithSnapshotInput {
   /** `{ rationale, drops }` — what the selection stage kept and what it discarded. */
   selectionLog?: unknown;
   rebuildGroupId?: string;
+  /**
+   * The scope's forgotten fact keys. The note carry-over skips (and retires)
+   * forgotten notes; without them a digest re-appends every note the pipeline
+   * pruned as forgotten, and forgotten notes never free their slots.
+   */
+  forgottenFactKeys?: ReadonlySet<string>;
+  /** The tenant's facet pack (notes cap and display group); defaults to the deployment pack. */
+  pack?: FacetPack;
 }
 
 export async function createDigestWithSnapshot(db: LiteDb, input: CreateDigestWithSnapshotInput): Promise<{ id: string }> {
@@ -32,7 +40,12 @@ export async function createDigestWithSnapshot(db: LiteDb, input: CreateDigestWi
       input.scopeId
     );
     const latestState = latest ? parseJson<DigestState | null>(latest.state, null) : null;
-    if (latestState) carryOverConcurrentNotes(input.state as DigestState, latestState);
+    if (latestState) {
+      carryOverConcurrentNotes(input.state as DigestState, latestState, {
+        forgottenFactKeys: input.forgottenFactKeys,
+        pack: input.pack
+      });
+    }
 
     const now = nowMs();
     const digestId = randomUUID();

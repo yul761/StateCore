@@ -59,6 +59,71 @@ describe("digest trigger", () => {
   });
 });
 
+describe("digest runs that did not run are 'failed'", () => {
+  it("a scope missing for the user is 'failed' (it used to report 'ran'), and nothing is written", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const dir = mkdtempSync(join(tmpdir(), "sc-mcp-noscope-"));
+    const store = await openStore(dir);
+    try {
+      seedUser(store.db, "someone-else");
+      const scope = seedScope(store.db, { userId: "someone-else", name: "/theirs" });
+      insertEvent(store.db, { scopeId: scope.id, userId: "someone-else", content: "pending in a scope local does not own" });
+      let calls = 0;
+
+      const outcome = await maybeRunDigest({
+        db: store.db,
+        userId: "local",
+        scopeId: scope.id,
+        env: {} as NodeJS.ProcessEnv,
+        reason: "explicit",
+        digestLlm: { chat: async () => { calls += 1; return "{}"; } }
+      });
+
+      expect(outcome).toBe("failed");
+      expect(calls).toBe(0);
+      expect(store.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM "Digest"`)!.n).toBe(0);
+      expect(countPendingEvents(store.db, scope.id).events).toBe(1);
+    } finally {
+      errorSpy.mockRestore();
+      await store.close();
+    }
+  });
+
+  it("no model provider despite FEATURE_LLM is 'failed', not 'ran'", async () => {
+    vi.resetModules();
+    vi.doMock("@statecore/core", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("@statecore/core")>()),
+      createModelProvider: () => null
+    }));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const dir = mkdtempSync(join(tmpdir(), "sc-mcp-noprovider-"));
+    const store = await openStore(dir);
+    try {
+      const { maybeRunDigest: run } = await import("../src/digest");
+      seedUser(store.db);
+      const scope = seedScope(store.db, { name: "/p" });
+      insertEvent(store.db, { scopeId: scope.id, content: "pending" });
+
+      const outcome = await run({
+        db: store.db,
+        userId: "local",
+        scopeId: scope.id,
+        // Dead port: even if a provider were built, nothing could be reached.
+        env: { FEATURE_LLM: "true", MODEL_API_KEY: "test-key", MODEL_BASE_URL: "http://127.0.0.1:9/v1" } as unknown as NodeJS.ProcessEnv,
+        reason: "explicit"
+      });
+
+      expect(outcome).toBe("failed");
+      expect(store.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM "Digest"`)!.n).toBe(0);
+    } finally {
+      vi.doUnmock("@statecore/core");
+      vi.resetModules();
+      errorSpy.mockRestore();
+      await store.close();
+    }
+  });
+});
+
 describe("countPendingEvents", () => {
   it("counts unsuppressed stream events newer than the latest digest and reports the oldest", async () => {
     const dir = mkdtempSync(join(tmpdir(), "sc-pending-"));
